@@ -19,3 +19,6 @@ WHERE family_id = ? AND used = 0 AND revoked = 0;
 DELETE FROM refresh_tokens
 WHERE expires_at < ?
   AND (family_expires_at IS NULL OR family_expires_at < ?);
+
+-- name: CountRefreshTokens :one
+SELECT COUNT(*) FROM refresh_tokens;

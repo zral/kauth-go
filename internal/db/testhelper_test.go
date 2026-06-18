@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/zral/kauth-go/internal/db"
 	"github.com/zral/kauth-go/internal/db/gen"
 )
@@ -23,11 +24,14 @@ func openTestDB(t *testing.T) (*sql.DB, *gen.Queries) {
 
 func TestOpenMemory(t *testing.T) {
 	_, q := openTestDB(t)
-	count, err := q.CountUsers(context.Background())
-	if err != nil {
-		t.Fatalf("CountUsers: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("expected 0 users, got %d", count)
-	}
+	ctx := context.Background()
+
+	_, err := q.CountUsers(ctx)
+	require.NoError(t, err, "CountUsers: alle migrasjoner må ha kjørt")
+
+	_, err = q.CountAuditEvents(ctx)
+	require.NoError(t, err, "CountAuditEvents: alle migrasjoner må ha kjørt")
+
+	_, err = q.CountRefreshTokens(ctx)
+	require.NoError(t, err, "CountRefreshTokens: alle migrasjoner må ha kjørt")
 }
