@@ -117,8 +117,8 @@ Beskyttede ruter under `/admin/*` med separat `admin_token`-cookie (egen JWT med
 ### Innlogging
 
 - `GET /admin/login` — viking-door bakgrunn, primær Google-knapp + sekundær e-postlenke
-- `GET /admin/google-init` — starter OAuth-flyt med admin-spesifikk state
-- `GET /admin/google-callback` — verifiserer ID-token, sjekker konge-rolle, setter admin_token
+- `GET /admin/google-init` — redirecter til `/social-login?redirect_uri=/admin/google-callback` slik at admin-flyten gjenbruker vanlig Google-callback (samme URL som er hvitlistet hos Google)
+- `GET /admin/google-callback` — intern handler. Leser JWT fra `?token=` (satt av dispatcher etter Google-callback), verifiserer signaturen, sjekker konge-rolle i databasen, utsteder admin-token og setter cookie
 - `POST /admin/login` — magic-link-flyt for admin (anti-enumeration, 200ms floor)
 - `GET /admin/verify?token=<X>` — konsumerer magic-token, sjekker konge-rolle
 
@@ -198,6 +198,10 @@ Brukeren går til en app (f.eks. `analyse.klarsyn.net`), blir redirected til aut
 
 Refresh-token-cookien settes parallelt på auth-domenet med `SameSite=None` slik at `POST /token` fungerer cross-origin.
 
+### Intern dispatch (admin Google-flyten)
+
+Når `redirect_uri`-cookien starter med `/` (intern path, ikke en ekstern URL), dispatcheren hopper over allowlist-sjekken og redirecter direkte til intern handler med `?token=<jwt>`. Brukt av admin Google-flyten: `/admin/google-init` → `/social-login?redirect_uri=/admin/google-callback` → vanlig Google OAuth → `/callback` → `/dispatch` → `/admin/google-callback?token=<jwt>` → admin-token-cookie og redirect til `/admin/users`. Protokoll-relativ path (`//evil.com`) avvises som potensiell open-redirect.
+
 ## Audit-logg
 
 Lagret i `audit_events`-tabellen med felter:
@@ -252,8 +256,8 @@ Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
 | POST | `/admin/login` | Åpen — anti-enumeration |
 | GET | `/admin/verify` | Åpen — krever magic-token |
 | GET | `/admin/logout` | Åpen |
-| GET | `/admin/google-init` | Åpen |
-| GET | `/admin/google-callback` | Åpen — krever gyldig state |
+| GET | `/admin/google-init` | Åpen — redirect til `/social-login?redirect_uri=/admin/google-callback` |
+| GET | `/admin/google-callback` | Åpen — leser JWT fra `?token=`, sjekker konge-rolle og setter admin-cookie |
 | GET | `/admin/users[/new/{id}/edit/export]` | konge-rolle |
 | POST | `/admin/users[/{id}[/deactivate]]` | konge-rolle |
 | GET | `/admin/audit[/export]` | konge-rolle |
