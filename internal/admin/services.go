@@ -1,8 +1,15 @@
 package admin
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"html/template"
+	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -67,11 +74,23 @@ func (h *ServicesHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreate oppretter ny tjeneste fra POST-skjema.
 func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		_ = r.ParseForm()
+	}
+
 	svcID := strings.TrimSpace(r.FormValue("id"))
 	if svcID == "" {
 		h.renderServiceError(w, serviceFromForm(r), true, "Tjeneste-ID er påkrevd.")
 		return
+	}
+
+	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, svcID)
+	if uploadErr != "" {
+		h.renderServiceError(w, serviceFromForm(r), true, uploadErr)
+		return
+	}
+	if uploaded {
+		r.Form.Set("bg_image", uploadedPath)
 	}
 
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
@@ -84,11 +103,16 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// Ugyldiggjør cache — ikke kritisk hvis det feiler.
 	_ = h.registry.Invalidate(r.Context())
 
+	details := "service_created"
+	if uploaded {
+		details = "service_created bg_image_uploaded=" + uploadedPath
+	}
 	h.auditor.Log(r.Context(), audit.Event{
 		Type:      "service_created",
 		ServiceID: svcID,
 		IP:        extractIP(r),
 		UA:        r.UserAgent(),
+		Details:   details,
 		Success:   true,
 	})
 	http.Redirect(w, r, "/admin/services", http.StatusSeeOther)
@@ -123,8 +147,21 @@ func (h *ServicesHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 // HandleUpdate lagrer endringer på eksisterende tjeneste.
 func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	_ = r.ParseForm()
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		_ = r.ParseForm()
+	}
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, id)
+	if uploadErr != "" {
+		svc := serviceFromForm(r)
+		svc.ID = id
+		h.renderServiceError(w, svc, false, uploadErr)
+		return
+	}
+	if uploaded {
+		r.Form.Set("bg_image", uploadedPath)
+	}
 
 	params := buildUpdateParams(r, id, now)
 	if err := h.queries.UpdateService(r.Context(), params); err != nil {
@@ -136,14 +173,76 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	_ = h.registry.Invalidate(r.Context())
 
+	details := "service_edited"
+	if uploaded {
+		details = "service_edited bg_image_uploaded=" + uploadedPath
+	}
 	h.auditor.Log(r.Context(), audit.Event{
 		Type:      "service_edited",
 		ServiceID: id,
 		IP:        extractIP(r),
 		UA:        r.UserAgent(),
+		Details:   details,
 		Success:   true,
 	})
 	http.Redirect(w, r, "/admin/services", http.StatusSeeOther)
+}
+
+// handleBgImageUpload leser bg_image_upload fra multipart-skjema.
+// Returnerer (uploaded bool, webPath string, errMsg string).
+// webPath er på formen /filename.ext — klar til lagring i bg_image-kolonnen.
+// Hvis ingen fil er lastet opp returneres (false, "", "").
+// Hvis filen er ugyldig returneres (false, "", feilmelding).
+func handleBgImageUpload(r *http.Request, svcID string) (bool, string, string) {
+	file, header, err := r.FormFile("bg_image_upload")
+	if err != nil {
+		// Ingen fil valgt — ikke en feil.
+		return false, "", ""
+	}
+	defer file.Close()
+
+	if header.Size == 0 {
+		return false, "", ""
+	}
+	if header.Size > 1<<20 {
+		return false, "", "Bildet er for stort (maks 1 MB)."
+	}
+
+	// Valider MIME-type fra Content-Type-header på filfeltet.
+	ct := header.Header.Get("Content-Type")
+	mediaType, _, _ := mime.ParseMediaType(ct)
+	var ext string
+	switch mediaType {
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/webp":
+		ext = ".webp"
+	case "image/png":
+		ext = ".png"
+	default:
+		return false, "", fmt.Sprintf("Ugyldig filtype (%s). Kun JPEG, WebP og PNG er tillatt.", ct)
+	}
+
+	// Generer unikt filnavn: <service-id>-bg-<8 hex-tegn>.<ext>
+	randBytes := make([]byte, 4)
+	if _, rerr := rand.Read(randBytes); rerr != nil {
+		return false, "", "Kunne ikke generere filnavn."
+	}
+	filename := svcID + "-bg-" + hex.EncodeToString(randBytes) + ext
+	destPath := filepath.Join("static", filename)
+
+	dest, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return false, "", "Kunne ikke lagre bildet: " + err.Error()
+	}
+	defer dest.Close()
+
+	if _, err := io.Copy(dest, file); err != nil {
+		_ = os.Remove(destPath)
+		return false, "", "Kunne ikke lagre bildet."
+	}
+
+	return true, "/" + filename, ""
 }
 
 // buildCreateParams bygger CreateServiceParams fra HTTP-skjema-verdier.
