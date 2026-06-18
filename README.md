@@ -1,17 +1,17 @@
 # kauth
 
-Lettvekts OIDC-identitetsprovider i Go. Erstatter Keycloak / Zitadel for små til mellomstore organisasjoner som vil ha sentral innlogging uten å sette av en virtuell maskin til oppgaven.
+OIDC-identitetsprovider i Go. Tanken er at små organisasjoner skal slippe å sette opp en Keycloak eller Zitadel for å få sentral innlogging på et par tjenester.
 
-En statisk binær på ~14 MB. Lever godt med ~25 MB RAM i drift. SQLite for lagring, RS256-signerte JWT-er for utstedelse, og Cloudflare Tunnel foran for TLS og DDoS-skjerming.
+En statisk binær på ~14 MB. ~25 MB RAM i drift. SQLite under panseret, RS256-signerte JWT-er, og Cloudflare Tunnel foran for TLS og DDoS-beskyttelse.
 
-Brukes i produksjon på en rekke tjenester.
+Kjører i prod på et knippe tjenester.
 
 ## Hva kauth gjør
 
-- Utsteder JWT-er (RS256) for innloggede brukere
+- Utsteder JWT-er (RS256)
 - Roterer refresh-tokens med reuse-deteksjon (RFC OAuth-BCP §4.13)
 - Eksponerer JWKS og OpenID Discovery på `/.well-known/`
-- Tilbyr fire innloggingsveier per tjeneste: Google OIDC, Microsoft OIDC, magic-link på e-post, og passord (sistnevnte deaktivert som standard — se *Det passordløse valget* nedenfor)
+- Tilbyr fire innloggingsveier per tjeneste: Google OIDC, Microsoft OIDC, magic-link på e-post, og passord (sistnevnte av som default — se *Det passordløse valget* nedenfor)
 - Sentral brukeradministrasjon: ett admin-panel for alle tjenestene
 - Auditlogg med 90 dagers retensjon
 
@@ -87,7 +87,7 @@ Felter du nesten alltid setter:
 | `auth_host` | Hvilket hostname auth-siden serveres på for denne tjenesten. Lar deg ha branded URL per tjeneste (`auth.spekto.live` osv). |
 | `default_org` | Hva nye brukere automatisk får i `org`-claim. App-en bruker dette for tilgangskontroll. |
 | `auto_register` | `1` lar nye brukere bli opprettet ved første login. `0` betyr at admin må opprette dem først. |
-| `access_token_ttl` / `refresh_token_max_age` | ISO 8601-varigheter. Kort access-TTL + lang refresh = god balanse mellom sikkerhet og UX. |
+| `access_token_ttl` / `refresh_token_max_age` | ISO 8601-varigheter. Kort access-TTL og lang refresh holder sikkerhet og UX i balanse. |
 
 Når raden er på plass, peker du tjenestens login-flyt mot `https://<auth_host>/login?redirect_uri=https://<din-app>/auth/callback`. Resten ordner kauth.
 
@@ -108,7 +108,7 @@ Sett deretter `bg_image` på service-raden:
 UPDATE services SET bg_image = '/polaris-hero.jpg' WHERE id = 'polaris';
 ```
 
-Login-templaten setter automatisk `background: url('/static/polaris-hero.jpg') center/cover no-repeat fixed`. Innholdet på `static/` serves på `/static/`-prefiks. Bilder bør være under 1 MB — webp eller komprimert jpeg gir best vekt-til-kvalitet.
+Login-templaten setter automatisk `background: url('/static/polaris-hero.jpg') center/cover no-repeat fixed`. Innholdet i `static/` serves på `/static/`-prefiks. Bilder bør være under 1 MB — webp eller komprimert jpeg gir best vekt-til-kvalitet.
 
 ## Sette opp Google OIDC
 
@@ -148,53 +148,51 @@ Sett `auth_magic_link = 1` på tjenesten. Brukeren får en lenke med 15 minutter
 
 ## Det passordløse valget
 
-kauth støtter passord — feltet finnes, koden er der — men det er av som standard, og vi anbefaler å la det stå sånn.
+kauth støtter passord — feltet finnes, koden er der — men det er av som default, og vi anbefaler å la det stå sånn.
 
-Argumentet er ikke at passord er teknisk umulig, eller at magic-link er kvalitativt sterkere kryptografi. Magic-link og "send reset-link" har samme grunnleggende risikomodell — hvis e-postkontoen kompromitteres, er begge tapt. Phishing fungerer mot begge.
+Argumentet er ikke at passord er teknisk umulig, eller at magic-link er sterkere kryptografi enn et godt passord. Magic-link og "send reset-link" har samme grunnleggende risikomodell: hvis e-postkontoen kompromitteres, er begge tapt. Phishing fungerer like godt mot begge.
 
-Forskjellen ligger i hvor mange uavhengige credentials vi forvalter per bruker. Passord + e-post-recovery = to credentials, to lekkasje-veier, to phishing-scenarier. Bare e-post = én credential, samme angrepsflate, men ingen tilleggsrisiko fra passord-laget — gjenbruk på tvers av tjenester, dårlige hash-algoritmer, lekkede passordbaser, reset-flyter som glipper. Færre lag, mindre overflate.
+Forskjellen er hvor mange uavhengige credentials vi forvalter per bruker. Passord pluss e-post-recovery er to credentials, to lekkasje-veier, to phishing-scenarier. Bare e-post er én credential — samme angrepsflate, men uten passord-laget på toppen. Vi slipper alt det laget bærer med seg: gjenbruk på tvers av tjenester, dårlige hash-algoritmer hos andre, lekkede passordbaser som rammer oss om e-posten matcher, reset-flyter som glipper.
 
-Og passord skalerer dårlig på tvers av tjenester. Jo flere tjenester en bruker må holde styr på, jo mer sannsynlig er det at samme passord brukes på alle. Det betyr at vår tjeneste plutselig deler skjebne med den svakeste passord-lagringen i hele økosystemet brukeren er innom — uavhengig av hvor pedantiske vi er med bcrypt og rotasjon. Hver gang vi krever et nytt passord, bidrar vi marginalt til dette problemet. Den belastningen ønsker vi ikke å legge på brukerne våre.
+Og det er et skalerings-poeng her. Jo flere tjenester en bruker må holde styr på, jo mer sannsynlig er det at samme passord brukes på alle. Hvor godt vi hasher betyr mindre når brukeren har samme passord på en tjeneste som lagrer i klartekst. Hver gang vi krever et nytt passord, bidrar vi marginalt til det problemet. Den belastningen ønsker vi ikke å legge på brukerne våre.
 
-Når vi flytter all autentisering til Google, Microsoft og e-postbaserte engangslenker, gjør vi tre ting samtidig:
+Når all autentisering går via Google, Microsoft eller en engangslenke på e-post, slipper vi unna det som er vanskeligst å gjøre selv. Identitetsleverandørene har et sikkerhetsbudsjett vi aldri kan matche — FIDO2, anomali-deteksjon, device-binding, phishing-resistans, alt sammen vedlikeholdt uten at vi løfter en finger.
 
-- **Vi outsourcer den vanskelige delen.** Identitetsleverandørene har sikkerhetsbudsjett vi ikke har. De ruller ut FIDO2, anomali-deteksjon, device-binding og phishing-resistans uten at vi løfter en finger. Det er en god deal.
-- **Vi fjerner friksjon der det betyr noe.** Magic-link tar 12 sekunder. Google-knappen er to klikk. Ingen glemte passord, ingen reset-mail-er, ingen "passordet ditt utløper om 14 dager". Brukerne får mer tid til det de egentlig skulle gjøre.
-- **Vi tar en politisk posisjon.** Å droppe passord er en uttalelse om hva vi mener autentisering bør være i 2026. Det signaliserer til brukerne — og til oss selv — at vi velger den moderne veien selv når det er litt ubehagelig. Det er enklere å holde linjen når den er trukket.
+Friksjonen blir lavere også. Magic-link tar et titalls sekunder, Google-knappen er to klikk. Ingen glemte passord, ingen utløpsmeldinger om at passordet må byttes innen fjorten dager.
 
-Det er fortsatt edge cases. En engangsbruker som ikke har Google og ikke vil oppgi e-post er én av dem. Vi løser dem som engasjementer, ikke som arkitektur.
+Det er også en posisjon vi liker å innta. Å droppe passord helt sier noe om hva vi mener autentisering bør være i 2026, både til brukerne og til oss selv. Det er enklere å holde linjen når den er trukket.
+
+Det er fortsatt noen edge cases. En engangsbruker uten Google som ikke vil oppgi e-post er én. De løses som enkelttilfeller, ikke i arkitekturen.
 
 ## Drift
 
-**Deploy til Pi5:**
+Deploy til Pi5: `make deploy` cross-compiler til arm64, scp-er binæren og restarter systemd-tjenesten.
 
-```bash
-make deploy   # cross-compiler til arm64, scp + systemctl restart
-```
+`kauth.service` kjører som vanlig bruker, med WAL-aktivert SQLite, graceful SIGTERM, og restart on-failure. Minne taes hånd om via GOMEMLIMIT og cgroup-tak satt i unit-fila.
 
-`kauth.service`-unitten kjører binæren som ikke-root, med WAL-aktivert SQLite, graceful SIGTERM-håndtering og automatisk restart.
+Backup-en ligger i `scripts/backup-kauth-go.sh` — daglig kopi via cron klokken 03:00, bruker `sqlite3 .backup` som er trygt mens kauth kjører. 30 dagers retensjon.
 
-**Backup:** `scripts/backup-kauth.sh` (i søsterrepoet) tar daglig kopi av databasen via cron. SQLite med WAL er trygt å kopiere live.
+Logger går til journald via `log/slog` i strukturert format. Cleanup-jobber (magic-tokens, refresh-tokens, audit-events) kjører hver time som bakgrunns-goroutiner.
 
-**Observability:** strukturerte logger via Go `slog`. Cleanup-jobber (magic-tokens, refresh-tokens, gamle audit-events) kjører hver time i en bakgrunns-goroutine.
-
-**Cloudflare Tunnel:** kauth lytter på localhost. Tunnel termimerer TLS og leverer trafikken via Cloudflare-kanten — så vi får DDoS-beskyttelse, ekte klient-IP via `CF-Connecting-IP`-header, og null hull i brannmuren.
+Cloudflare Tunnel foran: kauth lytter på localhost, tunnelen terminerer TLS og setter klient-IP i `CF-Connecting-IP`-header. Null hull i brannmuren utover det.
 
 ## Arkitektur i grove trekk
 
-- **`cmd/kauth`** — entry point. Konfig, DB-oppstart, router-wiring, graceful shutdown.
-- **`internal/auth`** — innloggings-handlere (Google, Microsoft, magic-link, password), dispatch, login-side, middleware.
-- **`internal/token`** — JWT-utstedelse, JWKS, refresh-rotasjon.
-- **`internal/admin`** — admin-panel: brukeradministrasjon, audit-logg, service-konfig, magic-link- og Google-innlogging for admin.
-- **`internal/service`** — tjeneste-resolver med cache. Bestemmer hvilken tjeneste en innkommende request tilhører basert på redirect-URI eller auth-host.
-- **`internal/db`** — sqlc-generert databaselag mot SQLite (modernc.org/sqlite, CGO-fri).
-- **`internal/jobs`** — bakgrunnsjobber.
+- `cmd/kauth` — entry point. Konfig, DB-oppstart, router-wiring, graceful shutdown.
+- `internal/auth` — innloggings-handlere (Google, Microsoft, magic-link, password), dispatch, login-side, middleware.
+- `internal/token` — JWT-utstedelse, JWKS, refresh-rotasjon.
+- `internal/admin` — admin-panel: brukeradministrasjon, audit-logg, service-konfig, magic-link- og Google-innlogging for admin.
+- `internal/service` — tjeneste-resolver med cache. Bestemmer hvilken tjeneste en innkommende request tilhører basert på redirect-URI eller auth-host.
+- `internal/db` — sqlc-generert databaselag mot SQLite (modernc.org/sqlite, CGO-fri).
+- `internal/jobs` — bakgrunnsjobber.
+
+Mer detaljert funksjonsoversikt ligger i [doc/FEATURES.md](doc/FEATURES.md).
 
 ## Tribute
 
-Denne porten står på skuldrene til [Kjetil Salo](https://github.com/kjetil-salo), som laget den originale kauth i Quarkus. JWT-utstederen, magic-link-flyten, Microsoft OIDC, første versjon av admin-panelet og H2-støtten er hans arbeid. Det datadrevne service-config-konseptet og refresh-token-rotasjonen med family-revocation kom til underveis.
+Denne porten bygger på [Kjetil Salo](https://github.com/kjetil-salo) sin originale kauth i Quarkus. JWT-utstederen, magic-link-flyten, Microsoft OIDC, første versjon av admin-panelet og H2-støtten er hans arbeid. Det datadrevne service-config-konseptet og refresh-token-rotasjonen med family-revocation kom til underveis.
 
-Det viktigste han bidro med var likevel premisset og drivet: at vi skulle ha noe enkelt og sikkert som ikke var en Keycloak eller Zitadel-dinosaur. Hele eksistensen til kauth henger på den ideen, og at Kjetil tok initiativet til å bygge den. Go-versjonen er en port, ikke en ny idé.
+Det viktigste han bidro med var likevel premisset og drivkraften — at vi skulle ha noe enkelt og sikkert som ikke var en Keycloak eller Zitadel-dinosaur. Hele eksistensen til kauth henger på den ideen, og at Kjetil tok initiativet til å bygge det. Go-versjonen er en port, ikke en ny idé.
 
 ## Lisens
 
