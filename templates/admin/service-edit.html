@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .IsNew}}Ny tjeneste{{else}}Rediger {{.Service.ID}}{{end}} — kauth Admin</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; }
+        nav { background: #1e293b; padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; }
+        nav a { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
+        nav .spacer { flex: 1; }
+        main { padding: 1.5rem; max-width: 640px; margin: 0 auto; }
+        h1 { font-size: 1.25rem; margin: 0 0 1.5rem; }
+        h2 { font-size: 0.95rem; color: #64748b; margin: 1.5rem 0 0.75rem; border-bottom: 1px solid #1e293b; padding-bottom: 0.25rem; }
+        .form-group { margin-bottom: 0.875rem; }
+        label { display: block; font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.25rem; }
+        input[type=text], input[type=url], input[type=color], textarea, select {
+            width: 100%; box-sizing: border-box; padding: 0.5rem 0.65rem;
+            border-radius: 5px; border: 1px solid #334155; background: #0f172a;
+            color: #e2e8f0; font-size: 0.875rem;
+        }
+        .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .checkbox-row input { width: auto; }
+        .hint { font-size: 0.8rem; color: #64748b; margin-top: 0.2rem; }
+        .btn { padding: 0.5rem 1rem; border-radius: 5px; border: none; font-size: 0.875rem; cursor: pointer; text-decoration: none; }
+        .btn-primary { background: #3b82f6; color: #fff; }
+        .btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+        .actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+        .msg.err { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #7f1d1d; color: #fca5a5; font-size: 0.875rem; }
+    </style>
+</head>
+<body>
+<nav>
+    <strong style="color:#f1f5f9">kauth admin</strong>
+    <a href="/admin/users">Brukere</a>
+    <a href="/admin/audit">Auditlogg</a>
+    <a href="/admin/services">Tjenester</a>
+    <span class="spacer"></span>
+    <a href="/admin/logout">Logg ut</a>
+</nav>
+<main>
+    <h1>{{if .IsNew}}Ny tjeneste{{else}}Rediger {{.Service.ID}}{{end}}</h1>
+    {{if .Error}}<div class="msg err">{{.Error}}</div>{{end}}
+    <form method="POST" action="{{if .IsNew}}/admin/services{{else}}/admin/services/{{.Service.ID}}{{end}}">
+        <h2>Identitet</h2>
+        {{if .IsNew}}
+        <div class="form-group">
+            <label>Tjeneste-ID *</label>
+            <input type="text" name="id" required value="{{.Service.ID}}" placeholder="spekto">
+            <p class="hint">Unik slug. Kan ikke endres etter opprettelse.</p>
+        </div>
+        {{end}}
+        <div class="form-group">
+            <label>Visningsnavn *</label>
+            <input type="text" name="display_name" required value="{{.Service.DisplayName}}">
+        </div>
+        <div class="form-group">
+            <label>Slagord</label>
+            <input type="text" name="tagline" value="{{if .Service.Tagline}}{{.Service.Tagline}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label>Domene *</label>
+            <input type="text" name="domain" required value="{{.Service.Domain}}" placeholder="spekto.live">
+        </div>
+        <div class="form-group">
+            <label>Auth-host</label>
+            <input type="text" name="auth_host" value="{{if .Service.AuthHost}}{{.Service.AuthHost}}{{end}}" placeholder="auth.spekto.live">
+            <p class="hint">Dedikert innloggings-hostname. Tomt = deles med kauth-instansen.</p>
+        </div>
+        <div class="form-group">
+            <label>Callback-URL(er) *</label>
+            <input type="text" name="callback_url" required value="{{.Service.CallbackUrl}}" placeholder="https://app.spekto.live/cb">
+            <p class="hint">Kommaseparerte URL-er som er tillatt redirect etter innlogging.</p>
+        </div>
+
+        <h2>Autentiseringsmetoder</h2>
+        <div class="checkbox-row">
+            <input type="checkbox" id="auth_google" name="auth_google" value="1" {{if eq .Service.AuthGoogle 1}}checked{{end}}>
+            <label for="auth_google">Google OIDC</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="auth_microsoft" name="auth_microsoft" value="1" {{if eq .Service.AuthMicrosoft 1}}checked{{end}}>
+            <label for="auth_microsoft">Microsoft OIDC</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="auth_magic_link" name="auth_magic_link" value="1" {{if eq .Service.AuthMagicLink 1}}checked{{end}}>
+            <label for="auth_magic_link">Magic link</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="auth_password" name="auth_password" value="1" {{if eq .Service.AuthPassword 1}}checked{{end}}>
+            <label for="auth_password">Passord</label>
+        </div>
+
+        <h2>Branding</h2>
+        <div class="form-group">
+            <label>Avsendernavn (e-post)</label>
+            <input type="text" name="email_from_name" value="{{.Service.EmailFromName}}" placeholder="Spekto">
+        </div>
+        <div class="form-group">
+            <label>Temafarge</label>
+            <input type="color" name="accent_color" value="{{.Service.AccentColor}}">
+        </div>
+        <div class="form-group">
+            <label>Tema</label>
+            <select name="theme">
+                <option value="light" {{if eq .Service.Theme "light"}}selected{{end}}>Lys</option>
+                <option value="dark"  {{if eq .Service.Theme "dark"}}selected{{end}}>Mørk</option>
+            </select>
+        </div>
+
+        <h2>Token-innstillinger</h2>
+        <div class="form-group">
+            <label>Access token TTL</label>
+            <input type="text" name="access_token_ttl" value="{{.Service.AccessTokenTtl}}" placeholder="PT15M">
+            <p class="hint">ISO 8601 varighet, f.eks. PT15M, PT1H, P30D.</p>
+        </div>
+        <div class="form-group">
+            <label>Refresh token maks-alder</label>
+            <input type="text" name="refresh_token_max_age" value="{{if .Service.RefreshTokenMaxAge}}{{.Service.RefreshTokenMaxAge}}{{end}}" placeholder="P30D">
+            <p class="hint">Tomt = ubegrenset sesjonslevetid.</p>
+        </div>
+
+        <h2>Avansert</h2>
+        <div class="form-group">
+            <label>JWT cookie-navn</label>
+            <input type="text" name="jwt_cookie_name" value="{{.Service.JwtCookieName}}" placeholder="auth_token">
+        </div>
+        <div class="form-group">
+            <label>Standard org</label>
+            <input type="text" name="default_org" value="{{if .Service.DefaultOrg}}{{.Service.DefaultOrg}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label>Standard rolle</label>
+            <input type="text" name="default_role" value="{{if .Service.DefaultRole}}{{.Service.DefaultRole}}{{end}}">
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="auto_register" name="auto_register" value="1" {{if eq .Service.AutoRegister 1}}checked{{end}}>
+            <label for="auto_register">Auto-registrer nye OIDC-brukere</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="is_default" name="is_default" value="1" {{if eq .Service.IsDefault 1}}checked{{end}}>
+            <label for="is_default">Standard tjeneste</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="active" name="active" value="1" {{if eq .Service.Active 1}}checked{{end}}>
+            <label for="active">Aktiv</label>
+        </div>
+
+        <div class="actions">
+            <button type="submit" class="btn btn-primary">{{if .IsNew}}Opprett tjeneste{{else}}Lagre endringer{{end}}</button>
+            <a href="/admin/services" class="btn btn-outline">Avbryt</a>
+        </div>
+    </form>
+</main>
+</body>
+</html>
