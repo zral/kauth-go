@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -64,12 +65,12 @@ func (h *PasswordHandlers) DoLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "intern feil", http.StatusInternalServerError)
 		return
 	}
-	setAuthCookies(w, svc, at, rt)
+	setRefreshCookie(w, rt)
 
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
 	_ = h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email})
 	h.aud.Log(r.Context(), audit.Event{Type: "login_success", AuthMethod: "password", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	http.Redirect(w, r, "/dispatch?service="+svc.ID, http.StatusFound)
+	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt), http.StatusFound)
 }
 
 // RefreshToken — POST /token

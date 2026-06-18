@@ -1,9 +1,11 @@
 package auth
 
 import (
+	"os"
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -17,10 +19,10 @@ import (
 )
 
 // msAuthBase er base-URL for Microsoft /common v2.0-endepunktet.
-// Nøkkel-URL blir msAuthBase+"/keys" = https://login.microsoftonline.com/common/v2.0/keys.
+// Nøkkel-URL blir msAuthBase+"/keys" = https://login.microsoftonline.com/common/oauth2/v2.0/keys.
 // Microsoft publiserer faktisk nøkler på /discovery/v2.0/keys, men /v2.0/keys redirecter dit
 // og fungerer i praksis. Dersom go-oidc klager på URL ved integrasjonstest kan dette endres.
-const msAuthBase = "https://login.microsoftonline.com/common/v2.0"
+const msAuthBase = "https://login.microsoftonline.com/common/oauth2/v2.0"
 
 type MicrosoftHandlers struct {
 	cfg     config.Config
@@ -52,7 +54,7 @@ func (h *MicrosoftHandlers) InitiateLogin(w http.ResponseWriter, r *http.Request
 	state := SignState(h.cfg.OIDCStateSecret, svc.ID, nonce)
 	oauthCfg := &oauth2.Config{
 		ClientID:    clientID,
-		RedirectURL: h.cfg.BaseURL + "/ms-callback",
+		RedirectURL: "https://" + r.Host + "/ms-callback",
 		Scopes:      []string{"openid", "email", "profile"},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  msAuthBase + "/authorize",
@@ -64,7 +66,7 @@ func (h *MicrosoftHandlers) InitiateLogin(w http.ResponseWriter, r *http.Request
 		Value:    state,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   600,
 	})
@@ -89,7 +91,7 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 	oauthCfg := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		RedirectURL:  h.cfg.BaseURL + "/ms-callback",
+		RedirectURL:  "https://" + r.Host + "/ms-callback",
 		Scopes:       []string{"openid", "email", "profile"},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  msAuthBase + "/authorize",
@@ -105,7 +107,7 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 	// SkipIssuerCheck er nødvendig: Microsoft /common-endepunkt utsteder per-tenant issuer-claims
 	verifier := oidc.NewVerifier(
 		msAuthBase,
-		oidc.NewRemoteKeySet(ctx, msAuthBase+"/keys"),
+		oidc.NewRemoteKeySet(ctx, "https://login.microsoftonline.com/common/discovery/v2.0/keys"),
 		&oidc.Config{ClientID: clientID, SkipIssuerCheck: true},
 	)
 	idToken, err := verifier.Verify(ctx, rawIDToken)
@@ -151,12 +153,12 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "kunne ikke utstede refresh-token", http.StatusInternalServerError)
 		return
 	}
-	setAuthCookies(w, svc, at, rt)
+	setRefreshCookie(w, rt)
 	clearCookie(w, "ms_state")
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
 	_ = h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email})
 	h.aud.Log(ctx, audit.Event{Type: "microsoft_oidc_login", AuthMethod: "microsoft", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	http.Redirect(w, r, "/dispatch?service="+svc.ID, http.StatusFound)
+	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt), http.StatusFound)
 }
 
 func (h *MicrosoftHandlers) findOrCreate(ctx context.Context, email, name string, svc *gen.Service) (gen.User, error) {

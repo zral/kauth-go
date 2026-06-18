@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"os"
 	"net/http"
 	"time"
 
@@ -21,7 +22,7 @@ func setAuthCookies(w http.ResponseWriter, svc *gen.Service, accessToken, refres
 		Value:    accessToken,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(ttl.Seconds()),
 	})
@@ -30,13 +31,27 @@ func setAuthCookies(w http.ResponseWriter, svc *gen.Service, accessToken, refres
 		Value:    refreshToken,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		SameSite: http.SameSiteNoneMode,
+		MaxAge:   30 * 24 * 3600,
+	})
+}
+
+// setRefreshCookie setter kun refresh_token-cookien (HttpOnly, Secure, SameSite=None, 30 dager).
+// Brukes av callback-handlers etter overgang til URL-token-flyt.
+func setRefreshCookie(w http.ResponseWriter, refreshToken string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteNoneMode,
 		MaxAge:   30 * 24 * 3600,
 	})
 }
 
 func clearCookie(w http.ResponseWriter, name string) {
-	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", HttpOnly: true, Secure: true, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", HttpOnly: true, Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true", MaxAge: -1})
 }
 

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"os"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,61 +27,101 @@ func readRedirectCookie(r *http.Request) string {
 	return strings.Trim(v, `"`)
 }
 
+// appendTokenAndRT bygger endelig redirect-URL med token som query-param og rt som fragment.
+func appendTokenAndRT(target, token, rt string) string {
+	sep := "?"
+	if strings.Contains(target, "?") {
+		sep = "&"
+	}
+	u := target + sep + "token=" + url.QueryEscape(token)
+	if rt != "" {
+		u += "#rt=" + url.QueryEscape(rt)
+	}
+	return u
+}
+
 // ServeDispatch håndterer GET /dispatch.
+// Leser token og rt fra URL query-params (ikke cookies — cross-host cookies virker ikke).
 // Tre-nivå routing:
-//  1. redirect_uri-cookie → IsAllowedCallback → redirect (slett cookie)
-//  2. auth_token-cookie → Verify → org-match mot DefaultOrg → redirect CallbackUrl
+//  1. redirect_uri-cookie → IsAllowedCallback → redirect med ?token=#rt (slett cookie)
+//  2. token-claim org → match mot service.DefaultOrg → redirect CallbackUrl
 //  3. Fallback til default-tjenestens CallbackUrl
 func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) {
-	// Nivå 1: eksplisitt redirect_uri fra cookie
+	q := r.URL.Query()
+	jwtToken := q.Get("token")
+	rt := q.Get("rt")
+
+	// Mangler token → tilbake til login
+	if jwtToken == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	// Verifiser token
+	claims, err := h.Issuer.Verify(jwtToken)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	clearRedirectCookie := &http.Cookie{
+		Name:     "redirect_uri",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	// Nivå 1: eksplisitt redirect_uri fra cookie (allerede validert mot allowlist)
 	if redirectURI := readRedirectCookie(r); redirectURI != "" {
 		allSvcs := h.Registry.All()
 		for _, svc := range allSvcs {
 			if h.Registry.IsAllowedCallback(svc, redirectURI) {
-				// Slett redirect_uri-cookie
-				http.SetCookie(w, &http.Cookie{
-					Name:     "redirect_uri",
-					Value:    "",
-					Path:     "/",
-					MaxAge:   -1,
-					HttpOnly: true,
-					Secure:   true,
-					SameSite: http.SameSiteLaxMode,
-				})
-				http.Redirect(w, r, redirectURI, http.StatusSeeOther)
+				http.SetCookie(w, clearRedirectCookie)
+				http.Redirect(w, r, appendTokenAndRT(redirectURI, jwtToken, rt), http.StatusSeeOther)
 				return
 			}
 		}
 	}
 
-	// Hent default-tjeneste for å lese riktig cookie-navn
-	defaultSvc := h.Registry.ResolveOrDefault("", h.DefaultSvcID, "")
-
-	// Nivå 2: org-match via JWT
-	cookieName := "auth_token"
-	if defaultSvc != nil {
-		cookieName = defaultSvc.JwtCookieName
+	// Nivå 2: host-match — bruker kom inn via en service-spesifikk auth-host
+	// (auth.spekto.live → spekto, auth.lilleklo.work → vinkjeller).
+	// Dette må vinne over org-match for at f.eks. en konge med "lars" i orgs
+	// som logger inn på auth.spekto.live skal lande på spekto-app, ikke klarsyn.
+	if r.Host != "" {
+		hostLc := strings.ToLower(r.Host)
+		allSvcs := h.Registry.All()
+		for _, svc := range allSvcs {
+			if svc.AuthHost != nil && strings.ToLower(*svc.AuthHost) == hostLc {
+				http.SetCookie(w, clearRedirectCookie)
+				http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
+				return
+			}
+		}
 	}
-	if c, err := r.Cookie(cookieName); err == nil && c.Value != "" {
-		if claims, err := h.Issuer.Verify(c.Value); err == nil {
-			allSvcs := h.Registry.All()
-			for _, svc := range allSvcs {
-				if svc.DefaultOrg == nil {
-					continue
-				}
-				for _, org := range claims.Org {
-					if org == *svc.DefaultOrg {
-						http.Redirect(w, r, svc.CallbackUrl, http.StatusSeeOther)
-						return
-					}
-				}
+
+	// Nivå 3: org-match via JWT-claims
+	allSvcs := h.Registry.All()
+	for _, svc := range allSvcs {
+		if svc.DefaultOrg == nil {
+			continue
+		}
+		for _, org := range claims.Org {
+			if org == *svc.DefaultOrg {
+				http.SetCookie(w, clearRedirectCookie)
+				http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
+				return
 			}
 		}
 	}
 
 	// Nivå 3: fallback til default-tjenestens callback
+	defaultSvc := h.Registry.ResolveOrDefault("", h.DefaultSvcID, "")
 	if defaultSvc != nil {
-		http.Redirect(w, r, defaultSvc.CallbackUrl, http.StatusSeeOther)
+		http.SetCookie(w, clearRedirectCookie)
+		http.Redirect(w, r, appendTokenAndRT(defaultSvc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -102,7 +143,7 @@ func (h *DispatchHandler) ServeLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   0,
 		HttpOnly: true,
-		Secure:   true,
+		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -113,7 +154,7 @@ func (h *DispatchHandler) ServeLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   0,
 		HttpOnly: true,
-		Secure:   true,
+		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 	})
 

@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"html/template"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -129,18 +131,24 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 		redirectURIPtr = &redirectURI
 	}
 
-	_ = h.queries.InsertMagicToken(r.Context(), gen.InsertMagicTokenParams{
+	if err := h.queries.InsertMagicToken(r.Context(), gen.InsertMagicTokenParams{
 		Token:       plainToken,
 		Email:       email,
 		ServiceID:   &serviceID,
 		RedirectUri: redirectURIPtr,
 		ExpiresAt:   now.Add(15 * time.Minute).Format(time.RFC3339),
 		CreatedAt:   now.Format(time.RFC3339),
-	})
+	}); err != nil {
+		slog.Error("magic-link: kunne ikke lagre token", "email", email, "error", err)
+		// Anti-enumeration: same response regardless
+	}
 
 	fromName := svc.EmailFromName
 	link := h.cfg.BaseURL + "/magic-login/" + plainToken + "?service=" + serviceID
-	_ = h.mailer.SendMagicLink(email, fromName, link)
+	if err := h.mailer.SendMagicLink(email, fromName, link); err != nil {
+		slog.Error("magic-link: kunne ikke sende e-post", "email", email, "error", err)
+		// Anti-enumeration: same response regardless
+	}
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("sjekk e-post"))
@@ -198,11 +206,11 @@ func (h *MagicHandlers) VerifyToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "kunne ikke utstede refresh-token", http.StatusInternalServerError)
 		return
 	}
-	setAuthCookies(w, svc, accessToken, refreshToken)
+	setRefreshCookie(w, refreshToken)
 
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
 	_ = h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email})
 	h.aud.Log(r.Context(), audit.Event{Type: "magic_link_login", AuthMethod: "magic_link", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	http.Redirect(w, r, "/dispatch?service="+svc.ID, http.StatusFound)
+	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(accessToken)+"&rt="+url.QueryEscape(refreshToken), http.StatusFound)
 }
 

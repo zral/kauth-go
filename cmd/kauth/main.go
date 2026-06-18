@@ -121,10 +121,12 @@ func main() {
 
 	// ── Google OIDC ───────────────────────────────────────────────────────────
 	r.Get("/oidc-login", googleH.InitiateLogin)
+	r.Get("/social-login", googleH.InitiateLogin) // alias matchende Java-URL
 	r.Get("/callback", googleH.HandleCallback)
 
 	// ── Microsoft OIDC ────────────────────────────────────────────────────────
 	r.Get("/ms-oidc-login", msH.InitiateLogin)
+		r.Get("/ms-social-login", msH.InitiateLogin)
 	r.Get("/ms-callback", msH.HandleCallback)
 
 	// ── Magic link ────────────────────────────────────────────────────────────
