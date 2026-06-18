@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin-innlogging — kauth</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        .card { background: #1e293b; border-radius: 8px; padding: 2rem; width: 100%; max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
+        h1 { font-size: 1.25rem; margin: 0 0 1.5rem; color: #f1f5f9; }
+        label { display: block; font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.375rem; }
+        input[type=email] { width: 100%; box-sizing: border-box; padding: 0.625rem 0.75rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; font-size: 0.9rem; }
+        input[type=email]:focus { outline: 2px solid #3b82f6; border-color: transparent; }
+        button { width: 100%; margin-top: 1rem; padding: 0.65rem; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
+        button:hover { background: #2563eb; }
+        .msg { margin-top: 1rem; padding: 0.75rem; border-radius: 6px; font-size: 0.875rem; }
+        .msg.ok  { background: #14532d; color: #86efac; }
+        .msg.err { background: #7f1d1d; color: #fca5a5; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Admin-innlogging</h1>
+    {{if .Message}}
+    <div class="msg {{if .IsError}}err{{else}}ok{{end}}">{{.Message}}</div>
+    {{end}}
+    {{if not .Sent}}
+    <form method="POST" action="/admin/login">
+        <label for="email">E-postadresse</label>
+        <input type="email" id="email" name="email" required autocomplete="email" autofocus>
+        <button type="submit">Send innloggingslenke</button>
+    </form>
+    {{end}}
+</div>
+</body>
+</html>
