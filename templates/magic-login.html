@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="no">
+<head><meta charset="UTF-8"><title>Logg inn</title></head>
+<body>
+<h1>{{if .Service}}{{.Service.DisplayName}}{{else}}Logg inn{{end}}</h1>
+<form method="POST" action="/magic-login">
+    <input type="hidden" name="service_id" value="{{.ServiceID}}">
+    <label for="email">E-postadresse</label>
+    <input type="email" id="email" name="email" required autofocus>
+    <button type="submit">Send innloggingslenke</button>
+</form>
+</body>
+</html>
