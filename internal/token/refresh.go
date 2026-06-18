@@ -22,7 +22,7 @@ type RotationResult struct{ NewToken, Email, FamilyID string }
 // Eksportert slik at tester kan injisere stubs.
 type RefreshQuerier interface {
 	InsertRefreshToken(ctx context.Context, params gen.InsertRefreshTokenParams) error
-	ConsumeRefreshToken(ctx context.Context, hash, now string) (gen.RefreshToken, error)
+	ConsumeRefreshToken(ctx context.Context, arg gen.ConsumeRefreshTokenParams) (gen.RefreshToken, error)
 	RevokeFamilyTokens(ctx context.Context, params gen.RevokeFamilyTokensParams) error
 }
 
@@ -120,7 +120,10 @@ func (s *RefreshService) Issue(ctx context.Context, user gen.User, svc gen.Servi
 func (s *RefreshService) Rotate(ctx context.Context, plainToken, ip, ua string) (*RotationResult, error) {
 	hash := hashToken(plainToken)
 	now := time.Now().UTC()
-	consumed, err := s.db.ConsumeRefreshToken(ctx, hash, now.Format(time.RFC3339))
+	consumed, err := s.db.ConsumeRefreshToken(ctx, gen.ConsumeRefreshTokenParams{
+		TokenHash: hash,
+		ExpiresAt: now.Format(time.RFC3339),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("consume token: %w", err)
 	}

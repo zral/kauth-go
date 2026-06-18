@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logg inn – {{.Service.DisplayName}}</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            {{if eq .Service.Theme "dark"}}
+            background: {{if .Service.BgCss}}{{.Service.BgCss}}{{else}}#09090B{{end}};
+            {{else}}
+            background: url('{{if .Service.BgImage}}{{.Service.BgImage}}{{else}}/fjord-dawn.jpg{{end}}') center/cover no-repeat fixed;
+            {{end}}
+        }
+        {{if eq .Service.Theme "dark"}}
+        body::before {
+            content: ''; position: fixed; inset: 0; pointer-events: none;
+            {{if .Service.BgImage}}
+            background: url('{{.Service.BgImage}}') center/cover no-repeat;
+            opacity: 0.4;
+            {{else}}
+            top: -20%; left: 50%; transform: translateX(-50%);
+            width: 600px; height: 400px; background: rgba(129,140,248,.08);
+            border-radius: 50%; filter: blur(120px);
+            {{end}}
+        }
+        {{end}}
+        .card {
+            background: transparent;
+            border-radius: {{if eq .Service.Theme "dark"}}16px{{else}}12px{{end}};
+            padding: 2.5rem 2rem;
+            width: 100%; max-width: 380px;
+            margin: 1rem;
+            position: relative;
+        }
+        .logo { text-align: center; margin-bottom: {{if eq .Service.Theme "dark"}}2rem{{else}}1.5rem{{end}}; }
+        .logo-row {
+            display: flex; align-items: center; justify-content: center; gap: .6rem;
+        }
+        .logo-row svg { width: 36px; height: 36px; }
+        .logo h1 {
+            font-size: {{if eq .Service.Theme "dark"}}1.75rem{{else}}1.5rem{{end}};
+            font-weight: {{if eq .Service.Theme "dark"}}800{{else}}700{{end}};
+            margin: 0; letter-spacing: -.02em;
+            {{if eq .Service.Theme "dark"}}
+            color: #F4F4F5;
+            {{else}}
+            color: #0f172a; text-shadow: 0 1px 3px rgba(255,255,255,.9);
+            {{end}}
+        }
+        .logo p {
+            font-size: .85rem; margin: .25rem 0 0;
+            {{if eq .Service.Theme "dark"}}
+            color: #71717A; margin-top: .5rem;
+            {{else}}
+            color: #0f172a; font-weight: 500; text-shadow: 0 1px 3px rgba(255,255,255,.9);
+            {{end}}
+        }
+        .btn-social {
+            width: 100%; padding: .7rem; border: none;
+            border-radius: {{if eq .Service.Theme "dark"}}8px{{else}}6px{{end}};
+            font-size: .95rem; cursor: pointer; display: flex;
+            align-items: center; justify-content: center; gap: .5rem;
+            text-decoration: none; font-weight: 500; margin-bottom: .5rem;
+            {{if eq .Service.Theme "dark"}}
+            background: #18181B; color: #A1A1AA; border: 1px solid #3F3F46;
+            transition: all .15s;
+            {{else}}
+            background: white; color: #334155; border: 1px solid #d1d5db;
+            {{end}}
+        }
+        .btn-social:hover {
+            {{if eq .Service.Theme "dark"}}
+            background: #27272A; border-color: #71717A; color: #F4F4F5;
+            {{else}}
+            background: #f8fafc; border-color: #94a3b8;
+            {{end}}
+        }
+        {{if eq .Service.Theme "dark"}}
+        .divider {
+            text-align: center; margin: 1.25rem 0; color: #71717A; font-size: .8rem;
+            display: flex; align-items: center; gap: .75rem;
+        }
+        .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #3F3F46; }
+        {{end}}
+        .msg-error {
+            padding: .6rem .75rem; border-radius: 6px; margin-bottom: 1rem;
+            text-align: center; font-size: .9rem;
+            color: #dc2626; background: #fef2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">
+            {{if .LogoHTML}}
+            <div class="logo-row">
+                {{.LogoHTML}}
+                <h1>{{.Service.DisplayName}}</h1>
+            </div>
+            {{else}}
+            <h1>{{.Service.DisplayName}}</h1>
+            {{end}}
+            {{if .Service.Tagline}}<p>{{.Service.Tagline}}</p>{{end}}
+        </div>
+
+        {{if .Error}}
+        <div class="msg-error">
+            {{if eq .Error "access_denied"}}Tilgang nektet.
+            {{else if eq .Error "invalid_redirect"}}Ugyldig retur-adresse. Start innloggingen på nytt.
+            {{else}}{{.Error}}
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if eq .Service.AuthGoogle 1}}
+        <a id="oidc-btn" href="/oidc-login" class="btn-social">
+            <svg width="18" height="18" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.8 2.5 30.3 0 24 0 14.7 0 6.7 5.4 2.8 13.3l7.8 6C12.4 13 17.8 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.6 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 6.2-9.9 6.2-17z"/>
+                <path fill="#FBBC05" d="M10.6 28.7A14.6 14.6 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A24 24 0 0 0 0 24c0 3.9.9 7.5 2.8 10.7l7.8-6z"/>
+                <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.8 2.3-8.4 2.3-6.2 0-11.6-4.2-13.4-9.9l-7.8 6C6.7 42.6 14.7 48 24 48z"/>
+            </svg>
+            Fortsett med Google
+        </a>
+        {{end}}
+
+        {{if eq .Service.AuthMicrosoft 1}}
+        <a id="ms-btn" href="/ms-oidc-login" class="btn-social">
+            <svg width="18" height="18" viewBox="0 0 21 21">
+                <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            </svg>
+            Fortsett med Microsoft
+        </a>
+        {{end}}
+
+        {{if eq .Service.AuthMagicLink 1}}
+        {{if eq .Service.Theme "dark"}}<div class="divider">eller</div>{{end}}
+        <a id="magic-btn" href="/magic-login?service={{.Service.ID}}" class="btn-social">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="{{if eq .Service.Theme "dark"}}#71717A{{else}}#475569{{end}}"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <path d="M22 7l-10 7L2 7"/>
+            </svg>
+            Logg inn med e-postlenke
+        </a>
+        {{end}}
+
+        {{if eq .Service.AuthPassword 1}}
+        {{if eq .Service.Theme "dark"}}<div class="divider">eller</div>{{end}}
+        <form method="post" action="/do-login">
+            <input type="hidden" name="service_id" value="{{.Service.ID}}">
+            <input type="email" name="email" placeholder="E-postadresse" required style="
+                display:block;width:100%;padding:.7rem .85rem;margin-bottom:.5rem;font-size:.95rem;
+                border:1px solid {{if eq .Service.Theme "dark"}}#3F3F46{{else}}#d1d5db{{end}};
+                border-radius:{{if eq .Service.Theme "dark"}}8px{{else}}6px{{end}};
+                background:{{if eq .Service.Theme "dark"}}#18181B{{else}}white{{end}};
+                color:{{if eq .Service.Theme "dark"}}#F4F4F5{{else}}#0f172a{{end}};">
+            <input type="password" name="password" placeholder="Passord" required style="
+                display:block;width:100%;padding:.7rem .85rem;margin-bottom:.75rem;font-size:.95rem;
+                border:1px solid {{if eq .Service.Theme "dark"}}#3F3F46{{else}}#d1d5db{{end}};
+                border-radius:{{if eq .Service.Theme "dark"}}8px{{else}}6px{{end}};
+                background:{{if eq .Service.Theme "dark"}}#18181B{{else}}white{{end}};
+                color:{{if eq .Service.Theme "dark"}}#F4F4F5{{else}}#0f172a{{end}};">
+            <button type="submit" style="
+                width:100%;padding:.75rem;border:none;font-size:.95rem;cursor:pointer;
+                font-weight:{{if eq .Service.Theme "dark"}}600{{else}}500{{end}};
+                border-radius:{{if eq .Service.Theme "dark"}}8px{{else}}6px{{end}};
+                background:{{if eq .Service.Theme "dark"}}#818CF8{{else}}#1e40af{{end}};
+                color:white;">
+                Logg inn
+            </button>
+        </form>
+        {{end}}
+    </div>
+
+    <script>
+        (function() {
+            var params = new URLSearchParams(location.search);
+            var redirectUri = params.get('redirect_uri');
+            if (!redirectUri) return;
+            document.cookie = 'redirect_uri=' + encodeURIComponent(redirectUri) +
+                '; path=/; max-age=600; Secure; SameSite=Lax';
+            var enc = encodeURIComponent(redirectUri);
+            var oidcBtn = document.getElementById('oidc-btn');
+            if (oidcBtn) oidcBtn.href = '/oidc-login?redirect_uri=' + enc;
+            var msBtn = document.getElementById('ms-btn');
+            if (msBtn) msBtn.href = '/ms-oidc-login?redirect_uri=' + enc;
+            var magicBtn = document.getElementById('magic-btn');
+            if (magicBtn) magicBtn.href = magicBtn.href + '&redirect_uri=' + enc;
+        })();
+    </script>
+</body>
+</html>

@@ -112,6 +112,19 @@ func (r *Registry) ResolveOrDefault(host, serviceID, redirectURI string) *gen.Se
 	return r.Default()
 }
 
+// All returnerer pekere til kopier av alle tjenester i cache.
+// mu.RLock er tilstrekkelig — read-only operasjon.
+func (r *Registry) All() []*gen.Service {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make([]*gen.Service, len(r.cache))
+	for i := range r.cache {
+		s := r.cache[i] // kopier verdi slik at peker er stabil utenfor låsen
+		result[i] = &s
+	}
+	return result
+}
+
 // IsAllowedCallback sjekker om uri matcher en av tjenestens registrerte callback-URLer.
 func (r *Registry) IsAllowedCallback(svc *gen.Service, uri string) bool {
 	if svc == nil || uri == "" {

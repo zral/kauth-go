@@ -26,9 +26,9 @@ func (s *stubRefreshDB) InsertRefreshToken(_ context.Context, p gen.InsertRefres
 	return nil
 }
 
-func (s *stubRefreshDB) ConsumeRefreshToken(_ context.Context, hash, now string) (gen.RefreshToken, error) {
+func (s *stubRefreshDB) ConsumeRefreshToken(_ context.Context, arg gen.ConsumeRefreshTokenParams) (gen.RefreshToken, error) {
 	for i, t := range s.tokens {
-		if t.TokenHash == hash {
+		if t.TokenHash == arg.TokenHash {
 			if t.Revoked != 0 { return gen.RefreshToken{}, fmt.Errorf("tilbakekalt") }
 			prev := s.tokens[i]
 			s.tokens[i].Used = 1

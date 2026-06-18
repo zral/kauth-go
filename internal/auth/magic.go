@@ -74,8 +74,17 @@ func NewMagicHandlers(cfg config.Config, q *gen.Queries, m *mail.Service, iss *t
 // ShowForm — GET /magic-login
 func (h *MagicHandlers) ShowForm(w http.ResponseWriter, r *http.Request) {
 	svc := h.reg.ResolveOrDefault(r.Host, r.URL.Query().Get("service"), "")
+	var logoHTML template.HTML
+	if svc.LogoHtml != nil {
+		logoHTML = template.HTML(*svc.LogoHtml) // #nosec G203 — validert ved insert
+	}
+	data := LoginPageData{
+		Service:  svc,
+		LogoHTML: logoHTML,
+		Error:    r.URL.Query().Get("error"),
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.tmpl.ExecuteTemplate(w, "magic-login.html", map[string]any{"Service": svc, "ServiceID": svc.ID})
+	_ = h.tmpl.ExecuteTemplate(w, "magic-login.html", data)
 }
 
 // RequestLink — POST /magic-login
@@ -89,7 +98,11 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 	}()
 	_ = r.ParseForm()
 	email := r.FormValue("email")
-	serviceID := r.FormValue("service_id")
+	// Leser "service" (ny template) med fallback til "service_id" (gammel form)
+	serviceID := r.FormValue("service")
+	if serviceID == "" {
+		serviceID = r.FormValue("service_id")
+	}
 	svc := h.reg.ResolveOrDefault(r.Host, serviceID, "")
 
 	if !h.rl.Allow(email) {
