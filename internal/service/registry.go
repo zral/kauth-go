@@ -41,7 +41,22 @@ func (r *Registry) Resolve(host, serviceID, redirectURI string) *gen.Service {
 	services := r.cache
 	r.mu.RUnlock()
 
-	// 1. Host-header mot auth_host
+	// 1. Eksakt redirect_uri host == service.domain — vinner over auth_host.
+	// (Wire/sub-tjenester deler auth-host med foreldretjenesten; redirect_uri
+	// peker presist på riktig service.)
+	if redirectURI != "" {
+		if u, err := url.Parse(redirectURI); err == nil && u.Host != "" {
+			hostLc := strings.ToLower(u.Host)
+			for i := range services {
+				if strings.ToLower(services[i].Domain) == hostLc {
+					svc := services[i]
+					return &svc
+				}
+			}
+		}
+	}
+
+	// 2. Host-header mot auth_host
 	if host != "" {
 		hostLc := strings.ToLower(host)
 		for i := range services {
@@ -53,7 +68,7 @@ func (r *Registry) Resolve(host, serviceID, redirectURI string) *gen.Service {
 		}
 	}
 
-	// 2. Eksplisitt service-ID
+	// 3. Eksplisitt service-ID
 	if serviceID != "" {
 		for i := range services {
 			if services[i].ID == serviceID {
@@ -63,7 +78,7 @@ func (r *Registry) Resolve(host, serviceID, redirectURI string) *gen.Service {
 		}
 	}
 
-	// 3. redirect_uri host mot domain (lengste match vinner)
+	// 4. redirect_uri host suffix-match mot domain (lengste vinner — sub-domener)
 	if redirectURI != "" {
 		u, err := url.Parse(redirectURI)
 		if err == nil && u.Host != "" {
@@ -71,7 +86,7 @@ func (r *Registry) Resolve(host, serviceID, redirectURI string) *gen.Service {
 			var best *gen.Service
 			for i := range services {
 				domLc := strings.ToLower(services[i].Domain)
-				if hostLc == domLc || strings.HasSuffix(hostLc, "."+domLc) {
+				if strings.HasSuffix(hostLc, "."+domLc) {
 					if best == nil || len(domLc) > len(strings.ToLower(best.Domain)) {
 						svc := services[i]
 						best = &svc
