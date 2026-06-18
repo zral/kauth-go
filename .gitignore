@@ -1,0 +1,15 @@
+# Build-artifakter
+bin/
+/kauth
+/kauth-arm64
+/migrate-h2
+
+# Lokal data
+*.db
+*.db-shm
+*.db-wal
+data/
+secrets/
+
+# Logger
+*.log
