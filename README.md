@@ -2,9 +2,9 @@
 
 Lettvekts OIDC-identitetsprovider i Go. Erstatter Keycloak / Zitadel for små til mellomstore organisasjoner som vil ha sentral innlogging uten å sette av en virtuell maskin til oppgaven.
 
-En statisk binær på ~14 MB. Lever på en Raspberry Pi 5 med ~25 MB RAM i drift. SQLite for lagring, RS256-signerte JWT-er for utstedelse, og Cloudflare Tunnel foran for TLS og DDoS-skjerming.
+En statisk binær på ~14 MB. Lever godt med ~25 MB RAM i drift. SQLite for lagring, RS256-signerte JWT-er for utstedelse, og Cloudflare Tunnel foran for TLS og DDoS-skjerming.
 
-Brukes i produksjon på `auth.klarsyn.net`, `auth.spekto.live` og `auth.lilleklo.work`.
+Brukes i produksjon på en rekke tjenester.
 
 ## Hva kauth gjør
 
@@ -198,4 +198,4 @@ Det viktigste han bidro med var likevel premisset og drivet: at vi skulle ha noe
 
 ## Lisens
 
-Bruk som du vil. Hvis du gjør noe lurt eller fanger en bug, send en PR.
+[MIT](LICENSE). Bruk som du vil. Hvis du gjør noe lurt eller fanger en bug, send en PR.
