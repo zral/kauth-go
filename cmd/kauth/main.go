@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"html/template"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -119,8 +123,35 @@ func main() {
 
 	// Admin — se Task 14 for fullstendig admin-routing
 
-	log.Printf("kauth lytter på :%s (issuer: %s)\n", cfg.HTTPPort, cfg.Issuer)
-	if err := http.ListenAndServe(":"+cfg.HTTPPort, r); err != nil {
-		log.Fatalf("server krasjet: %v", err)
+	srv := &http.Server{
+		Addr:              ":" + cfg.HTTPPort,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("kauth lytter på :%s (issuer: %s)", cfg.HTTPPort, cfg.Issuer)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Println("mottok shutdown-signal, stenger ned …")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("nedstengning feilet: %v", err)
+		}
+	case err := <-errCh:
+		if err != nil {
+			log.Fatalf("server-feil: %v", err)
+		}
 	}
 }
