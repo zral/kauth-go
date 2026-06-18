@@ -3,6 +3,7 @@ module github.com/zral/kauth-go
 go 1.25.7
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/stretchr/testify v1.11.1
 	modernc.org/sqlite v1.52.0
