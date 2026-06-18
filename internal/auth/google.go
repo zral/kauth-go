@@ -108,7 +108,10 @@ func (h *GoogleHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) 
 		Email string `json:"email"`
 		Name  string `json:"name"`
 	}
-	_ = idToken.Claims(&cl)
+	if err := idToken.Claims(&cl); err != nil {
+		http.Error(w, "kunne ikke lese claims", http.StatusUnauthorized)
+		return
+	}
 	user, err := h.findOrCreate(ctx, cl.Email, cl.Name, svc)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -119,8 +122,16 @@ func (h *GoogleHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ip, ua := ClientIP(r), r.Header.Get("User-Agent")
-	at, _ := h.issuer.IssueAccess(user, *svc)
-	rt, _ := h.refresh.Issue(ctx, user, *svc, ip, ua)
+	at, err := h.issuer.IssueAccess(user, *svc)
+	if err != nil {
+		http.Error(w, "kunne ikke utstede token", http.StatusInternalServerError)
+		return
+	}
+	rt, err := h.refresh.Issue(ctx, user, *svc, ip, ua)
+	if err != nil {
+		http.Error(w, "kunne ikke utstede refresh-token", http.StatusInternalServerError)
+		return
+	}
 	setAuthCookies(w, svc, at, rt)
 	clearCookie(w, "oidc_state")
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
