@@ -14,5 +14,11 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/kauth
 
+# Minnebegrensning: GOMEMLIMIT lar Go GC-e seg ned før cgroup-taket nås,
+# slik at MemoryMax sjelden utløser OOM-kill. Tomgang ~21 MB, last ~30-50 MB.
+Environment=GOMEMLIMIT=96MiB
+MemoryHigh=112M
+MemoryMax=128M
+
 [Install]
 WantedBy=multi-user.target
