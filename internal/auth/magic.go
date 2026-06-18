@@ -185,6 +185,19 @@ func ClientIP(r *http.Request) string {
 	return audit.ExtractIP(r.Header.Get("CF-Connecting-IP"), r.Header.Get("X-Forwarded-For"), r.RemoteAddr)
 }
 
+// clearCookie expires a cookie by name. Temporary helper; Task 10 will consolidate.
+func clearCookie(w http.ResponseWriter, name string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
 // setAuthCookies sets auth cookies — proper plumbing in Task 10/11.
 func setAuthCookies(w http.ResponseWriter, svc *gen.Service, accessToken, refreshToken string) {
 	http.SetCookie(w, &http.Cookie{
