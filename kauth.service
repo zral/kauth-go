@@ -1,0 +1,17 @@
+[Unit]
+Description=kauth identity provider
+After=network.target
+
+[Service]
+Type=simple
+User=kauth
+EnvironmentFile=/etc/kauth/env
+ExecStart=/usr/local/bin/kauth
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/kauth
+
+[Install]
+WantedBy=multi-user.target
