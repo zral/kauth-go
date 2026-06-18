@@ -4,15 +4,15 @@ After=network.target
 
 [Service]
 Type=simple
-User=kauth
-EnvironmentFile=/etc/kauth/env
-WorkingDirectory=/var/lib/kauth
-ExecStart=/usr/local/bin/kauth
+User=lars
+EnvironmentFile=/home/lars/kauth-go/.env
+WorkingDirectory=/home/lars/kauth-go
+ExecStart=/home/lars/kauth-go/bin/kauth-arm64
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/kauth
+ReadWritePaths=/home/lars/kauth-go/data /home/lars/kauth-go/static
 
 # Minnebegrensning: GOMEMLIMIT lar Go GC-e seg ned før cgroup-taket nås,
 # slik at MemoryMax sjelden utløser OOM-kill. Tomgang ~21 MB, last ~30-50 MB.

@@ -1,3 +1,6 @@
+# Hemmeligheter
+.env
+
 # Build-artifakter
 bin/
 /kauth
