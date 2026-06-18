@@ -160,7 +160,7 @@ Når vi flytter all autentisering til Google, Microsoft og e-postbaserte engangs
 
 - **Vi outsourcer den vanskelige delen.** Identitetsleverandørene har sikkerhetsbudsjett vi ikke har. De ruller ut FIDO2, anomali-deteksjon, device-binding og phishing-resistans uten at vi løfter en finger. Det er en god deal.
 - **Vi fjerner friksjon der det betyr noe.** Magic-link tar 12 sekunder. Google-knappen er to klikk. Ingen glemte passord, ingen reset-mail-er, ingen "passordet ditt utløper om 14 dager". Brukerne får mer tid til det de egentlig skulle gjøre.
-- **Vi tar en politisk posisjon.** Å droppe passord er en uttalelse om hva vi mener autentisering bør være i 2026. Det signaliserer til brukerne — og til oss selv — at vi velger den moderne veien selv når det er litt ubehagelig. Det er enklere å holde linja når den er trukket.
+- **Vi tar en politisk posisjon.** Å droppe passord er en uttalelse om hva vi mener autentisering bør være i 2026. Det signaliserer til brukerne — og til oss selv — at vi velger den moderne veien selv når det er litt ubehagelig. Det er enklere å holde linjen når den er trukket.
 
 Det er fortsatt edge cases. En engangsbruker som ikke har Google og ikke vil oppgi e-post er én av dem. Vi løser dem som engasjementer, ikke som arkitektur.
 
