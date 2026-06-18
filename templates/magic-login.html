@@ -10,11 +10,7 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             margin: 0; min-height: 100vh;
             display: flex; align-items: center; justify-content: center;
-            {{if eq .Service.Theme "dark"}}
-            background: {{if .Service.BgCss}}{{.Service.BgCss}}{{else}}#09090B{{end}};
-            {{else}}
-            background: url('{{if .Service.BgImage}}{{.Service.BgImage}}{{else}}/fjord-dawn.jpg{{end}}') center/cover no-repeat fixed;
-            {{end}}
+            background: {{.BodyBgCSS}};
         }
         {{if eq .Service.Theme "dark"}}
         body::before {
@@ -32,6 +28,10 @@
             padding: 2.5rem 2rem; width: 100%; max-width: 380px; margin: 1rem; position: relative;
         }
         .logo { text-align: center; margin-bottom: {{if eq .Service.Theme "dark"}}2rem{{else}}1.5rem{{end}}; }
+        .logo-row {
+            display: flex; align-items: center; justify-content: center; gap: .6rem;
+        }
+        .logo-row svg { width: 36px; height: 36px; }
         .logo h1 {
             font-size: {{if eq .Service.Theme "dark"}}1.75rem{{else}}1.5rem{{end}};
             font-weight: {{if eq .Service.Theme "dark"}}800{{else}}700{{end}};
@@ -87,6 +87,9 @@
             font-size: .9rem; text-decoration: none;
             {{if eq .Service.Theme "dark"}}color: #71717A;{{else}}color: #475569;{{end}}
         }
+        .back:hover {
+            {{if eq .Service.Theme "dark"}}color: #A1A1AA;{{else}}color: #1e40af;{{end}}
+        }
         .confirm { display: none; text-align: center; }
         .confirm .icon { font-size: 2.5rem; margin-bottom: 1rem; }
         .confirm h2 {
@@ -106,9 +109,12 @@
 <body>
     <div class="card">
         <div class="logo">
-            {{if .LogoHTML}}<div style="display:flex;align-items:center;justify-content:center;gap:.6rem;">
-                {{.LogoHTML}}<h1>{{.Service.DisplayName}}</h1>
-            </div>{{else}}
+            {{if .LogoHTML}}
+            <div class="logo-row">
+                {{.LogoHTML}}
+                <h1>{{.Service.DisplayName}}</h1>
+            </div>
+            {{else}}
             <h1>{{.Service.DisplayName}}</h1>
             {{end}}
             <p>Logg inn med e-postlenke</p>

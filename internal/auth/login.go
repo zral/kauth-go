@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 
@@ -14,6 +15,35 @@ type LoginPageData struct {
 	LogoHTML    template.HTML // konvertert fra Service.LogoHtml — rå HTML, ikke escaped
 	RedirectURI string
 	Error       string
+	// BodyBgCSS er ferdig-beregnet CSS background-verdi for body-elementet.
+	// Brukes i <style>-blokken der Go html/template blokkerer dynamisk url()-konstruksjon.
+	// Trust boundary: verdien er sammensatt fra DB-felter (BgCss, BgImage) med fast /static/-prefix.
+	BodyBgCSS template.CSS
+	// BeforeBgCSS er ferdig-beregnet CSS background-verdi for body::before (mørkt tema).
+	BeforeBgCSS template.CSS
+}
+
+// buildBgCSS beregner CSS background-verdier for BodyBgCSS og BeforeBgCSS.
+// bgImage er DB-verdi som "/fjord-dawn.jpg" (uten /static/-prefix — prefix legges til her).
+// bgCss er DB-verdi som "#09090B" (brukes bare ved mørkt tema).
+func buildBgCSS(theme string, bgImage *string, bgCss *string) (bodyCss, beforeCss template.CSS) {
+	if theme == "dark" {
+		if bgCss != nil && *bgCss != "" {
+			bodyCss = template.CSS(*bgCss)
+		} else {
+			bodyCss = "#09090B"
+		}
+		if bgImage != nil && *bgImage != "" {
+			beforeCss = template.CSS(fmt.Sprintf("url('/static%s') center/cover no-repeat", *bgImage))
+		}
+	} else {
+		img := "/fjord-dawn.jpg"
+		if bgImage != nil && *bgImage != "" {
+			img = *bgImage
+		}
+		bodyCss = template.CSS(fmt.Sprintf("url('/static%s') center/cover no-repeat fixed", img))
+	}
+	return
 }
 
 // LoginHandler rendrer login-siden.
@@ -43,11 +73,14 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		logoHTML = template.HTML(*svc.LogoHtml) // #nosec G203
 	}
 
+	bodyCss, beforeCss := buildBgCSS(svc.Theme, svc.BgImage, svc.BgCss)
 	data := LoginPageData{
 		Service:     svc,
 		LogoHTML:    logoHTML,
 		RedirectURI: redirectURI,
 		Error:       r.URL.Query().Get("error"),
+		BodyBgCSS:   bodyCss,
+		BeforeBgCSS: beforeCss,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

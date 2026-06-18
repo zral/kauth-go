@@ -82,10 +82,13 @@ func (h *MagicHandlers) ShowForm(w http.ResponseWriter, r *http.Request) {
 		// applied here; admin-side validation is the proper control.
 		logoHTML = template.HTML(*svc.LogoHtml) // #nosec G203
 	}
+	bodyCss, beforeCss := buildBgCSS(svc.Theme, svc.BgImage, svc.BgCss)
 	data := LoginPageData{
-		Service:  svc,
-		LogoHTML: logoHTML,
-		Error:    r.URL.Query().Get("error"),
+		Service:     svc,
+		LogoHTML:    logoHTML,
+		Error:       r.URL.Query().Get("error"),
+		BodyBgCSS:   bodyCss,
+		BeforeBgCSS: beforeCss,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = h.tmpl.ExecuteTemplate(w, "magic-login.html", data)
