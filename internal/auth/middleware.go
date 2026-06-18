@@ -33,8 +33,9 @@ func ClientIP(r *http.Request) string {
 	return ""
 }
 
-// CORSMiddleware setter Access-Control-Allow-* headere for tillatte origins.
-// Tom origins-liste betyr ingen CORS-headere. "*" tillater alle origins.
+// CORSMiddleware setter Access-Control-Allow-* headere når origin matcher allowlisten.
+// Tom origins-liste betyr ingen CORS-headere — ingen wildcard-fallback.
+// "*" i listen tillater alle origins eksplisitt.
 func CORSMiddleware(origins []string) func(http.Handler) http.Handler {
 	allowed := make(map[string]bool)
 	for _, o := range origins {
@@ -43,9 +44,10 @@ func CORSMiddleware(origins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			if len(allowed) == 0 || allowed["*"] || allowed[origin] {
+			if origin != "" && (allowed["*"] || allowed[origin]) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Vary", "Origin")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			}
