@@ -158,6 +158,8 @@ func main() {
 		r.Post("/login", adminAuthH.HandleLoginPost)
 		r.Get("/verify", adminAuthH.HandleVerify)
 		r.Get("/logout", adminAuthH.HandleLogout)
+		r.Get("/google-init", adminAuthH.HandleGoogleInitiate)
+		r.Get("/google-callback", adminAuthH.HandleGoogleCallback)
 
 		// Beskyttede admin-ruter
 		r.Group(func(r chi.Router) {
