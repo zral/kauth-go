@@ -192,7 +192,9 @@ make deploy   # cross-compiler til arm64, scp + systemctl restart
 
 ## Tribute
 
-Denne porten står på skuldrene til [Kjetil Salo](https://github.com/kjetil-salo), som laget den originale kauth i Quarkus. JWT-utstederen, magic-link-flyten, Microsoft OIDC, første versjon av admin-panelet og H2-støtten er hans arbeid. Det datadrevne service-config-konseptet og refresh-token-rotasjonen med family-revocation kom til underveis. Go-versjonen er en port, ikke en ny idé.
+Denne porten står på skuldrene til [Kjetil Salo](https://github.com/kjetil-salo), som laget den originale kauth i Quarkus. JWT-utstederen, magic-link-flyten, Microsoft OIDC, første versjon av admin-panelet og H2-støtten er hans arbeid. Det datadrevne service-config-konseptet og refresh-token-rotasjonen med family-revocation kom til underveis.
+
+Det viktigste han bidro med var likevel premisset og drivet: at vi skulle ha noe enkelt og sikkert som ikke var en Keycloak eller Zitadel-dinosaur. Hele eksistensen til kauth henger på den ideen, og at Kjetil tok initiativet til å bygge den. Go-versjonen er en port, ikke en ny idé.
 
 ## Lisens
 
