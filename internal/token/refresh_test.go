@@ -2,7 +2,7 @@ package token_test
 
 import (
 	"context"
-	"fmt"
+	"database/sql"
 	"testing"
 
 	"github.com/zral/kauth-go/internal/audit"
@@ -29,16 +29,24 @@ func (s *stubRefreshDB) InsertRefreshToken(_ context.Context, p gen.InsertRefres
 func (s *stubRefreshDB) ConsumeRefreshToken(_ context.Context, arg gen.ConsumeRefreshTokenParams) (gen.RefreshToken, error) {
 	for i, t := range s.tokens {
 		if t.TokenHash == arg.TokenHash {
-			if t.Revoked != 0 { return gen.RefreshToken{}, fmt.Errorf("tilbakekalt") }
-			prev := s.tokens[i]
+			// Real SQL filters: used=0 AND revoked=0 AND expires_at > ?
+			if t.Used != 0 || t.Revoked != 0 {
+				return gen.RefreshToken{}, sql.ErrNoRows
+			}
 			s.tokens[i].Used = 1
-			// returner pre-oppdatert alltid:
-			// - første kall: prev.Used=0 → Rotate ser valid token
-			// - gjenbruk: prev.Used=1 → Rotate oppdager reuse
-			return prev, nil
+			return t, nil // return pre-update row (valid token, just marked used)
 		}
 	}
-	return gen.RefreshToken{}, fmt.Errorf("ikke funnet")
+	return gen.RefreshToken{}, sql.ErrNoRows
+}
+
+func (s *stubRefreshDB) GetRefreshTokenByHash(_ context.Context, hash string) (gen.RefreshToken, error) {
+	for _, t := range s.tokens {
+		if t.TokenHash == hash {
+			return t, nil
+		}
+	}
+	return gen.RefreshToken{}, sql.ErrNoRows
 }
 
 func (s *stubRefreshDB) RevokeFamilyTokens(_ context.Context, p gen.RevokeFamilyTokensParams) error {

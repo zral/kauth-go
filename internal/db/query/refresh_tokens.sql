@@ -22,3 +22,6 @@ WHERE expires_at < ?
 
 -- name: CountRefreshTokens :one
 SELECT COUNT(*) FROM refresh_tokens;
+
+-- name: GetRefreshTokenByHash :one
+SELECT * FROM refresh_tokens WHERE token_hash = ? LIMIT 1;

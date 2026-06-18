@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -23,6 +24,7 @@ type RotationResult struct{ NewToken, Email, FamilyID string }
 type RefreshQuerier interface {
 	InsertRefreshToken(ctx context.Context, params gen.InsertRefreshTokenParams) error
 	ConsumeRefreshToken(ctx context.Context, arg gen.ConsumeRefreshTokenParams) (gen.RefreshToken, error)
+	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (gen.RefreshToken, error)
 	RevokeFamilyTokens(ctx context.Context, params gen.RevokeFamilyTokensParams) error
 }
 
@@ -125,22 +127,31 @@ func (s *RefreshService) Rotate(ctx context.Context, plainToken, ip, ua string) 
 		ExpiresAt: now.Format(time.RFC3339),
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// ErrNoRows means: token not found, OR used=1, OR revoked=1, OR expired.
+			// Look up the row unconditionally to distinguish reuse from unknown token.
+			existing, fetchErr := s.db.GetRefreshTokenByHash(ctx, hash)
+			if fetchErr == nil {
+				if existing.Used != 0 {
+					// REPLAY DETECTED: revoke the whole family.
+					reason := "reuse_detected"
+					_ = s.db.RevokeFamilyTokens(ctx, gen.RevokeFamilyTokensParams{
+						RevokedReason: &reason,
+						FamilyID:      existing.FamilyID,
+					})
+					s.audit.Log(ctx, audit.Event{
+						Type: "refresh_token_reuse", Email: existing.Email,
+						IP: ip, UA: ua, Success: false,
+					})
+					return nil, ErrTokenReuse
+				}
+				// Revoked or expired — treat as revoked/invalid.
+				return nil, ErrTokenRevoked
+			}
+			// Truly unknown token.
+			return nil, ErrTokenRevoked
+		}
 		return nil, fmt.Errorf("consume token: %w", err)
-	}
-
-	// PLAN GAP: real-SQL ConsumeRefreshToken filters WHERE used = 0 AND revoked = 0,
-	// so on replay this query returns sql.ErrNoRows and these branches never fire.
-	// Family-revocation requires a separate GetRefreshTokenByHash query that ignores
-	// the used/revoked flags. Tracked as deferred plan gap from Tasks 5 + 9 reviews.
-	if consumed.Used != 0 {
-		// Gjenbruksdeteksjon — tilbakekall hele familien
-		reason := "reuse_detected"
-		_ = s.db.RevokeFamilyTokens(ctx, gen.RevokeFamilyTokensParams{RevokedReason: &reason, FamilyID: consumed.FamilyID})
-		s.audit.Log(ctx, audit.Event{Type: "refresh_token_reuse", Email: consumed.Email, IP: ip, UA: ua, Success: false})
-		return nil, ErrTokenReuse
-	}
-	if consumed.Revoked != 0 {
-		return nil, ErrTokenRevoked
 	}
 
 	newPlain, err := generatePlainToken()

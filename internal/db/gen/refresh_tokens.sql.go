@@ -70,6 +70,32 @@ func (q *Queries) DeleteExpiredRefreshTokens(ctx context.Context, arg DeleteExpi
 	return err
 }
 
+const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
+SELECT id, token_hash, email, service_id, family_id, parent_id, created_at, expires_at, family_expires_at, used, revoked, revoked_reason, ip_address, user_agent FROM refresh_tokens WHERE token_hash = ? LIMIT 1
+`
+
+func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
+	row := q.db.QueryRowContext(ctx, getRefreshTokenByHash, tokenHash)
+	var i RefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.Email,
+		&i.ServiceID,
+		&i.FamilyID,
+		&i.ParentID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.FamilyExpiresAt,
+		&i.Used,
+		&i.Revoked,
+		&i.RevokedReason,
+		&i.IpAddress,
+		&i.UserAgent,
+	)
+	return i, err
+}
+
 const insertRefreshToken = `-- name: InsertRefreshToken :exec
 INSERT INTO refresh_tokens
     (token_hash, email, service_id, family_id, parent_id,
