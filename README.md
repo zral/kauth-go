@@ -154,6 +154,8 @@ Argumentet er ikke at passord er teknisk umulig, eller at magic-link er kvalitat
 
 Forskjellen ligger i hvor mange uavhengige credentials vi forvalter per bruker. Passord + e-post-recovery = to credentials, to lekkasje-veier, to phishing-scenarier. Bare e-post = én credential, samme angrepsflate, men ingen tilleggsrisiko fra passord-laget — gjenbruk på tvers av tjenester, dårlige hash-algoritmer, lekkede passordbaser, reset-flyter som glipper. Færre lag, mindre overflate.
 
+Og passord skalerer dårlig på tvers av tjenester. Jo flere tjenester en bruker må holde styr på, jo mer sannsynlig er det at samme passord brukes på alle. Det betyr at vår tjeneste plutselig deler skjebne med den svakeste passord-lagringen i hele økosystemet brukeren er innom — uavhengig av hvor pedantiske vi er med bcrypt og rotasjon. Hver gang vi krever et nytt passord, bidrar vi marginalt til dette problemet. Den marginalbidragsmuligheten vil vi ikke ha.
+
 Når vi flytter all autentisering til Google, Microsoft og e-postbaserte engangslenker, gjør vi tre ting samtidig:
 
 - **Vi outsourcer den vanskelige delen.** Identitetsleverandørene har sikkerhetsbudsjett vi ikke har. De ruller ut FIDO2, anomali-deteksjon, device-binding og phishing-resistans uten at vi løfter en finger. Det er en god deal.
