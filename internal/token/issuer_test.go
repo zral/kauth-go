@@ -95,7 +95,37 @@ func TestJWKSHandler_ReturnsJSON(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&jwks); err != nil {
 		t.Fatalf("JWKS er ikke gyldig JSON: %v", err)
 	}
-	if _, ok := jwks["keys"]; !ok {
-		t.Error("JWKS mangler 'keys'-felt")
+	keysRaw, ok := jwks["keys"]
+	if !ok {
+		t.Fatalf("JWKS mangler 'keys'-felt")
+	}
+	keysSlice, ok := keysRaw.([]any)
+	if !ok {
+		t.Fatalf("JWKS 'keys' er ikke et array, fikk %T", keysRaw)
+	}
+	if len(keysSlice) == 0 {
+		t.Fatalf("JWKS 'keys' er tomt array, forventet minst ett element")
+	}
+	firstKey, ok := keysSlice[0].(map[string]any)
+	if !ok {
+		t.Fatalf("JWKS første nøkkel er ikke et objekt, fikk %T", keysSlice[0])
+	}
+	if v, _ := firstKey["kty"].(string); v != "RSA" {
+		t.Errorf("forventet kty=RSA, fikk %q", v)
+	}
+	if v, _ := firstKey["alg"].(string); v != "RS256" {
+		t.Errorf("forventet alg=RS256, fikk %q", v)
+	}
+	if v, _ := firstKey["use"].(string); v != "sig" {
+		t.Errorf("forventet use=sig, fikk %q", v)
+	}
+	if v, _ := firstKey["kid"].(string); v == "" {
+		t.Errorf("forventet ikke-tomt kid-felt")
+	}
+	if v, _ := firstKey["n"].(string); v == "" {
+		t.Errorf("forventet ikke-tomt n-felt (RSA modulus)")
+	}
+	if v, _ := firstKey["e"].(string); v == "" {
+		t.Errorf("forventet ikke-tomt e-felt (RSA eksponent)")
 	}
 }
