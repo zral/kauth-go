@@ -91,6 +91,25 @@ Felter du nesten alltid setter:
 
 Når raden er på plass, peker du tjenestens login-flyt mot `https://<auth_host>/login?redirect_uri=https://<din-app>/auth/callback`. Resten ordner kauth.
 
+### Bakgrunnsbilde
+
+Legg bildet i `static/`-katalogen og deploy:
+
+```bash
+cp polaris-hero.jpg static/
+git add static/polaris-hero.jpg
+git commit -m "feat(static): bakgrunnsbilde for polaris"
+make deploy
+```
+
+Sett deretter `bg_image` på service-raden:
+
+```sql
+UPDATE services SET bg_image = '/polaris-hero.jpg' WHERE id = 'polaris';
+```
+
+Login-templaten setter automatisk `background: url('/static/polaris-hero.jpg') center/cover no-repeat fixed`. Innholdet på `static/` serves på `/static/`-prefiks. Bilder bør være under 1 MB — webp eller komprimert jpeg gir best vekt-til-kvalitet.
+
 ## Sette opp Google OIDC
 
 Per tjeneste, eller globalt for alle. Per tjeneste anbefales hvis tjenestene tilhører ulike domener — Google krever at redirect-URI-en er hvitlistet på OAuth-klienten.
@@ -131,7 +150,9 @@ Sett `auth_magic_link = 1` på tjenesten. Brukeren får en lenke med 15 minutter
 
 kauth støtter passord — feltet finnes, koden er der — men det er av som standard, og vi anbefaler å la det stå sånn.
 
-Argumentet er ikke at passord er teknisk umulig. Argumentet er at hvert passord er en risiko vi ikke trenger å ta. Brukere gjenbruker dem. De fiskes. De lekker i hopetall fra andre tjenester og rammer din om e-posten matcher. Hver passordreset-flyt er en angrepsflate — særlig den naive "send link på e-post"-varianten, som forresten er identisk med magic-link bare med et ekstra skritt på toppen.
+Argumentet er ikke at passord er teknisk umulig, eller at magic-link er kvalitativt sterkere kryptografi. Magic-link og "send reset-link" har samme grunnleggende risikomodell — hvis e-postkontoen kompromitteres, er begge tapt. Phishing fungerer mot begge.
+
+Forskjellen ligger i hvor mange uavhengige credentials vi forvalter per bruker. Passord + e-post-recovery = to credentials, to lekkasje-veier, to phishing-scenarier. Bare e-post = én credential, samme angrepsflate, men ingen tilleggsrisiko fra passord-laget — gjenbruk på tvers av tjenester, dårlige hash-algoritmer, lekkede passordbaser, reset-flyter som glipper. Færre lag, mindre overflate.
 
 Når vi flytter all autentisering til Google, Microsoft og e-postbaserte engangslenker, gjør vi tre ting samtidig:
 
