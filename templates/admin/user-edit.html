@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .IsNew}}Ny bruker{{else}}Rediger bruker{{end}} — kauth Admin</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; }
+        nav { background: #1e293b; padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; }
+        nav a { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
+        nav .spacer { flex: 1; }
+        main { padding: 1.5rem; max-width: 540px; margin: 0 auto; }
+        h1 { font-size: 1.25rem; margin: 0 0 1.5rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.375rem; }
+        input[type=email], input[type=text], input[type=password] {
+            width: 100%; box-sizing: border-box; padding: 0.6rem 0.75rem;
+            border-radius: 6px; border: 1px solid #334155; background: #0f172a;
+            color: #e2e8f0; font-size: 0.9rem;
+        }
+        .hint { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
+        .btn { padding: 0.5rem 1rem; border-radius: 5px; border: none; font-size: 0.9rem; cursor: pointer; text-decoration: none; }
+        .btn-primary { background: #3b82f6; color: #fff; }
+        .btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+        .actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+        .msg.err { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #7f1d1d; color: #fca5a5; font-size: 0.875rem; }
+    </style>
+</head>
+<body>
+<nav>
+    <strong style="color:#f1f5f9">kauth admin</strong>
+    <a href="/admin/users">Brukere</a>
+    <a href="/admin/audit">Auditlogg</a>
+    <a href="/admin/services">Tjenester</a>
+    <span class="spacer"></span>
+    <a href="/admin/logout">Logg ut</a>
+</nav>
+<main>
+    <h1>{{if .IsNew}}Ny bruker{{else}}Rediger {{.User.Email}}{{end}}</h1>
+    {{if .Error}}<div class="msg err">{{.Error}}</div>{{end}}
+    <form method="POST" action="{{if .IsNew}}/admin/users{{else}}/admin/users/{{.User.ID}}{{end}}">
+        {{if .IsNew}}
+        <div class="form-group">
+            <label for="email">E-postadresse *</label>
+            <input type="email" id="email" name="email" required value="{{.FormEmail}}">
+        </div>
+        <div class="form-group">
+            <label for="password">Passord</label>
+            <input type="password" id="password" name="password" autocomplete="new-password">
+            <p class="hint">La stå tom for OIDC-bare-brukere (passord settes til NULL).</p>
+        </div>
+        {{end}}
+        <div class="form-group">
+            <label for="name">Navn</label>
+            <input type="text" id="name" name="name" value="{{if .User.Name}}{{.User.Name}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label for="roles">Roller</label>
+            <input type="text" id="roles" name="roles" value="{{.User.Roles}}" placeholder="bruker,kong">
+            <p class="hint">Kommaseparerte roller. «kong» gir admin-tilgang.</p>
+        </div>
+        <div class="form-group">
+            <label for="orgs">Orgs</label>
+            <input type="text" id="orgs" name="orgs" value="{{.User.Orgs}}" placeholder="klarsyn,oceanspace">
+            <p class="hint">Kommaseparerte org-slug-er.</p>
+        </div>
+        <div class="actions">
+            <button type="submit" class="btn btn-primary">{{if .IsNew}}Opprett bruker{{else}}Lagre endringer{{end}}</button>
+            <a href="/admin/users" class="btn btn-outline">Avbryt</a>
+        </div>
+    </form>
+</main>
+</body>
+</html>
