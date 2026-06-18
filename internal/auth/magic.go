@@ -76,7 +76,11 @@ func (h *MagicHandlers) ShowForm(w http.ResponseWriter, r *http.Request) {
 	svc := h.reg.ResolveOrDefault(r.Host, r.URL.Query().Get("service"), "")
 	var logoHTML template.HTML
 	if svc.LogoHtml != nil {
-		logoHTML = template.HTML(*svc.LogoHtml) // #nosec G203 — validert ved insert
+		// Stored HTML rendered raw. Trust boundary: only admins with the konge role
+		// can set svc.LogoHtml (see admin/services.go). Compromised admin = stored XSS
+		// on every login page for that service. Sanitisation is intentionally not
+		// applied here; admin-side validation is the proper control.
+		logoHTML = template.HTML(*svc.LogoHtml) // #nosec G203
 	}
 	data := LoginPageData{
 		Service:  svc,

@@ -50,10 +50,10 @@ func NewIssuer(priv *rsa.PrivateKey, pub *rsa.PublicKey, issuer string, defaultT
 	}, nil
 }
 
-// parseISO8601Duration konverterer en ISO 8601-varighetsstreng til time.Duration.
+// ParseISO8601Duration konverterer en ISO 8601-varighetsstreng til time.Duration.
 // Støtter P[n]D, PT[n]H, PT[n]M, PT[n]S og kombinasjoner.
 // Måneder (M utenfor T) behandles som 30 dager (tilnærming).
-func parseISO8601Duration(s string) (time.Duration, error) {
+func ParseISO8601Duration(s string) (time.Duration, error) {
 	s = strings.ToUpper(strings.TrimSpace(s))
 	if !strings.HasPrefix(s, "P") {
 		return 0, fmt.Errorf("må starte med P: %s", s)
@@ -148,7 +148,7 @@ func (i *Issuer) sign(claims Claims) (string, error) {
 // Faller tilbake til defaultTTL hvis tjenestens AccessTokenTtl ikke kan tolkes.
 func (i *Issuer) IssueAccess(user gen.User, svc gen.Service) (string, error) {
 	ttl := i.defaultTTL
-	if d, err := parseISO8601Duration(svc.AccessTokenTtl); err == nil && d > 0 {
+	if d, err := ParseISO8601Duration(svc.AccessTokenTtl); err == nil && d > 0 {
 		ttl = d
 	}
 	return i.sign(i.buildClaims(user, ttl, "access"))

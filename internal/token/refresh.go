@@ -85,7 +85,7 @@ func (s *RefreshService) Issue(ctx context.Context, user gen.User, svc gen.Servi
 
 	var familyExpStr *string
 	if svc.RefreshTokenMaxAge != nil && *svc.RefreshTokenMaxAge != "" {
-		d, err := parseISO8601Duration(*svc.RefreshTokenMaxAge)
+		d, err := ParseISO8601Duration(*svc.RefreshTokenMaxAge)
 		if err != nil {
 			return "", fmt.Errorf("tolke RefreshTokenMaxAge: %w", err)
 		}
@@ -128,6 +128,10 @@ func (s *RefreshService) Rotate(ctx context.Context, plainToken, ip, ua string) 
 		return nil, fmt.Errorf("consume token: %w", err)
 	}
 
+	// PLAN GAP: real-SQL ConsumeRefreshToken filters WHERE used = 0 AND revoked = 0,
+	// so on replay this query returns sql.ErrNoRows and these branches never fire.
+	// Family-revocation requires a separate GetRefreshTokenByHash query that ignores
+	// the used/revoked flags. Tracked as deferred plan gap from Tasks 5 + 9 reviews.
 	if consumed.Used != 0 {
 		// Gjenbruksdeteksjon — tilbakekall hele familien
 		reason := "reuse_detected"

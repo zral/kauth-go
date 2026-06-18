@@ -112,7 +112,10 @@ func (h *PasswordHandlers) RefreshToken(w http.ResponseWriter, r *http.Request) 
 	}
 	setAuthCookies(w, svc, at, result.NewToken)
 
-	ttl := parseTTL(svc.AccessTokenTtl, 30*24*time.Hour)
+	ttl, err := token.ParseISO8601Duration(svc.AccessTokenTtl)
+	if err != nil || ttl <= 0 {
+		ttl = 30 * 24 * time.Hour
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"access_token": at,
