@@ -9,17 +9,6 @@ import (
 	"context"
 )
 
-const countRefreshTokens = `-- name: CountRefreshTokens :one
-SELECT COUNT(*) FROM refresh_tokens
-`
-
-func (q *Queries) CountRefreshTokens(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countRefreshTokens)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const consumeRefreshToken = `-- name: ConsumeRefreshToken :one
 UPDATE refresh_tokens
 SET used = 1
@@ -52,6 +41,17 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, arg ConsumeRefreshTok
 		&i.UserAgent,
 	)
 	return i, err
+}
+
+const countRefreshTokens = `-- name: CountRefreshTokens :one
+SELECT COUNT(*) FROM refresh_tokens
+`
+
+func (q *Queries) CountRefreshTokens(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRefreshTokens)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const deleteExpiredRefreshTokens = `-- name: DeleteExpiredRefreshTokens :exec
