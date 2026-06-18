@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"html/template"
@@ -10,12 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
-	"golang.org/x/oauth2"
-	googleOAuth2 "golang.org/x/oauth2/google"
-
 	"github.com/zral/kauth-go/internal/audit"
-	"github.com/zral/kauth-go/internal/auth"
 	"github.com/zral/kauth-go/internal/config"
 	"github.com/zral/kauth-go/internal/db/gen"
 	"github.com/zral/kauth-go/internal/mail"
@@ -244,92 +238,41 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGoogleInitiate — GET /admin/google-init
-// Starter Google OAuth-flyten for admin-innlogging.
+// Redirecter til /social-login med intern redirect_uri slik at dispatcher
+// ruter admin-brukeren til /admin/google-callback etter Google-callback.
+// Bruker vanlig /callback (whitelistet hos Google) — ingen separat OAuth-URL.
 func (h *AuthHandler) HandleGoogleInitiate(w http.ResponseWriter, r *http.Request) {
-	nonce, err := generateToken()
-	if err != nil {
-		http.Error(w, "intern feil", http.StatusInternalServerError)
-		return
-	}
-	state := auth.SignState(h.cfg.OIDCStateSecret, "admin", nonce)
-	oauthCfg := &oauth2.Config{
-		ClientID:    h.cfg.GoogleClientID,
-		Endpoint:    googleOAuth2.Endpoint,
-		RedirectURL: h.cfg.BaseURL + "/admin/google-callback",
-		Scopes:      []string{oidc.ScopeOpenID, "email", "profile"},
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     "admin_oidc_state",
-		Value:    state,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   600,
-	})
-	authURL := oauthCfg.AuthCodeURL(state, oauth2.SetAuthURLParam("prompt", "select_account"))
-	http.Redirect(w, r, authURL, http.StatusFound)
+	http.Redirect(w, r, "/social-login?redirect_uri=/admin/google-callback", http.StatusSeeOther)
 }
 
-// HandleGoogleCallback — GET /admin/google-callback
-// Fullfører Google OAuth-flyten og utsteder admin-token.
+// HandleGoogleCallback — GET /admin/google-callback (intern, ikke OAuth-callback)
+// Leser JWT fra ?token=, verifiserer signatur, sjekker konge-rolle,
+// utsteder admin_token-cookie og redirecter til /admin/users.
 func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	sc, err := r.Cookie("admin_oidc_state")
-	if err != nil || sc.Value != r.URL.Query().Get("state") {
-		http.Redirect(w, r, "/admin/login?err=ugyldig_state", http.StatusSeeOther)
-		return
-	}
-	if _, ok := auth.VerifyState(h.cfg.OIDCStateSecret, sc.Value); !ok {
-		http.Redirect(w, r, "/admin/login?err=ugyldig_state", http.StatusSeeOther)
+	rawToken := r.URL.Query().Get("token")
+	if rawToken == "" {
+		http.Redirect(w, r, "/admin/login?err=ingen_token", http.StatusSeeOther)
 		return
 	}
 
-	oauthCfg := &oauth2.Config{
-		ClientID:     h.cfg.GoogleClientID,
-		ClientSecret: h.cfg.GoogleClientSecret,
-		Endpoint:     googleOAuth2.Endpoint,
-		RedirectURL:  h.cfg.BaseURL + "/admin/google-callback",
-		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
-	}
-	oauth2Token, err := oauthCfg.Exchange(ctx, r.URL.Query().Get("code"))
-	if err != nil {
-		http.Redirect(w, r, "/admin/login?err=token_utveksling_feilet", http.StatusSeeOther)
-		return
-	}
-
-	provider, err := oidc.NewProvider(context.Background(), "https://accounts.google.com")
-	if err != nil {
-		http.Error(w, "OIDC discovery feilet", http.StatusInternalServerError)
-		return
-	}
-	rawIDToken, _ := oauth2Token.Extra("id_token").(string)
-	idToken, err := provider.Verifier(&oidc.Config{ClientID: h.cfg.GoogleClientID}).Verify(ctx, rawIDToken)
+	claims, err := h.issuer.Verify(rawToken)
 	if err != nil {
 		http.Redirect(w, r, "/admin/login?err=ugyldig_token", http.StatusSeeOther)
 		return
 	}
 
-	var cl struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
-	}
-	if err := idToken.Claims(&cl); err != nil {
-		http.Redirect(w, r, "/admin/login?err=ugyldig_token", http.StatusSeeOther)
-		return
-	}
-
-	user, err := h.queries.GetActiveUserByEmail(ctx, cl.Email)
+	user, err := h.queries.GetActiveUserByEmail(ctx, claims.Email)
 	if err != nil || !hasRole(user.Roles, "konge") {
 		h.auditor.Log(ctx, audit.Event{
 			Type:       "admin_google_login",
 			AuthMethod: "google",
-			Email:      cl.Email,
+			Email:      claims.Email,
 			IP:         extractIP(r),
 			UA:         r.UserAgent(),
 			Success:    false,
-			Details:    "ingen tilgang — mangler konge-rolle",
+			Details:    "mangler konge-rolle eller ukjent bruker",
 		})
 		http.Redirect(w, r, "/admin/login?err=ingen_tilgang", http.StatusSeeOther)
 		return
@@ -349,14 +292,6 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(h.cfg.AdminTokenTTL.Seconds()),
-	})
-
-	// Slett OIDC state-cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:   "admin_oidc_state",
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
 	})
 
 	h.auditor.Log(ctx, audit.Event{

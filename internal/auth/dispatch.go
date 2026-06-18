@@ -74,8 +74,20 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		SameSite: http.SameSiteLaxMode,
 	}
 
-	// Nivå 1: eksplisitt redirect_uri fra cookie (allerede validert mot allowlist)
+	// Nivå 1: eksplisitt redirect_uri fra cookie
 	if redirectURI := readRedirectCookie(r); redirectURI != "" {
+		// Intern path (starter med / men ikke //) → ingen allowlist-sjekk nødvendig.
+		// Dobbel-skråstrek (//) ville vært protokoll-relativ URL og potensielt open redirect.
+		if strings.HasPrefix(redirectURI, "/") && !strings.HasPrefix(redirectURI, "//") {
+			http.SetCookie(w, clearRedirectCookie)
+			sep := "?"
+			if strings.Contains(redirectURI, "?") {
+				sep = "&"
+			}
+			http.Redirect(w, r, redirectURI+sep+"token="+url.QueryEscape(jwtToken), http.StatusSeeOther)
+			return
+		}
+		// Ekstern URL → eksisterende allowlist-sjekk
 		allSvcs := h.Registry.All()
 		for _, svc := range allSvcs {
 			if h.Registry.IsAllowedCallback(svc, redirectURI) {

@@ -33,8 +33,24 @@ func NewGoogleHandlers(cfg config.Config, q *gen.Queries, iss *token.Issuer, ref
 	return &GoogleHandlers{cfg: cfg, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud}
 }
 
-// InitiateLogin — GET /oidc-login
+// InitiateLogin — GET /oidc-login eller /social-login
+// Hvis redirect_uri-param er satt, lagres den som cookie slik at /dispatch
+// kan rute brukeren tilbake til riktig intern path etter callback.
 func (h *GoogleHandlers) InitiateLogin(w http.ResponseWriter, r *http.Request) {
+	// Lagre redirect_uri-cookie FØR Google-redirect (Java-mønster)
+	if ru := r.URL.Query().Get("redirect_uri"); ru != "" {
+		secure := os.Getenv("KAUTH_INSECURE_COOKIES") != "true"
+		http.SetCookie(w, &http.Cookie{
+			Name:     "redirect_uri",
+			Value:    url.QueryEscape(ru),
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   600,
+		})
+	}
+
 	svc := h.reg.ResolveOrDefault(r.Host, r.URL.Query().Get("service"), "")
 	if svc.AuthGoogle != 1 {
 		http.Error(w, "Google-innlogging ikke aktivert", http.StatusForbidden)
