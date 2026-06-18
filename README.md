@@ -190,6 +190,10 @@ make deploy   # cross-compiler til arm64, scp + systemctl restart
 - **`internal/db`** — sqlc-generert databaselag mot SQLite (modernc.org/sqlite, CGO-fri).
 - **`internal/jobs`** — bakgrunnsjobber.
 
+## Tribute
+
+Denne porten står på skuldrene til [Kjetil Salo](https://github.com/kjetil-salo), som laget den originale [kauth](https://github.com/kjetil-salo) i Quarkus. Arkitekturen, datamodellen og de fleste designvalgene — fra refresh-rotasjon med family-revocation til datadrevet service-config og admin-panelet — kommer derfra. Go-versjonen er en ren reimplementasjon, ikke en ny idé.
+
 ## Lisens
 
 Bruk som du vil. Hvis du gjør noe lurt eller fanger en bug, send en PR.
