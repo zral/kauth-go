@@ -47,41 +47,67 @@ func (h *UsersHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	if page < 1 {
 		page = 1
 	}
-	offset := int64((page - 1) * usersPerPage)
 
 	var users []gen.User
-	var err error
+	var total int64
 
-	if org != "" {
-		users, err = h.queries.ListUsersByOrg(ctx, gen.ListUsersByOrgParams{
-			Orgs:   "%" + org + "%",
-			Limit:  usersPerPage,
-			Offset: offset,
-		})
+	if search != "" || org != "" {
+		// Hent stor window, filtrer i Go, paginer det filtrerte resultatet.
+		var all []gen.User
+		var err error
+		if org != "" {
+			all, err = h.queries.ListUsersByOrg(ctx, gen.ListUsersByOrgParams{
+				Orgs:   "%" + org + "%",
+				Limit:  1000,
+				Offset: 0,
+			})
+		} else {
+			all, err = h.queries.ListUsers(ctx, gen.ListUsersParams{
+				Limit:  1000,
+				Offset: 0,
+			})
+		}
+		if err != nil {
+			http.Error(w, "databasefeil: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		needle := strings.ToLower(search)
+		var filtered []gen.User
+		for _, u := range all {
+			if needle != "" && !strings.Contains(strings.ToLower(u.Email), needle) {
+				continue
+			}
+			filtered = append(filtered, u)
+		}
+		total = int64(len(filtered))
+		start := (page - 1) * usersPerPage
+		end := start + usersPerPage
+		if start > len(filtered) {
+			start = len(filtered)
+		}
+		if end > len(filtered) {
+			end = len(filtered)
+		}
+		users = filtered[start:end]
 	} else {
+		offset := int64((page - 1) * usersPerPage)
+		var err error
 		users, err = h.queries.ListUsers(ctx, gen.ListUsersParams{
 			Limit:  usersPerPage,
 			Offset: offset,
 		})
-	}
-	if err != nil {
-		http.Error(w, "databasefeil: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Klientside-søk på e-post (lavt volum).
-	if search != "" {
-		srchLc := strings.ToLower(search)
-		var filtered []gen.User
-		for _, u := range users {
-			if strings.Contains(strings.ToLower(u.Email), srchLc) {
-				filtered = append(filtered, u)
-			}
+		if err != nil {
+			http.Error(w, "databasefeil: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
-		users = filtered
+		total, err = h.queries.CountUsers(ctx)
+		if err != nil {
+			http.Error(w, "databasefeil: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
-	total, _ := h.queries.CountUsers(ctx)
 	totalPages := int(math.Ceil(float64(total) / float64(usersPerPage)))
 	if totalPages < 1 {
 		totalPages = 1
@@ -317,19 +343,15 @@ func (h *UsersHandler) HandleExport(w http.ResponseWriter, r *http.Request) {
 	wr.Flush()
 }
 
-// csvEsc beskytter mot CSV-injeksjon (formelinjeksjon) og wrapper felt korrekt.
+// csvEsc beskytter mot CSV-injeksjon (formelinjeksjon).
+// Quoting av felt med komma/anførselstegn/newline håndteres av csv.NewWriter.
 func csvEsc(s string) string {
-	// Sjekk om første tegn er et injeksjonsprefix (Excel/Sheets formel-trigger).
-	needsPrefix := len(s) > 0 && (s[0] == '=' || s[0] == '+' || s[0] == '-' || s[0] == '@' || s[0] == '\t' || s[0] == '\r')
-
-	// Escape anførselstegn og wrap i anførselstegn hvis feltet inneholder spesialtegn.
-	if strings.ContainsAny(s, `",`+"\n\r") {
-		s = `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	if len(s) == 0 {
+		return s
 	}
-
-	// Legg apostrofprefix etter eventuell quoting, slik at [0] alltid er '.
-	if needsPrefix {
-		s = "'" + s
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
 	}
 	return s
 }
