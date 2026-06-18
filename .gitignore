@@ -6,6 +6,7 @@ bin/
 /kauth
 /kauth-arm64
 /migrate-h2
+/migrate-to-h2
 
 # Lokal data
 *.db

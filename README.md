@@ -166,7 +166,7 @@ Det er fortsatt noen edge cases. En engangsbruker uten Google som ikke vil oppgi
 
 ## Drift
 
-Deploy til Pi5: `make deploy` cross-compiler til arm64, scp-er binæren og restarter systemd-tjenesten.
+Deploy: `make deploy` cross-compiler til arm64, scp-er binæren til target-hosten og restarter systemd-tjenesten. Target settes via `KAUTH_DEPLOY_HOST`-variabelen.
 
 `kauth.service` kjører som vanlig bruker, med WAL-aktivert SQLite, graceful SIGTERM, og restart on-failure. Minne taes hånd om via GOMEMLIMIT og cgroup-tak satt i unit-fila.
 
