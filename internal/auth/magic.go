@@ -168,8 +168,16 @@ func (h *MagicHandlers) VerifyToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	accessToken, _ := h.issuer.IssueAccess(user, *svc)
-	refreshToken, _ := h.refresh.Issue(r.Context(), user, *svc, ip, ua)
+	accessToken, err := h.issuer.IssueAccess(user, *svc)
+	if err != nil {
+		http.Error(w, "kunne ikke utstede token", http.StatusInternalServerError)
+		return
+	}
+	refreshToken, err := h.refresh.Issue(r.Context(), user, *svc, ip, ua)
+	if err != nil {
+		http.Error(w, "kunne ikke utstede refresh-token", http.StatusInternalServerError)
+		return
+	}
 	setAuthCookies(w, svc, accessToken, refreshToken)
 
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
