@@ -47,7 +47,8 @@ func (r *Registry) Resolve(host, serviceID, redirectURI string) *gen.Service {
 		for i := range services {
 			if services[i].AuthHost != nil &&
 				strings.ToLower(*services[i].AuthHost) == hostLc {
-				return &services[i]
+				svc := services[i]
+				return &svc
 			}
 		}
 	}
@@ -56,7 +57,8 @@ func (r *Registry) Resolve(host, serviceID, redirectURI string) *gen.Service {
 	if serviceID != "" {
 		for i := range services {
 			if services[i].ID == serviceID {
-				return &services[i]
+				svc := services[i]
+				return &svc
 			}
 		}
 	}
@@ -91,11 +93,13 @@ func (r *Registry) Default() *gen.Service {
 	defer r.mu.RUnlock()
 	for i := range r.cache {
 		if r.cache[i].IsDefault == 1 {
-			return &r.cache[i]
+			svc := r.cache[i]
+			return &svc
 		}
 	}
 	if len(r.cache) > 0 {
-		return &r.cache[0]
+		svc := r.cache[0]
+		return &svc
 	}
 	return nil
 }
