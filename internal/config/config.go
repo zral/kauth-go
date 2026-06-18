@@ -210,18 +210,19 @@ func parseRSAPublicKey(pemStr string) (*rsa.PublicKey, error) {
 	return rsaKey, nil
 }
 
-// parseISO8601 støtter PT15M, PT8H, P30D
+// parseISO8601 støtter PT15M, PT8H, P30D, P1DT2H
 func parseISO8601(s string) (time.Duration, error) {
 	s = strings.ToUpper(strings.TrimSpace(s))
 	if !strings.HasPrefix(s, "P") {
 		return 0, fmt.Errorf("må starte med P: %s", s)
 	}
-	s = s[1:]
-	if strings.HasPrefix(s, "T") {
-		s = s[1:]
-	}
+	s = s[1:] // fjern 'P'
 	var total time.Duration
 	for len(s) > 0 {
+		if s[0] == 'T' {
+			s = s[1:] // hopp over T-separatoren
+			continue
+		}
 		i := 0
 		for i < len(s) && (s[i] >= '0' && s[i] <= '9') {
 			i++

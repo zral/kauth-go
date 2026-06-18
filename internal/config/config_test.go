@@ -16,6 +16,7 @@ func TestParseISO8601(t *testing.T) {
 		{"PT8H", "8h0m0s"},
 		{"P30D", "720h0m0s"},
 		{"PT1H30M", "1h30m0s"},
+		{"P1DT2H", "26h0m0s"},
 	}
 	for _, c := range cases {
 		d, err := parseISO8601(c.input)
