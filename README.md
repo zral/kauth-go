@@ -168,7 +168,7 @@ Det er fortsatt noen edge cases. En engangsbruker uten Google som ikke vil oppgi
 
 Deploy: `make deploy` cross-compiler til arm64, scp-er binæren til target-hosten og restarter systemd-tjenesten. Target settes via `KAUTH_DEPLOY_HOST`-variabelen.
 
-`kauth.service` kjører som vanlig bruker, med WAL-aktivert SQLite, graceful SIGTERM, og restart on-failure. Minne taes hånd om via GOMEMLIMIT og cgroup-tak satt i unit-fila.
+`kauth.service` kjører som vanlig bruker, med WAL-aktivert SQLite, graceful SIGTERM, og restart on-failure. Minne taes hånd om via GOMEMLIMIT og cgroup-tak satt i unit-filen.
 
 Backup-en ligger i `scripts/backup-kauth-go.sh` — daglig kopi via cron klokken 03:00, bruker `sqlite3 .backup` som er trygt mens kauth kjører. 30 dagers retensjon.
 

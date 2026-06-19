@@ -17,3 +17,7 @@ secrets/
 
 # Logger
 *.log
+
+# Lokal Claude-konfig
+CLAUDE.md
+.claude/

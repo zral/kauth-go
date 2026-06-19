@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -87,20 +88,24 @@ func (h *PasswordHandlers) RefreshToken(w http.ResponseWriter, r *http.Request) 
 		plain = r.FormValue("refresh_token")
 	}
 	if plain == "" {
-		writeTokenError(w, "invalid_request")
+		writeTokenError(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
 
 	result, err := h.refresh.Rotate(r.Context(), plain, ip, ua)
 	if err != nil {
 		clearCookie(w, "refresh_token")
-		writeTokenError(w, "invalid_grant")
+		if errors.Is(err, token.ErrTokenReuse) {
+			writeTokenError(w, http.StatusUnauthorized, "refresh_token_reused")
+			return
+		}
+		writeTokenError(w, http.StatusUnauthorized, "invalid_or_expired_token")
 		return
 	}
 
 	user, err := h.queries.GetActiveUserByEmail(r.Context(), result.Email)
 	if err != nil {
-		writeTokenError(w, "invalid_grant")
+		writeTokenError(w, http.StatusUnauthorized, "invalid_or_expired_token")
 		return
 	}
 
@@ -119,14 +124,15 @@ func (h *PasswordHandlers) RefreshToken(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"access_token": at,
-		"token_type":   "Bearer",
-		"expires_in":   int64(ttl.Seconds()),
+		"access_token":  at,
+		"refresh_token": result.NewToken,
+		"token_type":    "Bearer",
+		"expires_in":    int64(ttl.Seconds()),
 	})
 }
 
-func writeTokenError(w http.ResponseWriter, code string) {
+func writeTokenError(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": code})
 }
