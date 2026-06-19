@@ -91,6 +91,18 @@ Felter du nesten alltid setter:
 
 Når raden er på plass, peker du tjenestens login-flyt mot `https://<auth_host>/login?redirect_uri=https://<din-app>/auth/callback`. Resten ordner kauth.
 
+### CORS-origin for refresh-flyten
+
+SPA-klienter som kaller `POST /token` for refresh (eller leser `/.well-known/*` fra browser) må hvitlistes i `KAUTH_CORS_ORIGINS`. Komma-separert, eksakt origin-match — ikke wildcard-domene:
+
+```bash
+KAUTH_CORS_ORIGINS=https://app1.example.com,https://app2.example.com
+```
+
+Mangler app-en på listen får browseren `No 'Access-Control-Allow-Origin' header is present` og refresh-runden feiler stille — klienten beholder gammelt refresh-token, neste forsøk trigger reuse-deteksjon og brukeren kastes til login. Symptomet ser ut som "logges ut etter 15 min" men ligger i nettverket, ikke i token-laget.
+
+Endre `.env` og restart kauth når du onboarder en ny SPA.
+
 ### Bakgrunnsbilde
 
 Legg bildet i `static/`-katalogen og deploy:
