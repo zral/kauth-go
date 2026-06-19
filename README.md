@@ -1,4 +1,9 @@
-# kauth
+<div align="center">
+    <h1>kauth</h1>
+    <p>OIDC-identitetsprovider i Go for små organisasjoner.</p>
+</div>
+
+![Login-side](doc/login-hero.png)
 
 OIDC-identitetsprovider i Go. Tanken er at små organisasjoner skal slippe å sette opp en Keycloak eller Zitadel for å få sentral innlogging på et par tjenester.
 
