@@ -165,6 +165,8 @@ Sett `auth_magic_link = 1` på tjenesten. Brukeren får en lenke med 15 minutter
 
 ## Det passordløse valget
 
+> Passord er — eh — upassende.
+
 kauth støtter passord — feltet finnes, koden er der — men det er av som default, og vi anbefaler å la det stå sånn.
 
 Argumentet er ikke at passord er teknisk umulig, eller at magic-link er sterkere kryptografi enn et godt passord. Magic-link og "send reset-link" har samme grunnleggende risikomodell: hvis e-postkontoen kompromitteres, er begge tapt. Phishing fungerer like godt mot begge.
