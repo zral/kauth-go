@@ -124,7 +124,7 @@ var I18N = { sending: {{.T.MagicSending}}, submit: {{.T.MagicSubmit}} };
 | `ErrExpiredLink` | Lenken er utløpt eller allerede brukt. Prøv igjen. |
 | `ErrTooManyRequests` | For mange forespørsler. Vent noen minutter og prøv igjen. |
 | `MailSubject` | Din innloggingslenke |
-| `MailBody` | Hei!\n\nKlikk for å logge inn (gyldig 15 min):\n\n%s\n\n… |
+| `MailBody` | Hei!\n\nKlikk for å logge inn (gyldig 15 min):\n\n{link}\n\n… |
 
 **`MagicSentToBefore`/`-After` er delt i to på grunn av tysk ordstilling.** Setningen
 har e-postadressen i midten, injisert av JS i et `<span>`. Tysk plasserer verbet etter
@@ -142,7 +142,9 @@ Ett samlet felt med placeholder ville også fungert, men to felt holder template
   «… på nytt fra applikasjonen.» i `magic-login.html`). Konsolideres til én.
 - `MagicValidMinutes` og `MailBody` hardkoder «15 minutter», som duplikatet i
   `magic.go` allerede gjør. Ikke parametrisert.
-- `MailBody` inneholder nøyaktig én `%s` (innloggingslenken). En test håndhever det.
+- `MailBody` inneholder nøyaktig én `{link}`-placeholder, erstattet med
+  `strings.ReplaceAll`. Ikke `%s` + `fmt.Sprintf`: `go vet` i Go 1.24+ flagger
+  ikke-konstante format-strenger, og CLAUDE.md krever ren `go vet`.
 
 ### Språkvelger
 
@@ -192,7 +194,9 @@ OIDC-handler-integrasjonstester er bevisst utelatt.
 ## Filer som berøres
 
 **Nye:** `internal/i18n/i18n.go`, `internal/i18n/catalog.go`,
-`internal/i18n/i18n_test.go`, `internal/auth/login_render_test.go`
+`internal/i18n/i18n_test.go`, `internal/i18n/resolve_test.go`,
+`internal/i18n/links_test.go`, `internal/auth/login_render_test.go`,
+`internal/mail/mail_test.go`
 
 **Endres:** `internal/auth/login.go`, `internal/auth/magic.go`, `internal/mail/mail.go`,
 `internal/admin/auth.go`, `templates/login.html`, `templates/magic-login.html`
