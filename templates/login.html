@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="no">
+<html lang="{{.Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Logg inn – {{.Service.DisplayName}}</title>
+    <title>{{.T.SignIn}} – {{.Service.DisplayName}}</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         body {
@@ -83,6 +83,23 @@
         }
         .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #3F3F46; }
         {{end}}
+        .lang {
+            position: absolute; left: 0; right: 0; top: 100%;
+            margin-top: .75rem; text-align: center;
+            font-size: .8rem; letter-spacing: .02em;
+        }
+        .lang a, .lang span { text-decoration: none; padding: 0 .2rem; }
+        {{if eq .Service.Theme "dark"}}
+        .lang a { color: #52525B; }
+        .lang a:hover { color: #A1A1AA; }
+        .lang .active { color: #A1A1AA; font-weight: 600; }
+        .lang .sep { color: #3F3F46; }
+        {{else}}
+        .lang a { color: #475569; text-shadow: 0 1px 3px rgba(255,255,255,.9); }
+        .lang a:hover { color: #0f172a; }
+        .lang .active { color: #0f172a; font-weight: 600; text-shadow: 0 1px 3px rgba(255,255,255,.9); }
+        .lang .sep { color: #94a3b8; }
+        {{end}}
         .msg-error {
             padding: .6rem .75rem; border-radius: 6px; margin-bottom: 1rem;
             text-align: center; font-size: .9rem;
@@ -106,8 +123,8 @@
 
         {{if .Error}}
         <div class="msg-error">
-            {{if eq .Error "access_denied"}}Tilgang nektet.
-            {{else if eq .Error "invalid_redirect"}}Ugyldig retur-adresse. Start innloggingen på nytt.
+            {{if eq .Error "access_denied"}}{{.T.ErrAccessDenied}}
+            {{else if eq .Error "invalid_redirect"}}{{.T.ErrInvalidRedirect}}
             {{else}}{{.Error}}
             {{end}}
         </div>
@@ -121,7 +138,7 @@
                 <path fill="#FBBC05" d="M10.6 28.7A14.6 14.6 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A24 24 0 0 0 0 24c0 3.9.9 7.5 2.8 10.7l7.8-6z"/>
                 <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.8 2.3-8.4 2.3-6.2 0-11.6-4.2-13.4-9.9l-7.8 6C6.7 42.6 14.7 48 24 48z"/>
             </svg>
-            Fortsett med Google
+            {{.T.ContinueWithGoogle}}
         </a>
         {{end}}
 
@@ -133,34 +150,34 @@
                 <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
                 <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
             </svg>
-            Fortsett med Microsoft
+            {{.T.ContinueWithMicrosoft}}
         </a>
         {{end}}
 
         {{if eq .Service.AuthMagicLink 1}}
-        {{if eq .Service.Theme "dark"}}<div class="divider">eller</div>{{end}}
-        <a id="magic-btn" href="/magic-login?service={{.Service.ID}}" class="btn-social">
+        {{if eq .Service.Theme "dark"}}<div class="divider">{{.T.Or}}</div>{{end}}
+        <a id="magic-btn" href="/magic-login?service={{.Service.ID}}&amp;lang={{.Locale}}" class="btn-social">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                  stroke="{{if eq .Service.Theme "dark"}}#71717A{{else}}#475569{{end}}"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="4" width="20" height="16" rx="2"/>
                 <path d="M22 7l-10 7L2 7"/>
             </svg>
-            Logg inn med e-postlenke
+            {{.T.SignInWithEmailLink}}
         </a>
         {{end}}
 
         {{if eq .Service.AuthPassword 1}}
-        {{if eq .Service.Theme "dark"}}<div class="divider">eller</div>{{end}}
+        {{if eq .Service.Theme "dark"}}<div class="divider">{{.T.Or}}</div>{{end}}
         <form method="post" action="/do-login">
             <input type="hidden" name="service_id" value="{{.Service.ID}}">
-            <input type="email" name="email" placeholder="E-postadresse" required style="
+            <input type="email" name="email" placeholder="{{.T.EmailPlaceholder}}" required style="
                 display:block;width:100%;padding:.7rem .85rem;margin-bottom:.5rem;font-size:.95rem;
                 border:1px solid {{if eq .Service.Theme "dark"}}#3F3F46{{else}}#d1d5db{{end}};
                 border-radius:{{if eq .Service.Theme "dark"}}8px{{else}}6px{{end}};
                 background:{{if eq .Service.Theme "dark"}}#18181B{{else}}white{{end}};
                 color:{{if eq .Service.Theme "dark"}}#F4F4F5{{else}}#0f172a{{end}};">
-            <input type="password" name="password" placeholder="Passord" required style="
+            <input type="password" name="password" placeholder="{{.T.PasswordPlaceholder}}" required style="
                 display:block;width:100%;padding:.7rem .85rem;margin-bottom:.75rem;font-size:.95rem;
                 border:1px solid {{if eq .Service.Theme "dark"}}#3F3F46{{else}}#d1d5db{{end}};
                 border-radius:{{if eq .Service.Theme "dark"}}8px{{else}}6px{{end}};
@@ -172,10 +189,14 @@
                 border-radius:{{if eq .Service.Theme "dark"}}8px{{else}}6px{{end}};
                 background:{{if eq .Service.Theme "dark"}}#818CF8{{else}}#1e40af{{end}};
                 color:white;">
-                Logg inn
+                {{.T.SignIn}}
             </button>
         </form>
         {{end}}
+
+        <nav class="lang">
+            {{range $i, $l := .Languages}}{{if $i}}<span class="sep">·</span>{{end}}{{if $l.Active}}<span class="active" lang="{{$l.Code}}" title="{{$l.Name}}">{{$l.Label}}</span>{{else}}<a href="{{$l.Href}}" hreflang="{{$l.Code}}" title="{{$l.Name}}">{{$l.Label}}</a>{{end}}{{end}}
+        </nav>
     </div>
 
     <script>

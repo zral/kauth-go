@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/i18n"
 	"github.com/zral/kauth-go/internal/service"
 )
 
@@ -21,6 +22,13 @@ type LoginPageData struct {
 	BodyBgCSS template.CSS
 	// BeforeBgCSS er ferdig-beregnet CSS background-verdi for body::before (mørkt tema).
 	BeforeBgCSS template.CSS
+	// Locale er valgt språk (nb/en/de) — brukes som lang-attributt og for å
+	// bære språket videre i lenker ut av siden.
+	Locale string
+	// T er de oversatte tekstene for Locale.
+	T i18n.Strings
+	// Languages er alternativene i språkvelgeren.
+	Languages []i18n.Link
 }
 
 // buildBgCSS beregner CSS background-verdier for BodyBgCSS og BeforeBgCSS.
@@ -73,6 +81,7 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		logoHTML = template.HTML(*svc.LogoHtml) // #nosec G203
 	}
 
+	locale := i18n.FromRequest(r)
 	bodyCss, beforeCss := buildBgCSS(svc.Theme, svc.BgImage, svc.BgCss)
 	data := LoginPageData{
 		Service:     svc,
@@ -81,6 +90,9 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		Error:       r.URL.Query().Get("error"),
 		BodyBgCSS:   bodyCss,
 		BeforeBgCSS: beforeCss,
+		Locale:      locale,
+		T:           i18n.Get(locale),
+		Languages:   i18n.Links(locale, r.URL),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
