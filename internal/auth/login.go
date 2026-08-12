@@ -29,6 +29,9 @@ type LoginPageData struct {
 	T i18n.Strings
 	// Languages er alternativene i språkvelgeren.
 	Languages []i18n.Link
+	// Tagline er tjenestens budskap på valgt språk, med services.tagline som
+	// fallback for tjenester som ennå ikke er oversatt.
+	Tagline string
 }
 
 // buildBgCSS beregner CSS background-verdier for BodyBgCSS og BeforeBgCSS.
@@ -82,6 +85,13 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	locale := i18n.FromRequest(r)
+
+	tagline := i18n.Tagline(svc.ID, locale)
+	if tagline == "" && svc.Tagline != nil {
+		// Tjenesten er ikke oversatt ennå — vis DB-verdien framfor ingenting.
+		tagline = *svc.Tagline
+	}
+
 	bodyCss, beforeCss := buildBgCSS(svc.Theme, svc.BgImage, svc.BgCss)
 	data := LoginPageData{
 		Service:     svc,
@@ -93,6 +103,7 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		Locale:      locale,
 		T:           i18n.Get(locale),
 		Languages:   i18n.Links(locale, r.URL),
+		Tagline:     tagline,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
