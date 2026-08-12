@@ -96,8 +96,9 @@ func TestLoginTemplate_ShowsLanguageSwitcher(t *testing.T) {
 	require.NoError(t, tmpl.ExecuteTemplate(&out, "login.html", data))
 
 	html := out.String()
-	// Aktivt språk vises uten lenke, de to andre som lenker.
-	assert.Contains(t, html, ">DE<")
+	// Aktivt språk skal rendres som <span class="active">, ikke som lenke —
+	// ">DE<" alene matcher begge grenene og tester ingenting.
+	assert.Contains(t, html, `<span class="active" lang="de"`)
 	assert.Contains(t, html, "Norsk")
 	assert.Contains(t, html, "English")
 	assert.Contains(t, html, "lang=nb")
@@ -114,4 +115,100 @@ func TestLoginTemplate_TranslatesErrorCodes(t *testing.T) {
 	var out strings.Builder
 	require.NoError(t, tmpl.ExecuteTemplate(&out, "login.html", data))
 	assert.Contains(t, out.String(), "Zugriff verweigert.")
+}
+
+// TestLoginTemplate_TranslatesInvalidRedirect dekker login.html sin
+// invalid_redirect-gren, som ellers aldri kjøres av noen test — en skrivefeil
+// i .T.ErrInvalidRedirect ville sluppet gjennom kompilator og hele suiten.
+func TestLoginTemplate_TranslatesInvalidRedirect(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	data := testPageData(t, "light", "de", "/login?service=test")
+	data.Error = "invalid_redirect"
+
+	var out strings.Builder
+	require.NoError(t, tmpl.ExecuteTemplate(&out, "login.html", data))
+	assert.Contains(t, out.String(), "Ungültige Rücksprungadresse")
+}
+
+func TestMagicLoginTemplate_RendersInAllLocales(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	wantSubmit := map[string]string{
+		"en": "Send sign-in link",
+		"nb": "Send innloggingslenke",
+		"de": "Anmeldelink senden",
+	}
+	wantInbox := map[string]string{
+		"en": "Check your inbox",
+		"nb": "Sjekk innboksen din",
+		"de": "Prüfen Sie Ihren E-Mail-Eingang",
+	}
+
+	for _, theme := range []string{"light", "dark"} {
+		for _, locale := range []string{"en", "nb", "de"} {
+			t.Run(theme+"/"+locale, func(t *testing.T) {
+				data := testPageData(t, theme, locale, "/magic-login?service=test")
+
+				var out strings.Builder
+				require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
+
+				html := out.String()
+				assert.Contains(t, html, wantSubmit[locale])
+				assert.Contains(t, html, wantInbox[locale])
+				assert.Contains(t, html, `<html lang="`+locale+`">`)
+				// fetch() må sende språket videre så e-posten blir riktig.
+				assert.Contains(t, html, "/magic-login?lang=")
+			})
+		}
+	}
+}
+
+// Tysk ordstilling krever at setningen deles rundt e-postadressen:
+// "… an <e-post> gesendet." Verbet havner etter objektet.
+func TestMagicLoginTemplate_GermanWordOrder(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	data := testPageData(t, "light", "de", "/magic-login?service=test")
+	var out strings.Builder
+	require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
+
+	html := out.String()
+	before := strings.Index(html, "Wir haben einen Anmeldelink an")
+	span := strings.Index(html, `id="confirm-email"`)
+	after := strings.Index(html, "gesendet.")
+	require.NotEqual(t, -1, before)
+	require.NotEqual(t, -1, span)
+	require.NotEqual(t, -1, after)
+	assert.Less(t, before, span, "prefiks skal komme før e-postadressen")
+	assert.Less(t, span, after, "verbet skal komme etter e-postadressen")
+}
+
+func TestMagicLoginTemplate_TranslatesErrorCodes(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	data := testPageData(t, "light", "en", "/magic-login?service=test")
+	data.Error = "rate"
+
+	var out strings.Builder
+	require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
+	assert.Contains(t, out.String(), "Too many requests.")
+}
+
+// TestMagicLoginTemplate_TranslatesExpiredError dekker magic-login.html sin
+// expired-gren, som TranslatesErrorCodes over ikke rører (den tester "rate").
+func TestMagicLoginTemplate_TranslatesExpiredError(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	data := testPageData(t, "light", "de", "/magic-login?service=test")
+	data.Error = "expired"
+
+	var out strings.Builder
+	require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
+	assert.Contains(t, out.String(), "Der Link ist abgelaufen oder wurde bereits verwendet.")
 }

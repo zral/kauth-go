@@ -14,6 +14,7 @@ import (
 	"github.com/zral/kauth-go/internal/audit"
 	"github.com/zral/kauth-go/internal/config"
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/i18n"
 	"github.com/zral/kauth-go/internal/mail"
 	"github.com/zral/kauth-go/internal/service"
 	"github.com/zral/kauth-go/internal/token"
@@ -85,12 +86,16 @@ func (h *MagicHandlers) ShowForm(w http.ResponseWriter, r *http.Request) {
 		logoHTML = template.HTML(*svc.LogoHtml) // #nosec G203
 	}
 	bodyCss, beforeCss := buildBgCSS(svc.Theme, svc.BgImage, svc.BgCss)
+	locale := i18n.FromRequest(r)
 	data := LoginPageData{
 		Service:     svc,
 		LogoHTML:    logoHTML,
 		Error:       r.URL.Query().Get("error"),
 		BodyBgCSS:   bodyCss,
 		BeforeBgCSS: beforeCss,
+		Locale:      locale,
+		T:           i18n.Get(locale),
+		Languages:   i18n.Links(locale, r.URL),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = h.tmpl.ExecuteTemplate(w, "magic-login.html", data)
@@ -106,6 +111,8 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	_ = r.ParseForm()
+	// Locale leses fra POST-URL-en; magic-login.html legger ?lang= på fetch-kallet.
+	locale := i18n.FromRequest(r)
 	email := r.FormValue("email")
 	// Leser "service" (ny template) med fallback til "service_id" (gammel form)
 	serviceID := r.FormValue("service")
@@ -145,7 +152,7 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 
 	fromName := svc.EmailFromName
 	link := h.cfg.BaseURL + "/magic-login/" + plainToken + "?service=" + serviceID
-	if err := h.mailer.SendMagicLink(email, fromName, link); err != nil {
+	if err := h.mailer.SendMagicLink(email, fromName, link, locale); err != nil {
 		slog.Error("magic-link: kunne ikke sende e-post", "email", email, "error", err)
 		// Anti-enumeration: same response regardless
 	}
@@ -213,4 +220,3 @@ func (h *MagicHandlers) VerifyToken(w http.ResponseWriter, r *http.Request) {
 	h.aud.Log(r.Context(), audit.Event{Type: "magic_link_login", AuthMethod: "magic_link", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
 	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(accessToken)+"&rt="+url.QueryEscape(refreshToken), http.StatusFound)
 }
-

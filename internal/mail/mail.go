@@ -7,26 +7,35 @@ import (
 	"strings"
 
 	"github.com/zral/kauth-go/internal/config"
+	"github.com/zral/kauth-go/internal/i18n"
 )
 
 type Service struct{ cfg config.Config }
 
 func New(cfg config.Config) *Service { return &Service{cfg: cfg} }
 
-func (s *Service) SendMagicLink(to, fromName, linkURL string) error {
+// SendMagicLink sender innloggingslenken på valgt språk. Ukjent locale
+// faller til engelsk via i18n.Get, så kalleren trenger ikke validere.
+func (s *Service) SendMagicLink(to, fromName, linkURL, locale string) error {
+	t := i18n.Get(locale)
 	if s.cfg.SMTPMock {
-		fmt.Printf("[MAIL MOCK] To: %s | Fra: %s | Link: %s\n", to, fromName, linkURL)
+		fmt.Printf("[MAIL MOCK] To: %s | Fra: %s | Språk: %s | Link: %s\n", to, fromName, locale, linkURL)
 		return nil
 	}
-	msg := buildMessage(s.cfg.SMTPFrom, fromName, to,
-		"Din innloggingslenke",
-		fmt.Sprintf("Hei!\n\nKlikk for å logge inn (gyldig 15 min):\n\n%s\n\nHvis du ikke ba om dette, ignorer denne e-posten.\n", linkURL))
+	msg := buildMessage(s.cfg.SMTPFrom, fromName, to, t.MailSubject, buildMagicBody(t, linkURL))
 	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
 	auth := smtp.PlainAuth("", s.cfg.SMTPUser, s.cfg.SMTPPassword, s.cfg.SMTPHost)
 	if s.cfg.SMTPStartTLS {
 		return sendSTARTTLS(addr, auth, s.cfg.SMTPHost, s.cfg.SMTPFrom, to, msg)
 	}
 	return smtp.SendMail(addr, auth, s.cfg.SMTPFrom, []string{to}, []byte(msg))
+}
+
+// buildMagicBody setter lenken inn i den oversatte brødteksten.
+// Navngitt placeholder framfor %s fordi go vet flagger fmt.Sprintf med
+// ikke-konstant format-streng.
+func buildMagicBody(t i18n.Strings, linkURL string) string {
+	return strings.ReplaceAll(t.MailBody, "{link}", linkURL)
 }
 
 func sendSTARTTLS(addr string, auth smtp.Auth, host, from, to, msg string) error {

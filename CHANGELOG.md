@@ -10,6 +10,7 @@ Alle merkbare endringer i prosjektet dokumenteres her. Format inspirert av [Keep
 - `CHANGELOG.md`.
 - `CONTRIBUTING.md` med lokal utvikling, struktur og PR-prosess.
 - `.env.example` med alle konfig-variabler.
+- Login-sidene (`/login`, `/magic-login`) og magic-link-e-posten finnes på norsk, engelsk og tysk. Språk velges fra `?lang=` eller nettleserens `Accept-Language`, med engelsk som fallback. Diskret språkvelger nederst på sidene. Admin-panelet er fortsatt norsk-only.
 
 ### Changed
 

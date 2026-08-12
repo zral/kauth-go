@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="no">
+<html lang="{{.Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>E-postinnlogging – {{.Service.DisplayName}}</title>
+    <title>{{.T.MagicPageTitle}} – {{.Service.DisplayName}}</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         body {
@@ -104,6 +104,23 @@
             {{if eq .Service.Theme "dark"}}color: #818CF8;{{else}}color: #1e40af;{{end}}
             font-weight: 600;
         }
+        .lang {
+            position: absolute; left: 0; right: 0; top: 100%;
+            margin-top: .75rem; text-align: center;
+            font-size: .8rem; letter-spacing: .02em;
+        }
+        .lang a, .lang span { text-decoration: none; padding: 0 .2rem; }
+        {{if eq .Service.Theme "dark"}}
+        .lang a { color: #52525B; }
+        .lang a:hover { color: #A1A1AA; }
+        .lang .active { color: #A1A1AA; font-weight: 600; }
+        .lang .sep { color: #3F3F46; }
+        {{else}}
+        .lang a { color: #475569; text-shadow: 0 1px 3px rgba(255,255,255,.9); }
+        .lang a:hover { color: #0f172a; }
+        .lang .active { color: #0f172a; font-weight: 600; text-shadow: 0 1px 3px rgba(255,255,255,.9); }
+        .lang .sep { color: #94a3b8; }
+        {{end}}
     </style>
 </head>
 <body>
@@ -117,14 +134,14 @@
             {{else}}
             <h1>{{.Service.DisplayName}}</h1>
             {{end}}
-            <p>Logg inn med e-postlenke</p>
+            <p>{{.T.SignInWithEmailLink}}</p>
         </div>
 
         {{if .Error}}
         <div class="msg error">
-            {{if eq .Error "expired"}}Lenken er utløpt eller allerede brukt. Prøv igjen.
-            {{else if eq .Error "rate"}}For mange forespørsler. Vent noen minutter og prøv igjen.
-            {{else if eq .Error "invalid_redirect"}}Ugyldig retur-adresse. Start innloggingen på nytt fra applikasjonen.
+            {{if eq .Error "expired"}}{{.T.ErrExpiredLink}}
+            {{else if eq .Error "rate"}}{{.T.ErrTooManyRequests}}
+            {{else if eq .Error "invalid_redirect"}}{{.T.ErrInvalidRedirect}}
             {{else}}{{.Error}}
             {{end}}
         </div>
@@ -132,27 +149,32 @@
 
         <form id="form" method="post" action="/magic-login">
             <input type="hidden" name="service" value="{{.Service.ID}}">
-            <input type="email" name="email" placeholder="E-postadresse" autofocus required>
-            <button type="submit" class="btn" id="submit-btn">Send innloggingslenke</button>
+            <input type="email" name="email" placeholder="{{.T.EmailPlaceholder}}" autofocus required>
+            <button type="submit" class="btn" id="submit-btn">{{.T.MagicSubmit}}</button>
         </form>
 
         <div id="confirm" class="confirm">
             <div class="icon">&#x2709;&#xFE0F;</div>
-            <h2>Sjekk innboksen din</h2>
-            <p>Vi har sendt en innloggingslenke til
-                <span id="confirm-email" class="email-highlight"></span>.
-                Klikk på lenken for å logge inn.</p>
+            <h2>{{.T.MagicCheckInbox}}</h2>
+            <p>{{.T.MagicSentToBefore}}
+                <span id="confirm-email" class="email-highlight"></span>{{.T.MagicSentToAfter}}</p>
             <p style="margin-top:.75rem;font-size:.8rem;
                 {{if eq .Service.Theme "dark"}}color:#71717A;{{else}}color:#6b7280;{{end}}">
-                Lenken er gyldig i 15 minutter.</p>
+                {{.T.MagicValidMinutes}}</p>
         </div>
 
-        <a href="/login?service={{.Service.ID}}" class="back" id="back-link">
-            Tilbake til innlogging
+        <a href="/login?service={{.Service.ID}}&amp;lang={{.Locale}}" class="back" id="back-link">
+            {{.T.BackToSignIn}}
         </a>
+
+        <nav class="lang">
+            {{range $i, $l := .Languages}}{{if $i}}<span class="sep">·</span>{{end}}{{if $l.Active}}<span class="active" lang="{{$l.Code}}" title="{{$l.Name}}">{{$l.Label}}</span>{{else}}<a href="{{$l.Href}}" hreflang="{{$l.Code}}" title="{{$l.Name}}">{{$l.Label}}</a>{{end}}{{end}}
+        </nav>
     </div>
 
     <script>
+        var I18N = { sending: {{.T.MagicSending}}, submit: {{.T.MagicSubmit}} };
+        var LANG = {{.Locale}};
         (function() {
             var form = document.getElementById('form');
             form.addEventListener('submit', function(e) {
@@ -160,8 +182,8 @@
                 var email = form.querySelector('input[name="email"]').value;
                 var btn = document.getElementById('submit-btn');
                 btn.disabled = true;
-                btn.textContent = 'Sender...';
-                fetch('/magic-login', {
+                btn.textContent = I18N.sending;
+                fetch('/magic-login?lang=' + encodeURIComponent(LANG), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: 'email=' + encodeURIComponent(email) +
@@ -174,7 +196,7 @@
                     document.getElementById('back-link').style.display = 'none';
                 }).catch(function() {
                     btn.disabled = false;
-                    btn.textContent = 'Send innloggingslenke';
+                    btn.textContent = I18N.submit;
                 });
             });
         })();

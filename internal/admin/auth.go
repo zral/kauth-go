@@ -129,7 +129,8 @@ func (h *AuthHandler) tryIssueMagicLink(r *http.Request) error {
 
 	verifyURL := h.cfg.BaseURL + "/admin/verify?token=" + rawToken
 	fromName := "kauth Admin"
-	if sendErr := h.mailer.SendMagicLink(email, fromName, verifyURL); sendErr != nil {
+	// Admin-panelet er norsk-only, så e-posten sendes eksplisitt på norsk.
+	if sendErr := h.mailer.SendMagicLink(email, fromName, verifyURL, "nb"); sendErr != nil {
 		return sendErr
 	}
 
@@ -195,7 +196,7 @@ func (h *AuthHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		Value:    adminToken,
 		Path:     "/admin",
 		HttpOnly: true,
-		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(h.cfg.AdminTokenTTL.Seconds()),
 	})
@@ -230,7 +231,7 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/admin",
 		HttpOnly: true,
-		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
