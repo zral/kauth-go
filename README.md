@@ -202,6 +202,7 @@ Cloudflare Tunnel foran: kauth lytter på localhost, tunnelen terminerer TLS og 
 - `internal/token` — JWT-utstedelse, JWKS, refresh-rotasjon.
 - `internal/admin` — admin-panel: brukeradministrasjon, audit-logg, service-konfig, magic-link- og Google-innlogging for admin.
 - `internal/service` — tjeneste-resolver med cache. Bestemmer hvilken tjeneste en innkommende request tilhører basert på redirect-URI eller auth-host.
+- `internal/i18n` — språkkatalog og -deteksjon (`nb`/`en`/`de`, fallback engelsk) for login-sidene og magic-link-e-posten.
 - `internal/db` — sqlc-generert databaselag mot SQLite (modernc.org/sqlite, CGO-fri).
 - `internal/jobs` — bakgrunnsjobber.
 

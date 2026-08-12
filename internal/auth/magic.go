@@ -98,6 +98,8 @@ func (h *MagicHandlers) ShowForm(w http.ResponseWriter, r *http.Request) {
 		Languages:   i18n.Links(locale, r.URL),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Responsen varierer med Accept-Language (via i18n.FromRequest) — caches må ta høyde for dette.
+	w.Header().Set("Vary", "Accept-Language")
 	_ = h.tmpl.ExecuteTemplate(w, "magic-login.html", data)
 }
 

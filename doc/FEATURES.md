@@ -228,15 +228,17 @@ Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
 
 ### Offentlige
 
+`/login` og `/magic-login` støtter begge `?lang=<nb|en|de>` for å velge visningsspråk. Parameteren overstyrer `Accept-Language`-headeren; en ukjent verdi faller tilbake til `Accept-Language` i stedet for å tvinge engelsk, og total fallback (ingen match noe sted) er engelsk. Nyttig for en relying party som vet at brukeren foretrekker et gitt språk — f.eks. `?lang=de` på redirect til login.
+
 | Metode | Sti | Beskrivelse |
 |---|---|---|
-| GET | `/login` | Login-side, valgfri `?service=<id>` og `?redirect_uri=<url>` |
+| GET | `/login` | Login-side, valgfri `?service=<id>`, `?redirect_uri=<url>` og `?lang=<nb\|en\|de>` |
 | GET | `/login.html`, `/login-pov.html` | Legacy 301 → `/login` |
 | GET | `/oidc-login`, `/social-login` | Initier Google OAuth |
 | GET | `/callback` | Google OAuth callback |
 | GET | `/ms-oidc-login`, `/ms-social-login` | Initier Microsoft OAuth |
 | GET | `/ms-callback` | Microsoft OAuth callback |
-| GET | `/magic-login` | Magic-link-skjema |
+| GET | `/magic-login` | Magic-link-skjema, valgfri `?service=<id>` og `?lang=<nb\|en\|de>` |
 | POST | `/magic-login` | Send magic-link |
 | GET | `/magic-login/{token}` | Konsumer magic-token |
 | POST | `/do-login` | Passord-login (hvis aktivert) |

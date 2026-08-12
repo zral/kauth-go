@@ -96,6 +96,8 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Responsen varierer med Accept-Language (via i18n.FromRequest) — caches må ta høyde for dette.
+	w.Header().Set("Vary", "Accept-Language")
 	if err := h.Templates.ExecuteTemplate(w, "login.html", data); err != nil {
 		http.Error(w, "mal-feil", http.StatusInternalServerError)
 	}
