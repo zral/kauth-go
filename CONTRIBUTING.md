@@ -69,6 +69,13 @@ Skjemaendringer:
 3. Regenerer Go-koden: `make sqlc` (krever `sqlc` i `$PATH`).
 4. Aldri rediger filer i `internal/db/gen/` for hånd.
 
+## Språk og oversettelser
+
+Login-flyten finnes på norsk, engelsk og tysk. Tekstene ligger i
+`internal/i18n/`, ikke i templatene. Se `doc/I18N.md` for hvordan språk velges
+per request, hvor tekstene bor, og oppskriften for å legge til et nytt språk —
+inkludert de to testene som er hardkodet mot antallet språk.
+
 ## Stilregler
 
 - Norske kommentarer og commit-meldinger der det passer; engelske identifiers.
