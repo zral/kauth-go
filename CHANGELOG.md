@@ -11,8 +11,12 @@ Alle merkbare endringer i prosjektet dokumenteres her. Format inspirert av [Keep
 - `CONTRIBUTING.md` med lokal utvikling, struktur og PR-prosess.
 - `.env.example` med alle konfig-variabler.
 - Login-sidene (`/login`, `/magic-login`) og magic-link-e-posten finnes på norsk, engelsk og tysk. Språk velges fra `?lang=` eller nettleserens `Accept-Language`, med engelsk som fallback. Diskret språkvelger nederst på sidene. Admin-panelet er fortsatt norsk-only.
+- Tjenestenes taglines er oversatt per tjeneste i `internal/i18n/taglines.go`. `services.tagline` brukes som fallback for tjenester som ennå ikke er oversatt.
+- Feilmeldingene i magic-link-verifiseringen er lokalisert: utløpt/brukt lenke og manglende konto redirecter til `/magic-login?error=<kode>&lang=<locale>` i stedet for å svare med norsk plaintext. Magic-lenken i e-posten bærer `&lang=` så et eksplisitt språkvalg overlever turen via e-postklienten.
 
 ### Changed
+
+- Serverfeil i magic-link-verifiseringen logges nå med `slog.Error` og spesifikk årsak, mens brukeren får én generisk oversatt melding. Tidligere ble tekniske detaljer vist på skjermen uten at noe ble logget.
 
 - Admin Google-login bruker nå samme `/callback`-URL som vanlig brukerflyt, via intern `redirect_uri`-cookie til `/admin/google-callback`. Matcher Java-originalens mønster og krever ikke separat redirect-URI hvitlistet hos Google.
 - `doc/FEATURES.md` oppdatert med admin Google-flyt-detaljer og intern-dispatch-seksjon.
