@@ -26,7 +26,7 @@ func TestTaglinesComplete(t *testing.T) {
 func TestTagline(t *testing.T) {
 	assert.Equal(t, "Logg inn for å administrere dine arrangementer", Tagline("spekto", "nb"))
 	assert.Equal(t, "Sign in to manage your events", Tagline("spekto", "en"))
-	assert.Equal(t, "Melden Sie sich an, um Ihre Veranstaltungen zu verwalten", Tagline("spekto", "de"))
+	assert.Equal(t, "Melden Sie sich an, um Ihre Events zu verwalten", Tagline("spekto", "de"))
 }
 
 // Ukjent tjeneste gir tom streng, ikke en annen tjenestes tagline — handleren

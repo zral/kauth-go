@@ -252,7 +252,7 @@ func TestLoginTemplate_TranslatesTagline(t *testing.T) {
 	want := map[string]string{
 		"nb": "Logg inn for å administrere dine arrangementer",
 		"en": "Sign in to manage your events",
-		"de": "Melden Sie sich an, um Ihre Veranstaltungen zu verwalten",
+		"de": "Melden Sie sich an, um Ihre Events zu verwalten",
 	}
 
 	for locale, expected := range want {

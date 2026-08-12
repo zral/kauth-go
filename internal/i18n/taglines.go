@@ -15,7 +15,7 @@ var taglines = map[string]map[string]string{
 	"spekto": {
 		"nb": "Logg inn for å administrere dine arrangementer",
 		"en": "Sign in to manage your events",
-		"de": "Melden Sie sich an, um Ihre Veranstaltungen zu verwalten",
+		"de": "Melden Sie sich an, um Ihre Events zu verwalten",
 	},
 	"wspekto": {
 		"nb": "Fra utløser til redaksjon på sekunder",
