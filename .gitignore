@@ -21,3 +21,6 @@ secrets/
 # Lokal Claude-konfig
 CLAUDE.md
 .claude/
+
+# SDD-workspace (ledger, briefs, review-pakker)
+.superpowers/
