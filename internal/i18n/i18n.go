@@ -4,6 +4,13 @@
 // golang.org/x/text inn i en binær som skal være liten og CGO-fri.
 package i18n
 
+import (
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+)
+
 // Fallback brukes når nettleseren ikke ber om et språk vi har.
 const Fallback = "en"
 
@@ -55,4 +62,91 @@ func Get(locale string) Strings {
 		return s
 	}
 	return catalog[Fallback]
+}
+
+// supported er locale-kodene vi har oversettelser for, i den rekkefølgen
+// språkvelgeren skal vise dem.
+var supported = []string{"nb", "en", "de"}
+
+// normalize gjør en BCP47-tag om til en av våre locale-koder, eller "" hvis
+// vi ikke har språket. Norsk sendes som nb, nn eller no avhengig av nettleser
+// og operativsystem, så alle tre mappes til nb.
+func normalize(tag string) string {
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	if i := strings.IndexAny(tag, "-_"); i >= 0 {
+		tag = tag[:i]
+	}
+	switch tag {
+	case "nb", "nn", "no":
+		return "nb"
+	case "en":
+		return "en"
+	case "de":
+		return "de"
+	}
+	return ""
+}
+
+// Resolve velger locale. En eksplisitt lang-param vinner over nettleserens
+// preferanse, men en ustøttet lang-param avbryter ikke kjeden — den faller
+// videre til Accept-Language framfor å tvinge fallback.
+func Resolve(langParam, acceptLanguage string) string {
+	if loc := normalize(langParam); loc != "" {
+		return loc
+	}
+	if loc := fromAcceptLanguage(acceptLanguage); loc != "" {
+		return loc
+	}
+	return Fallback
+}
+
+// FromRequest er wrapperen handlerne bruker.
+func FromRequest(r *http.Request) string {
+	return Resolve(r.URL.Query().Get("lang"), r.Header.Get("Accept-Language"))
+}
+
+// fromAcceptLanguage plukker det høyest vektede språket vi støtter, eller ""
+// hvis ingen av alternativene finnes i katalogen.
+func fromAcceptLanguage(header string) string {
+	type candidate struct {
+		locale string
+		weight float64
+	}
+	var candidates []candidate
+
+	for _, part := range strings.Split(header, ",") {
+		fields := strings.Split(part, ";")
+		locale := normalize(fields[0])
+		if locale == "" {
+			continue
+		}
+		weight := 1.0
+		for _, f := range fields[1:] {
+			f = strings.TrimSpace(f)
+			if !strings.HasPrefix(f, "q=") {
+				continue
+			}
+			parsed, err := strconv.ParseFloat(f[2:], 64)
+			if err != nil {
+				// Ugyldig q diskvalifiserer alternativet framfor å gi det
+				// full vekt — en klient som sender søppel skal ikke kunne
+				// overstyre et velformet alternativ lenger ned i listen.
+				weight = 0
+				break
+			}
+			weight = parsed
+		}
+		if weight > 0 {
+			candidates = append(candidates, candidate{locale, weight})
+		}
+	}
+
+	if len(candidates) == 0 {
+		return ""
+	}
+	// Stabil sortering, så lik q beholder rekkefølgen klienten sendte.
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].weight > candidates[j].weight
+	})
+	return candidates[0].locale
 }
