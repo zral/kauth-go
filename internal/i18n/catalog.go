@@ -26,6 +26,8 @@ var catalog = map[string]Strings{
 		ErrInvalidRedirect: "Invalid return address. Please start the sign-in again.",
 		ErrExpiredLink:     "The link has expired or has already been used. Please try again.",
 		ErrTooManyRequests: "Too many requests. Please wait a few minutes and try again.",
+		ErrNoAccount:       "No account found for this email address.",
+		ErrInternal:        "Something went wrong on our end. Please try again.",
 
 		MailSubject: "Your sign-in link",
 		MailBody:    "Hello!\n\nClick to sign in (valid for 15 minutes):\n\n{link}\n\nIf you didn't request this, you can ignore this email.\n",
@@ -54,6 +56,8 @@ var catalog = map[string]Strings{
 		ErrInvalidRedirect: "Ugyldig retur-adresse. Start innloggingen på nytt.",
 		ErrExpiredLink:     "Lenken er utløpt eller allerede brukt. Prøv igjen.",
 		ErrTooManyRequests: "For mange forespørsler. Vent noen minutter og prøv igjen.",
+		ErrNoAccount:       "Ingen konto funnet for denne e-postadressen.",
+		ErrInternal:        "Noe gikk galt hos oss. Prøv igjen.",
 
 		MailSubject: "Din innloggingslenke",
 		MailBody:    "Hei!\n\nKlikk for å logge inn (gyldig 15 min):\n\n{link}\n\nHvis du ikke ba om dette, ignorer denne e-posten.\n",
@@ -82,6 +86,8 @@ var catalog = map[string]Strings{
 		ErrInvalidRedirect: "Ungültige Rücksprungadresse. Bitte starten Sie die Anmeldung neu.",
 		ErrExpiredLink:     "Der Link ist abgelaufen oder wurde bereits verwendet. Bitte versuchen Sie es erneut.",
 		ErrTooManyRequests: "Zu viele Anfragen. Bitte warten Sie einige Minuten und versuchen Sie es erneut.",
+		ErrNoAccount:       "Für diese E-Mail-Adresse wurde kein Konto gefunden.",
+		ErrInternal:        "Bei uns ist etwas schiefgelaufen. Bitte versuchen Sie es erneut.",
 
 		MailSubject: "Ihr Anmeldelink",
 		MailBody:    "Hallo!\n\nKlicken Sie, um sich anzumelden (15 Minuten gültig):\n\n{link}\n\nFalls Sie dies nicht angefordert haben, ignorieren Sie diese E-Mail.\n",

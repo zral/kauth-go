@@ -153,7 +153,10 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fromName := svc.EmailFromName
-	link := h.cfg.BaseURL + "/magic-login/" + plainToken + "?service=" + serviceID
+	// lang følger med i lenken slik at et eksplisitt språkvalg overlever turen
+	// via e-postklienten — nettleseren som åpner lenken kan ha en annen
+	// Accept-Language enn den brukeren valgte på login-siden.
+	link := h.cfg.BaseURL + "/magic-login/" + plainToken + "?service=" + serviceID + "&lang=" + locale
 	if err := h.mailer.SendMagicLink(email, fromName, link, locale); err != nil {
 		slog.Error("magic-link: kunne ikke sende e-post", "email", email, "error", err)
 		// Anti-enumeration: same response regardless
@@ -163,26 +166,42 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("sjekk e-post"))
 }
 
+// redirectWithError sender brukeren tilbake til magic-login-skjemaet med en
+// feilkode og valgt språk. Bruker query-escaping på alle tre verdiene selv om
+// code er en literal og locale er begrenset til nb/en/de av i18n.Resolve —
+// service-ID kommer fra request.
+func (h *MagicHandlers) redirectWithError(w http.ResponseWriter, r *http.Request, serviceID, code, locale string) {
+	q := url.Values{}
+	q.Set("service", serviceID)
+	q.Set("error", code)
+	q.Set("lang", locale)
+	http.Redirect(w, r, "/magic-login?"+q.Encode(), http.StatusFound)
+}
+
 // VerifyToken — GET /magic-login/{token}
 func (h *MagicHandlers) VerifyToken(w http.ResponseWriter, r *http.Request) {
 	svcID := r.URL.Query().Get("service")
 	svc := h.reg.ResolveOrDefault(r.Host, svcID, "")
 	ip := ClientIP(r)
 	ua := r.Header.Get("User-Agent")
+	locale := i18n.FromRequest(r)
+	t := i18n.Get(locale)
 
 	magic, err := h.queries.ConsumeMagicToken(r.Context(), gen.ConsumeMagicTokenParams{
 		Token:     chi.URLParam(r, "token"),
 		ExpiresAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
-		http.Error(w, "ugyldig eller utløpt lenke", http.StatusUnauthorized)
+		// Brukertilstand, ikke serverfeil: send tilbake til skjemaet med oversatt
+		// melding så brukeren kan be om en ny lenke.
+		h.redirectWithError(w, r, svc.ID, "expired", locale)
 		return
 	}
 
 	user, err := h.queries.GetActiveUserByEmail(r.Context(), magic.Email)
 	if err != nil {
 		if svc.AutoRegister != 1 {
-			http.Error(w, "ingen konto funnet", http.StatusUnauthorized)
+			h.redirectWithError(w, r, svc.ID, "no_account", locale)
 			return
 		}
 		defaultOrg := ""
@@ -200,19 +219,22 @@ func (h *MagicHandlers) VerifyToken(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		})
 		if err != nil {
-			http.Error(w, "intern feil", http.StatusInternalServerError)
+			slog.Error("magic-link: kunne ikke opprette bruker", "email", magic.Email, "service", svc.ID, "error", err)
+			http.Error(w, t.ErrInternal, http.StatusInternalServerError)
 			return
 		}
 	}
 
 	accessToken, err := h.issuer.IssueAccess(user, *svc)
 	if err != nil {
-		http.Error(w, "kunne ikke utstede token", http.StatusInternalServerError)
+		slog.Error("magic-link: kunne ikke utstede access-token", "email", user.Email, "service", svc.ID, "error", err)
+		http.Error(w, t.ErrInternal, http.StatusInternalServerError)
 		return
 	}
 	refreshToken, err := h.refresh.Issue(r.Context(), user, *svc, ip, ua)
 	if err != nil {
-		http.Error(w, "kunne ikke utstede refresh-token", http.StatusInternalServerError)
+		slog.Error("magic-link: kunne ikke utstede refresh-token", "email", user.Email, "service", svc.ID, "error", err)
+		http.Error(w, t.ErrInternal, http.StatusInternalServerError)
 		return
 	}
 	setRefreshCookie(w, refreshToken)

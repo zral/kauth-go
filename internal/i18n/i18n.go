@@ -50,6 +50,10 @@ type Strings struct {
 	ErrInvalidRedirect string
 	ErrExpiredLink     string
 	ErrTooManyRequests string
+	ErrNoAccount       string
+	// ErrInternal vises ved serverfeil. Bevisst generisk — den spesifikke
+	// årsaken hører i loggen, ikke på skjermen til noen som ikke kan bruke den.
+	ErrInternal string
 
 	// Magic-link-e-post. MailBody har nøyaktig én {link}-placeholder.
 	MailSubject string
