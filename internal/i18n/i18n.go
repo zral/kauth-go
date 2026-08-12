@@ -6,6 +6,7 @@ package i18n
 
 import (
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -149,4 +150,40 @@ func fromAcceptLanguage(header string) string {
 		return candidates[i].weight > candidates[j].weight
 	})
 	return candidates[0].locale
+}
+
+// Link er ett alternativ i språkvelgeren på login-sidene.
+type Link struct {
+	Code   string // "nb" — brukes som lang- og hreflang-attributt
+	Label  string // "NO" — teksten som vises
+	Name   string // "Norsk" — title/aria-label for skjermlesere
+	Href   string // path + query med lang satt
+	Active bool
+}
+
+// display holder visningsnavnene. Hvert språk skriver sitt eget navn på sitt
+// eget språk — en tysk bruker leter etter "Deutsch", ikke "German".
+var display = map[string]struct{ Label, Name string }{
+	"nb": {"NO", "Norsk"},
+	"en": {"EN", "English"},
+	"de": {"DE", "Deutsch"},
+}
+
+// Links bygger språkvelgeren for gjeldende URL. Href-ene er path-relative så
+// host aldri havner i markup, og eksisterende query-params (service,
+// redirect_uri) overlever språkbyttet.
+func Links(active string, u *url.URL) []Link {
+	out := make([]Link, 0, len(supported))
+	for _, code := range supported {
+		q := u.Query()
+		q.Set("lang", code)
+		out = append(out, Link{
+			Code:   code,
+			Label:  display[code].Label,
+			Name:   display[code].Name,
+			Href:   u.Path + "?" + q.Encode(),
+			Active: code == active,
+		})
+	}
+	return out
 }
