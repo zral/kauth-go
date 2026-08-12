@@ -240,3 +240,43 @@ func TestMagicLoginTemplate_TranslatesExpiredError(t *testing.T) {
 	require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
 	assert.Contains(t, out.String(), "Der Link ist abgelaufen oder wurde bereits verwendet.")
 }
+
+// TestLoginTemplate_TranslatesTagline dekker den ene bruker-vendte strengen som
+// ikke ligger i Strings-structen: tjenestens tagline, som slås opp per
+// tjeneste-ID. Templaten bruker {{.Tagline}}, ikke {{.Service.Tagline}} — bytter
+// noen tilbake til DB-feltet, viser siden norsk tekst på tysk igjen.
+func TestLoginTemplate_TranslatesTagline(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	want := map[string]string{
+		"nb": "Logg inn for å administrere dine arrangementer",
+		"en": "Sign in to manage your events",
+		"de": "Melden Sie sich an, um Ihre Veranstaltungen zu verwalten",
+	}
+
+	for locale, expected := range want {
+		t.Run(locale, func(t *testing.T) {
+			data := testPageData(t, "light", locale, "/login?service=spekto")
+			data.Tagline = i18n.Tagline("spekto", locale)
+
+			var out strings.Builder
+			require.NoError(t, tmpl.ExecuteTemplate(&out, "login.html", data))
+			assert.Contains(t, out.String(), expected)
+		})
+	}
+}
+
+// En tjeneste uten katalog-oppføring faller tilbake til DB-taglinen framfor å
+// vise ingenting.
+func TestLoginTemplate_TaglineFallsBackToDatabase(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	data := testPageData(t, "light", "de", "/login?service=test")
+	data.Tagline = "Test-tjeneste" // som ServeLogin setter fra svc.Tagline
+
+	var out strings.Builder
+	require.NoError(t, tmpl.ExecuteTemplate(&out, "login.html", data))
+	assert.Contains(t, out.String(), "Test-tjeneste")
+}
