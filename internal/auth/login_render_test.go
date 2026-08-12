@@ -159,8 +159,19 @@ func TestMagicLoginTemplate_RendersInAllLocales(t *testing.T) {
 				assert.Contains(t, html, wantSubmit[locale])
 				assert.Contains(t, html, wantInbox[locale])
 				assert.Contains(t, html, `<html lang="`+locale+`">`)
-				// fetch() må sende språket videre så e-posten blir riktig.
+				// "/magic-login?lang=" er identisk i alle locales (det er
+				// JS-kildekode, ikke oversatt tekst) — den beviser bare at
+				// fetch() bygger URL-en, ikke at riktig språk kom med. Det
+				// gjør derimot LANG-verdien: html/template quoter og
+				// escaper {{.Locale}} selv, så en håndlagt anførselstegn i
+				// templaten ville gitt "'de'" i stedet for "de" her.
 				assert.Contains(t, html, "/magic-login?lang=")
+				assert.Contains(t, html, `var LANG = "`+locale+`";`)
+				if locale == "de" {
+					// Språkvelgeren i magic-login.html hadde ingen dekning —
+					// templaten kunne vært slettet uten at noen test slo ut.
+					assert.Contains(t, html, `<span class="active" lang="de"`)
+				}
 			})
 		}
 	}
@@ -197,6 +208,23 @@ func TestMagicLoginTemplate_TranslatesErrorCodes(t *testing.T) {
 	var out strings.Builder
 	require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
 	assert.Contains(t, out.String(), "Too many requests.")
+}
+
+// TestMagicLoginTemplate_TranslatesInvalidRedirect dekker magic-login.html
+// sin invalid_redirect-gren. ShowForm sender ?error= rett gjennom til
+// templaten (magic.go), så grenen er nåbar fra en vilkårlig URL — en
+// skrivefeil i .T.ErrInvalidRedirect ville sluppet gjennom kompilator og
+// hele suiten uten denne testen.
+func TestMagicLoginTemplate_TranslatesInvalidRedirect(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	data := testPageData(t, "light", "de", "/magic-login?service=test")
+	data.Error = "invalid_redirect"
+
+	var out strings.Builder
+	require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
+	assert.Contains(t, out.String(), "Ungültige Rücksprungadresse")
 }
 
 // TestMagicLoginTemplate_TranslatesExpiredError dekker magic-login.html sin
