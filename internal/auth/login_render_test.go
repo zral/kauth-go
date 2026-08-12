@@ -280,3 +280,29 @@ func TestLoginTemplate_TaglineFallsBackToDatabase(t *testing.T) {
 	require.NoError(t, tmpl.ExecuteTemplate(&out, "login.html", data))
 	assert.Contains(t, out.String(), "Test-tjeneste")
 }
+
+// TestMagicLoginTemplate_TranslatesNoAccount dekker no_account-grenen, som
+// VerifyToken redirecter til når tjenesten ikke har auto-registrering. Uten
+// denne kjøres grenen aldri av suiten, og en skrivefeil i .T.ErrNoAccount ville
+// gitt en stille trunkert side (magic.go forkaster render-feilen).
+func TestMagicLoginTemplate_TranslatesNoAccount(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+
+	want := map[string]string{
+		"nb": "Ingen konto funnet for denne e-postadressen.",
+		"en": "No account found for this email address.",
+		"de": "Für diese E-Mail-Adresse wurde kein Konto gefunden.",
+	}
+
+	for locale, expected := range want {
+		t.Run(locale, func(t *testing.T) {
+			data := testPageData(t, "light", locale, "/magic-login?service=test")
+			data.Error = "no_account"
+
+			var out strings.Builder
+			require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
+			assert.Contains(t, out.String(), expected)
+		})
+	}
+}
