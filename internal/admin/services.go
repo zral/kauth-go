@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -84,6 +85,11 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateAuthHost(r.FormValue("auth_host")); err != nil {
+		h.renderServiceError(w, serviceFromForm(r), true, err.Error())
+		return
+	}
+
 	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, svcID)
 	if uploadErr != "" {
 		h.renderServiceError(w, serviceFromForm(r), true, uploadErr)
@@ -151,6 +157,13 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 	}
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+	if err := validateAuthHost(r.FormValue("auth_host")); err != nil {
+		svc := serviceFromForm(r)
+		svc.ID = id
+		h.renderServiceError(w, svc, false, err.Error())
+		return
+	}
 
 	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, id)
 	if uploadErr != "" {
@@ -321,6 +334,32 @@ func buildUpdateParams(r *http.Request, id, now string) gen.UpdateServiceParams 
 }
 
 // Hjelpefunksjoner for skjemabehandling — delt mellom auth.go, users.go og services.go.
+
+// 126 F2 (BACKLOG F19): auth_host konkateneres rått inn i magic-link-URL-en
+// (resolveMagicLinkBaseURL i internal/auth/magic.go: "https://" + auth_host + "/magic-login/" + token).
+// Ingen sjekk fantes tidligere — en feilkonfigurasjon (skrivefeil, skjema inkludert ved
+// et uhell, eller en kompromittert konge-admin) kunne sende bearer-ekvivalente tokens
+// til feil host i stedet for å feile trygt. Regexen er bevisst enkel (alfanumerisk +
+// punktum + bindestrek) — dekker feilkonfigurasjon, ikke eksotisk-men-gyldige vertsnavn
+// (internasjonaliserte domener). Tom streng er fortsatt gyldig (bruk global default).
+var authHostPattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)
+
+func validateAuthHost(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	if strings.Contains(s, "://") {
+		return fmt.Errorf("auth_host skal ikke inneholde skjema (fjern https://)")
+	}
+	if strings.ContainsAny(s, "/ \t\n") {
+		return fmt.Errorf("auth_host skal være et rent vertsnavn, ikke inneholde sti eller mellomrom")
+	}
+	if !authHostPattern.MatchString(s) {
+		return fmt.Errorf("auth_host er ikke et gyldig vertsnavn")
+	}
+	return nil
+}
 
 func nullableStr(s string) *string {
 	s = strings.TrimSpace(s)
