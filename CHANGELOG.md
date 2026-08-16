@@ -21,6 +21,10 @@ Alle merkbare endringer i prosjektet dokumenteres her. Format inspirert av [Keep
 - Admin Google-login bruker nå samme `/callback`-URL som vanlig brukerflyt, via intern `redirect_uri`-cookie til `/admin/google-callback`. Matcher Java-originalens mønster og krever ikke separat redirect-URI hvitlistet hos Google.
 - `doc/FEATURES.md` oppdatert med admin Google-flyt-detaljer og intern-dispatch-seksjon.
 
+### Fixed
+
+- Magic-link-e-posten sendte alltid brukeren til den globale, statiske `KAUTH_BASE_URL` (`auth.klarsyn.net`) uansett hvilken tjeneste innloggingen gjaldt — en Spekto-bruker havnet dermed på Klarsyn sin side. Lenken bygges nå fra den allerede resolvet tjenestens `auth_host` når den er satt, med samme fallback-oppførsel som før for tjenester uten eget `auth_host` (Klarsyn, uendret). Fjernet også en ubrukt `redirect_uri`-query-param-lesing i `/magic-login` (klienten sendte den aldri).
+
 ## [0.1.0] — 2026-06-18
 
 Første portering av kauth fra Quarkus til Go er ferdig og kjører i prod.

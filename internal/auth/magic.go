@@ -103,6 +103,23 @@ func (h *MagicHandlers) ShowForm(w http.ResponseWriter, r *http.Request) {
 	_ = h.tmpl.ExecuteTemplate(w, "magic-login.html", data)
 }
 
+// resolveMagicLinkBaseURL avgjør hvilken host magic-link-e-posten skal peke til.
+//
+// BACKLOG F1 / ADN 87: tidligere ble h.cfg.BaseURL (global, statisk config-verdi,
+// alltid https://auth.klarsyn.net) brukt uansett hvilken tjeneste login-flyten
+// gjaldt — en Spekto-bruker fikk dermed en lenke til Klarsyn sin egen side.
+// svc er allerede korrekt resolvet fra r.Host av kalleren (service.Registry,
+// nivå 2 i Resolve()) — bruk dens AuthHost når den finnes. Tjenester uten
+// eksplisitt auth_host i DB (klarsyn er is_default og har historisk aldri
+// trengt et eget auth_host siden BaseURL allerede pekte dit) faller tilbake
+// til cfg.BaseURL, som bevarer eksisterende oppførsel for dem uendret.
+func resolveMagicLinkBaseURL(cfg config.Config, svc *gen.Service) string {
+	if svc != nil && svc.AuthHost != nil && *svc.AuthHost != "" {
+		return "https://" + *svc.AuthHost
+	}
+	return cfg.BaseURL
+}
+
 // RequestLink — POST /magic-login
 // Returnerer alltid 200 (anti-enumeration). Minimum 200ms responstid.
 func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
@@ -134,17 +151,17 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 	plainToken := hex.EncodeToString(b)
 	now := time.Now().UTC()
 
-	redirectURI := r.URL.Query().Get("redirect_uri")
-	var redirectURIPtr *string
-	if redirectURI != "" {
-		redirectURIPtr = &redirectURI
-	}
-
+	// BACKLOG F1 K4: redirect_uri ble tidligere lest fra query-param her, men
+	// magic-login.html sin fetch() sender aldri det feltet (kun email+service) —
+	// verdien var derfor alltid nil i praksis, og RedirectUri leses ikke andre
+	// steder i kodebasen (verifisert). Fjernet i stedet for å late som den brukes;
+	// selve redirect-etter-innlogging dekkes av redirect_uri-cookien satt
+	// klientside i login.html (samme mekanisme som Google/Microsoft-flyten).
 	if err := h.queries.InsertMagicToken(r.Context(), gen.InsertMagicTokenParams{
 		Token:       plainToken,
 		Email:       email,
 		ServiceID:   &serviceID,
-		RedirectUri: redirectURIPtr,
+		RedirectUri: nil,
 		ExpiresAt:   now.Add(15 * time.Minute).Format(time.RFC3339),
 		CreatedAt:   now.Format(time.RFC3339),
 	}); err != nil {
@@ -153,10 +170,11 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fromName := svc.EmailFromName
+	baseURL := resolveMagicLinkBaseURL(h.cfg, svc)
 	// lang følger med i lenken slik at et eksplisitt språkvalg overlever turen
 	// via e-postklienten — nettleseren som åpner lenken kan ha en annen
 	// Accept-Language enn den brukeren valgte på login-siden.
-	link := h.cfg.BaseURL + "/magic-login/" + plainToken + "?service=" + serviceID + "&lang=" + locale
+	link := baseURL + "/magic-login/" + plainToken + "?service=" + serviceID + "&lang=" + locale
 	if err := h.mailer.SendMagicLink(email, fromName, link, locale); err != nil {
 		slog.Error("magic-link: kunne ikke sende e-post", "email", email, "error", err)
 		// Anti-enumeration: same response regardless
