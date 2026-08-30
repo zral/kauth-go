@@ -11,12 +11,12 @@ import (
 
 const createService = `-- name: CreateService :exec
 INSERT INTO services (id, display_name, tagline, domain, auth_host, callback_url,
-    logo_html, bg_image, bg_css, theme, accent_color, email_from_name,
+    logo_html, bg_image, bg_css, theme, accent_color, email_from_name, email_from_address,
     auto_register, default_role, default_org, require_role, enforce_org, is_default,
     auth_google, auth_microsoft, auth_magic_link, auth_password,
     google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret,
     jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type CreateServiceParams struct {
@@ -32,6 +32,7 @@ type CreateServiceParams struct {
 	Theme                 string  `json:"theme"`
 	AccentColor           string  `json:"accent_color"`
 	EmailFromName         string  `json:"email_from_name"`
+	EmailFromAddress      *string `json:"email_from_address"`
 	AutoRegister          int64   `json:"auto_register"`
 	DefaultRole           *string `json:"default_role"`
 	DefaultOrg            *string `json:"default_org"`
@@ -67,6 +68,7 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) er
 		arg.Theme,
 		arg.AccentColor,
 		arg.EmailFromName,
+		arg.EmailFromAddress,
 		arg.AutoRegister,
 		arg.DefaultRole,
 		arg.DefaultOrg,
@@ -91,7 +93,7 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) er
 }
 
 const getDefaultService = `-- name: GetDefaultService :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at FROM services WHERE is_default = 1 AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services WHERE is_default = 1 AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetDefaultService(ctx context.Context) (Service, error) {
@@ -129,12 +131,13 @@ func (q *Queries) GetDefaultService(ctx context.Context) (Service, error) {
 		&i.RefreshTokenMaxAge,
 		&i.Active,
 		&i.UpdatedAt,
+		&i.EmailFromAddress,
 	)
 	return i, err
 }
 
 const getServiceByAuthHost = `-- name: GetServiceByAuthHost :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at FROM services WHERE auth_host = ? AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services WHERE auth_host = ? AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetServiceByAuthHost(ctx context.Context, authHost *string) (Service, error) {
@@ -172,12 +175,13 @@ func (q *Queries) GetServiceByAuthHost(ctx context.Context, authHost *string) (S
 		&i.RefreshTokenMaxAge,
 		&i.Active,
 		&i.UpdatedAt,
+		&i.EmailFromAddress,
 	)
 	return i, err
 }
 
 const getServiceByID = `-- name: GetServiceByID :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at FROM services WHERE id = ? AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services WHERE id = ? AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetServiceByID(ctx context.Context, id string) (Service, error) {
@@ -215,12 +219,13 @@ func (q *Queries) GetServiceByID(ctx context.Context, id string) (Service, error
 		&i.RefreshTokenMaxAge,
 		&i.Active,
 		&i.UpdatedAt,
+		&i.EmailFromAddress,
 	)
 	return i, err
 }
 
 const listActiveServices = `-- name: ListActiveServices :many
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at FROM services WHERE active = 1 ORDER BY display_name
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services WHERE active = 1 ORDER BY display_name
 `
 
 func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
@@ -264,6 +269,7 @@ func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
 			&i.RefreshTokenMaxAge,
 			&i.Active,
 			&i.UpdatedAt,
+			&i.EmailFromAddress,
 		); err != nil {
 			return nil, err
 		}
@@ -279,7 +285,7 @@ func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
 }
 
 const listAllServices = `-- name: ListAllServices :many
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at FROM services ORDER BY display_name
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services ORDER BY display_name
 `
 
 func (q *Queries) ListAllServices(ctx context.Context) ([]Service, error) {
@@ -323,6 +329,7 @@ func (q *Queries) ListAllServices(ctx context.Context) ([]Service, error) {
 			&i.RefreshTokenMaxAge,
 			&i.Active,
 			&i.UpdatedAt,
+			&i.EmailFromAddress,
 		); err != nil {
 			return nil, err
 		}
@@ -341,7 +348,7 @@ const updateService = `-- name: UpdateService :exec
 UPDATE services SET
     display_name = ?, tagline = ?, domain = ?, auth_host = ?, callback_url = ?,
     logo_html = ?, bg_image = ?, bg_css = ?, theme = ?, accent_color = ?,
-    email_from_name = ?, auto_register = ?, default_role = ?, default_org = ?,
+    email_from_name = ?, email_from_address = ?, auto_register = ?, default_role = ?, default_org = ?,
     require_role = ?, enforce_org = ?, is_default = ?,
     auth_google = ?, auth_microsoft = ?, auth_magic_link = ?, auth_password = ?,
     google_client_id = ?, google_client_secret = ?,
@@ -363,6 +370,7 @@ type UpdateServiceParams struct {
 	Theme                 string  `json:"theme"`
 	AccentColor           string  `json:"accent_color"`
 	EmailFromName         string  `json:"email_from_name"`
+	EmailFromAddress      *string `json:"email_from_address"`
 	AutoRegister          int64   `json:"auto_register"`
 	DefaultRole           *string `json:"default_role"`
 	DefaultOrg            *string `json:"default_org"`
@@ -398,6 +406,7 @@ func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) er
 		arg.Theme,
 		arg.AccentColor,
 		arg.EmailFromName,
+		arg.EmailFromAddress,
 		arg.AutoRegister,
 		arg.DefaultRole,
 		arg.DefaultOrg,

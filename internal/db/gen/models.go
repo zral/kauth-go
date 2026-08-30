@@ -77,6 +77,7 @@ type Service struct {
 	RefreshTokenMaxAge    *string `json:"refresh_token_max_age"`
 	Active                int64   `json:"active"`
 	UpdatedAt             string  `json:"updated_at"`
+	EmailFromAddress      *string `json:"email_from_address"`
 }
 
 type User struct {

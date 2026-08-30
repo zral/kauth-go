@@ -130,7 +130,9 @@ func (h *AuthHandler) tryIssueMagicLink(r *http.Request) error {
 	verifyURL := h.cfg.BaseURL + "/admin/verify?token=" + rawToken
 	fromName := "kauth Admin"
 	// Admin-panelet er norsk-only, så e-posten sendes eksplisitt på norsk.
-	if sendErr := h.mailer.SendMagicLink(email, fromName, verifyURL, "nb"); sendErr != nil {
+	// Admin-panelet er ikke tjeneste-bundet, så det finnes ingen
+	// email_from_address å bruke — uendret global avsender (rå SMTP).
+	if sendErr := h.mailer.SendMagicLink(email, fromName, verifyURL, "nb", ""); sendErr != nil {
 		return sendErr
 	}
 

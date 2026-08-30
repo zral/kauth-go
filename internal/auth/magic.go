@@ -170,12 +170,16 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fromName := svc.EmailFromName
+	var fromAddress string
+	if svc.EmailFromAddress != nil {
+		fromAddress = *svc.EmailFromAddress
+	}
 	baseURL := resolveMagicLinkBaseURL(h.cfg, svc)
 	// lang følger med i lenken slik at et eksplisitt språkvalg overlever turen
 	// via e-postklienten — nettleseren som åpner lenken kan ha en annen
 	// Accept-Language enn den brukeren valgte på login-siden.
 	link := baseURL + "/magic-login/" + plainToken + "?service=" + serviceID + "&lang=" + locale
-	if err := h.mailer.SendMagicLink(email, fromName, link, locale); err != nil {
+	if err := h.mailer.SendMagicLink(email, fromName, link, locale, fromAddress); err != nil {
 		slog.Error("magic-link: kunne ikke sende e-post", "email", email, "error", err)
 		// Anti-enumeration: same response regardless
 	}

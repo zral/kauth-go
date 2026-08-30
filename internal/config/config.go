@@ -31,6 +31,11 @@ type Config struct {
 	SMTPStartTLS bool
 	SMTPMock     bool
 
+	// BrevoAPIKey aktiverer Brevo som transport for tjenester med satt
+	// services.email_from_address (BACKLOG F21). Rå SMTP over forblir
+	// uendret fallback for tjenester uten egen avsenderadresse.
+	BrevoAPIKey string
+
 	GoogleClientID        string
 	GoogleClientSecret    string
 	MicrosoftClientID     string
@@ -136,6 +141,7 @@ func Load() (*Config, error) {
 	c.SMTPFrom = optional("KAUTH_SMTP_FROM", "noreply@localhost")
 	c.SMTPStartTLS = optional("KAUTH_SMTP_STARTTLS", "true") == "true"
 	c.SMTPMock = optional("KAUTH_SMTP_MOCK", "false") == "true"
+	c.BrevoAPIKey = os.Getenv("KAUTH_BREVO_API_KEY")
 
 	if c.SMTPHost == "" && !c.SMTPMock {
 		fmt.Println("ADVARSEL: KAUTH_SMTP_HOST ikke satt og KAUTH_SMTP_MOCK=false — magic link vil feile")

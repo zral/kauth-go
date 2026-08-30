@@ -6,6 +6,7 @@ Alle merkbare endringer i prosjektet dokumenteres her. Format inspirert av [Keep
 
 ### Added
 
+- Ny nullable `services.email_from_address`-kolonne (samme mønster som `auth_host`) og Brevo-transport i `internal/mail`. En tjeneste med satt adresse sender magic-link via Brevo med den adressen som avsender; tomt felt gir uendret oppførsel (global `KAUTH_SMTP_FROM` via rå SMTP). `spekto`-tjenesten er satt til `noreply@spekto.live` (bekreftet DNS-verifisert i den delte Brevo-kontoen) — de fire andre tjenestene er uendret, siden deres domener ikke er Brevo-verifiserte. Retter et tillitssignal der en Spekto-bruker mottok magic-link-e-post fra `noreply@klarsyn.net`, som ikke matcher hverken merkevaren eller lenken den peker til.
 - `SECURITY.md` med rapporteringsguide og threat model.
 - `CHANGELOG.md`.
 - `CONTRIBUTING.md` med lokal utvikling, struktur og PR-prosess.

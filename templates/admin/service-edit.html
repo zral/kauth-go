@@ -97,6 +97,11 @@
             <input type="text" name="email_from_name" value="{{.Service.EmailFromName}}" placeholder="Spekto">
         </div>
         <div class="form-group">
+            <label>Avsenderadresse (e-post, Brevo)</label>
+            <input type="email" name="email_from_address" value="{{if .Service.EmailFromAddress}}{{.Service.EmailFromAddress}}{{end}}" placeholder="noreply@spekto.live">
+            <p class="hint">Tomt = uendret global avsender via rå SMTP. Satt = sendes via Brevo med denne adressen — krever at domenet er Brevo-verifisert (se BACKLOG F21), ellers feiler sendingen.</p>
+        </div>
+        <div class="form-group">
             <label>Temafarge</label>
             <input type="color" name="accent_color" value="{{.Service.AccentColor}}">
         </div>
