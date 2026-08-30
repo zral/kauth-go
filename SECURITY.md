@@ -1,62 +1,64 @@
-# Sikkerhetspolicy
+# Security policy
 
-## Rapportere sårbarheter
+**English** · [Norsk](SECURITY.no.md)
 
-Hvis du oppdager en sikkerhetssårbarhet i kauth, ikke åpne en offentlig GitHub-issue. Send en privat melding via GitHub Security Advisories (Security-fanen på repoet) eller direkte til `lsoraas@gmail.com`.
+## Reporting a vulnerability
 
-Inkluder så mye detalj som du kan: hvilken versjon, hva du gjorde, hva du forventet, hva som faktisk skjedde, og en mulig konsekvens. Hvis du har en proof-of-concept eller et eksempelangrep er det nyttig — men send det privat, ikke i et offentlig forum.
+If you find a security vulnerability in kauth, please don't open a public GitHub issue. Send a private report through GitHub Security Advisories (the Security tab on the repository) or directly to `lsoraas@gmail.com`.
 
-Vi prøver å bekrefte mottak innen 72 timer. Reell respons og fiks avhenger av alvorlighetsgrad og kompleksitet, men hold deg med at vi gir prioritet.
+Include as much detail as you can: which version, what you did, what you expected, what actually happened, and a possible impact. A proof of concept or a sample attack is useful — but send it privately, not in a public forum.
+
+We aim to acknowledge receipt within 72 hours. Actual response and fix time depends on severity and complexity, but rest assured we treat these with priority.
 
 ## Supported versions
 
-kauth har ingen formelle versjoner ennå. `master` er den eneste støttede grenen, og fikser kommer dit. Hvis du kjører fra en eldre commit, ta nyere `master` for sikkerhetsoppdateringer.
+kauth has no formal releases yet. `master` is the only supported branch, and fixes land there. If you're running an older commit, move to a recent `master` for security updates.
 
-## Hva som er i scope
+## In scope
 
-- Autentiserings- og autoriseringsflyter (OIDC, magic-link, passord, refresh-token-rotasjon)
-- Token-utstedelse og -verifisering (JWT, JWKS)
-- Cookie-håndtering (HttpOnly, Secure, SameSite)
-- HMAC-state og state-cookie-håndtering for OIDC
-- Anti-enumeration- og rate-limiting-mekanismer
-- Admin-panel: autentisering, autorisering, CSRF-overflater
-- Cross-host login-flyt (URL-token-passing, redirect_uri-cookie)
-- Filopplasting i admin (bakgrunnsbilder)
-- SQL-håndtering (selv om vi bruker sqlc og parametriserte spørringer)
-- CSV-eksport (formula-injection-håndtering)
+- Authentication and authorisation flows (OIDC, magic link, password, refresh-token rotation)
+- Token issuance and verification (JWT, JWKS)
+- Cookie handling (HttpOnly, Secure, SameSite)
+- HMAC state and state-cookie handling for OIDC
+- Anti-enumeration and rate-limiting mechanisms
+- Admin panel: authentication, authorisation, CSRF surfaces
+- Cross-host login flow (URL token passing, redirect_uri cookie)
+- File upload in the admin panel (background images)
+- SQL handling (even though we use sqlc and parameterised queries)
+- CSV export (formula-injection handling)
 
-## Hva som ikke er i scope
+## Out of scope
 
-- Sårbarheter i Cloudflare, modernc.org/sqlite, golang-jwt eller andre tredjeparts-avhengigheter — rapporter direkte til oppstrøms.
-- Sosial-engineering-angrep mot administrator-brukere.
-- Fysisk tilgang til serveren.
-- DoS via ressursforbruk (vi har basis-grenser; ekstreme tilfeller løses oppstrøms via Cloudflare).
+- Vulnerabilities in Cloudflare, modernc.org/sqlite, golang-jwt or other third-party dependencies — report those upstream.
+- Social-engineering attacks against administrator users.
+- Physical access to the server.
+- DoS through resource exhaustion (we have basic limits; extreme cases are handled upstream by Cloudflare).
 
-## Threat model i korte trekk
+## Threat model in brief
 
-kauth er designet for self-hosted miljøer på et knippe tjenester. Antagelsene er:
+kauth is designed for self-hosted environments serving a handful of services. The assumptions are:
 
-- Kjører bak HTTPS-terminerende reverse-proxy (Cloudflare Tunnel i vårt tilfelle)
-- Klient-IP kommer fra `CF-Connecting-IP`-header
-- Admin-konton (brukere med `konge`-rolle) er manuelt opprettet og betrodd
-- RSA-privatnøkkel er hemmelig og hostet sammen med binæren
-- Resource-servere validerer JWT-er mot JWKS
+- It runs behind an HTTPS-terminating reverse proxy (Cloudflare Tunnel in our case)
+- The client IP arrives in the `CF-Connecting-IP` header
+- Admin accounts (users with the `konge` role) are created manually and trusted
+- The RSA private key is secret and hosted alongside the binary
+- Resource servers validate JWTs against JWKS
 
-Hvis disse antagelsene brytes (f.eks. kauth eksponeres direkte på et offentlig nettverk uten TLS, eller flere usanksjonerte konton har konge-rolle), er sikkerhetsmodellen ikke gyldig.
+If those assumptions break — kauth exposed directly on a public network without TLS, say, or several unsanctioned accounts holding the `konge` role — the security model no longer holds.
 
-## Designvalg som er sikkerhetsmessig relevante
+## Design decisions that are security-relevant
 
-- Passord deaktivert som default — se README-en for resonnementet.
-- Refresh-token-rotasjon med family-revocation ved gjenbruk (RFC OAuth-BCP §4.13).
-- Konstant-tids HMAC-sammenligning på state-cookies.
-- Anti-enumeration på magic-link og admin-login (200ms gulv + identiske responser).
-- Rate-limiting på magic-link (3 forsøk per 15 min per e-post).
-- Audit-isolering i goroutine — audit-feil kan aldri blokkere auth.
-- Eksplisitt `Secure: true` på alle cookies (overstyrbart for lokal HTTP-utvikling via `KAUTH_INSECURE_COOKIES=true`).
-- CORS er deaktivert som default (`KAUTH_CORS_ORIGINS=` tom liste = ingen CORS-headere). Aktiveres kun for spesifikke endepunkter (`/token`, `/.well-known/*`).
+- Passwords disabled by default — see the [README](README.md) for the reasoning.
+- Refresh-token rotation with family revocation on reuse (OAuth BCP §4.13).
+- Constant-time HMAC comparison on state cookies.
+- Anti-enumeration on magic link and admin login (200 ms floor plus identical responses).
+- Rate limiting on magic links (3 attempts per 15 minutes per email address).
+- Audit writes isolated in a goroutine — an audit failure can never block authentication.
+- Explicit `Secure: true` on every cookie (overridable for local HTTP development through `KAUTH_INSECURE_COOKIES=true`).
+- CORS disabled by default (`KAUTH_CORS_ORIGINS=` empty list means no CORS headers at all). Enabled only for specific endpoints (`/token`, `/.well-known/*`).
 
-## Kjente begrensninger
+## Known limitations
 
-- Vi har ikke gjort en formell penetrasjonstest. Koden er gjennomgått internt, men ekstern review er ikke utført.
-- Rate-limiter for magic-link er prosess-lokal (in-memory). Hvis kauth kjører i flere instanser bak en load balancer, vil hver instans ha eget regnskap. Per nå kjøres kauth som én instans, så det er ikke et problem.
-- Ingen automatisert rotasjon av RSA-signeringsnøkkelen. Manuelt bytte krever koordinert deploy.
+- We haven't run a formal penetration test. The code has been reviewed internally, but no external review has been carried out.
+- The magic-link rate limiter is process-local (in-memory). If kauth runs as several instances behind a load balancer, each instance keeps its own tally. kauth currently runs as a single instance, so this isn't a problem in practice.
+- No automated rotation of the RSA signing key. Changing it manually requires a coordinated deploy.
