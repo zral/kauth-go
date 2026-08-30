@@ -262,7 +262,9 @@ func (h *MagicHandlers) VerifyToken(w http.ResponseWriter, r *http.Request) {
 	setRefreshCookie(w, refreshToken)
 
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	_ = h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email})
+	if err := h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email}); err != nil {
+		slog.Error("magic-link: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
+	}
 	h.aud.Log(r.Context(), audit.Event{Type: "magic_link_login", AuthMethod: "magic_link", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
 	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(accessToken)+"&rt="+url.QueryEscape(refreshToken), http.StatusFound)
 }

@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"os"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/zral/kauth-go/internal/db/gen"
@@ -22,7 +22,7 @@ func setAuthCookies(w http.ResponseWriter, svc *gen.Service, accessToken, refres
 		Value:    accessToken,
 		Path:     "/",
 		HttpOnly: true,
-		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(ttl.Seconds()),
 	})
@@ -31,7 +31,7 @@ func setAuthCookies(w http.ResponseWriter, svc *gen.Service, accessToken, refres
 		Value:    refreshToken,
 		Path:     "/",
 		HttpOnly: true,
-		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteNoneMode,
 		MaxAge:   30 * 24 * 3600,
 	})
@@ -54,4 +54,3 @@ func setRefreshCookie(w http.ResponseWriter, refreshToken string) {
 func clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", HttpOnly: true, Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true", MaxAge: -1})
 }
-

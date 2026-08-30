@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -69,7 +70,9 @@ func (h *PasswordHandlers) DoLogin(w http.ResponseWriter, r *http.Request) {
 	setRefreshCookie(w, rt)
 
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	_ = h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email})
+	if err := h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email}); err != nil {
+		slog.Error("password: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
+	}
 	h.aud.Log(r.Context(), audit.Event{Type: "login_success", AuthMethod: "password", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
 	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt), http.StatusFound)
 }

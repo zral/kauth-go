@@ -1,9 +1,9 @@
 package auth
 
 import (
-	"os"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/zral/kauth-go/internal/service"
@@ -155,7 +155,7 @@ func (h *DispatchHandler) ServeLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   0,
 		HttpOnly: true,
-		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -166,7 +166,7 @@ func (h *DispatchHandler) ServeLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   0,
 		HttpOnly: true,
-		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 	})
 

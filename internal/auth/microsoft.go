@@ -1,11 +1,12 @@
 package auth
 
 import (
-	"os"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -66,7 +67,7 @@ func (h *MicrosoftHandlers) InitiateLogin(w http.ResponseWriter, r *http.Request
 		Value:    state,
 		Path:     "/",
 		HttpOnly: true,
-		Secure: os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
+		Secure:   os.Getenv("KAUTH_INSECURE_COOKIES") != "true",
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   600,
 	})
@@ -156,7 +157,9 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 	setRefreshCookie(w, rt)
 	clearCookie(w, "ms_state")
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	_ = h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email})
+	if err := h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email}); err != nil {
+		slog.Error("microsoft: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
+	}
 	h.aud.Log(ctx, audit.Event{Type: "microsoft_oidc_login", AuthMethod: "microsoft", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
 	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt), http.StatusFound)
 }
