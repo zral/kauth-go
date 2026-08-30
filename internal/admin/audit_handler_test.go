@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -113,4 +114,24 @@ func TestHandleExport_FilteredCSVSkipsNonMatchingRows(t *testing.T) {
 	body := w.Body.String()
 	assert.Contains(t, body, "login_failed")
 	assert.NotContains(t, body, "refresh_token_issued")
+}
+
+func TestHandleList_NoFilter_PanelIsCollapsed(t *testing.T) {
+	body := renderAudit(t, "")
+	assert.Contains(t, body, "ingen aktive")
+	assert.Contains(t, body, `<details class="filters">`)
+}
+
+func TestHandleList_ActiveFilter_PanelOpensWithCount(t *testing.T) {
+	// Uten open ville du filtrert i blinde etter sidelasting.
+	body := renderAudit(t, "?email=pov&event=login_failed")
+	assert.Contains(t, body, `<details class="filters" open>`)
+	assert.Contains(t, body, "2 aktive")
+}
+
+func TestHandleList_EachGroupHasSelectAllControls(t *testing.T) {
+	body := renderAudit(t, "")
+	// type=button så knappene aldri submitter skjemaet ved et uhell.
+	assert.Equal(t, 4, strings.Count(body, `type="button" data-all="1"`))
+	assert.Equal(t, 4, strings.Count(body, `type="button" data-all="0"`))
 }

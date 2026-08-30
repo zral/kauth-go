@@ -80,6 +80,24 @@ func (f auditFilter) Selected(group []string, value string) bool {
 // buildAuditQuery bygger WHERE-delen av auditspørringen med bundne parametere.
 // Returnerer tom streng når ingenting er filtrert på.
 func buildAuditQuery(f auditFilter) (string, []any) {
+	clauses, args := auditClauses(f)
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// ActiveCount er antall filtre som faktisk begrenser resultatet. Den leser
+// samme klausulliste som spørringen, så telleren i skjemaoverskriften kan
+// ikke komme i utakt med hva som faktisk filtreres.
+func (f auditFilter) ActiveCount() int {
+	clauses, _ := auditClauses(f)
+	return len(clauses)
+}
+
+// auditClauses er den ene kilden til hva som filtreres — én klausul per
+// aktivt filter, i stabil rekkefølge.
+func auditClauses(f auditFilter) ([]string, []any) {
 	var clauses []string
 	var args []any
 
@@ -126,10 +144,7 @@ func buildAuditQuery(f auditFilter) (string, []any) {
 		args = append(args, a...)
 	}
 
-	if len(clauses) == 0 {
-		return "", nil
-	}
-	return " WHERE " + strings.Join(clauses, " AND "), args
+	return clauses, args
 }
 
 // choiceClause lager IN-listen for en multi-valg-kolonne, med NULL-håndtering.

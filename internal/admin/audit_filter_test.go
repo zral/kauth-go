@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -115,4 +116,43 @@ func TestBuildAuditQuery_Combination_AndsClausesInStableOrder(t *testing.T) {
 		"%lars%", "%10.0.%", "%invalid%",
 		int64(0),
 	}, args)
+}
+
+func TestActiveCount_EmptyFilter_IsZero(t *testing.T) {
+	assert.Equal(t, 0, auditFilter{}.ActiveCount())
+}
+
+func TestActiveCount_BlankChoices_DoNotCount(t *testing.T) {
+	f := auditFilter{Events: []string{"", "   "}, Methods: []string{}}
+	assert.Equal(t, 0, f.ActiveCount())
+}
+
+func TestActiveCount_InvalidDate_DoesNotCount(t *testing.T) {
+	assert.Equal(t, 0, auditFilter{From: "i går"}.ActiveCount())
+}
+
+func TestActiveCount_NonNumericOK_DoesNotCount(t *testing.T) {
+	assert.Equal(t, 0, auditFilter{OK: []string{"ja"}}.ActiveCount())
+}
+
+func TestActiveCount_DateRange_CountsBothBounds(t *testing.T) {
+	assert.Equal(t, 2, auditFilter{From: "2026-08-01", To: "2026-08-31"}.ActiveCount())
+}
+
+func TestActiveCount_AllNineFilters(t *testing.T) {
+	f := auditFilter{
+		From: "2026-08-01", To: "2026-08-31",
+		Email: "lars", IP: "10.0.", Details: "invalid",
+		Events: []string{"login_failed"}, Methods: []string{"password"},
+		Services: []string{"spekto"}, OK: []string{"0"},
+	}
+	assert.Equal(t, 9, f.ActiveCount())
+}
+
+func TestActiveCount_MatchesNumberOfSQLClauses(t *testing.T) {
+	// Telleren i skjemaoverskriften må aldri komme i utakt med spørringen.
+	f := auditFilter{Email: "lars", Events: []string{"login_failed"}, OK: []string{"1"}}
+	where, _ := buildAuditQuery(f)
+	assert.Equal(t, 3, f.ActiveCount())
+	assert.Equal(t, 2, strings.Count(where, " AND "))
 }
