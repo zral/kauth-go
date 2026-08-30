@@ -86,7 +86,7 @@ func main() {
 	// cfg er allerede *config.Config — ingen & nødvendig
 	adminAuthH := admin.NewAuthHandler(queries, issuer, mailSvc, auditSvc, cfg)
 	adminUsersH := admin.NewUsersHandler(queries, auditSvc)
-	adminAuditH := admin.NewAuditHandler(queries)
+	adminAuditH := admin.NewAuditHandler(sqlDB)
 	adminSvcsH := admin.NewServicesHandler(queries, registry, auditSvc)
 
 	// ── 9. Start bakgrunnsjobber ─────────────────────────────────────────────

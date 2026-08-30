@@ -1,71 +1,77 @@
 package admin
 
 import (
+	"database/sql"
 	"encoding/csv"
 	"html/template"
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/zral/kauth-go/internal/db/gen"
 )
 
-const auditPerPage = 50
+const (
+	auditPerPage     = 50
+	auditExportLimit = 100000
+)
 
 // AuditHandler håndterer visning og eksport av auditlogg.
 type AuditHandler struct {
-	queries *gen.Queries
+	sqldb   *sql.DB
 	listTpl *template.Template
 }
 
-func NewAuditHandler(queries *gen.Queries) *AuditHandler {
-	tpl := template.Must(template.ParseFiles("templates/admin/audit.html"))
-	return &AuditHandler{queries: queries, listTpl: tpl}
+// auditTplFuncs gjør sentinel-verdier lesbare i skjemaet.
+var auditTplFuncs = template.FuncMap{
+	"auditLabel": func(v string) string {
+		if v == auditNoneValue {
+			return "(ingen)"
+		}
+		return v
+	},
+}
+
+func NewAuditHandler(sqldb *sql.DB) *AuditHandler {
+	tpl := template.Must(template.New("audit.html").
+		Funcs(auditTplFuncs).
+		ParseFiles("templates/admin/audit.html"))
+	return &AuditHandler{sqldb: sqldb, listTpl: tpl}
 }
 
 // HandleList rendrer auditlogg-tabellen med filtrering og paginering.
 func (h *AuditHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	email := strings.TrimSpace(r.URL.Query().Get("email"))
-	serviceFilter := strings.TrimSpace(r.URL.Query().Get("service"))
+	filter := parseAuditFilter(r)
+
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 1 {
 		page = 1
 	}
-	offset := int64((page - 1) * auditPerPage)
 
-	var events []gen.AuditEvent
-	var err error
-
-	switch {
-	case email != "":
-		events, err = h.queries.ListAuditEventsByEmail(ctx, gen.ListAuditEventsByEmailParams{
-			Email:  &email,
-			Limit:  auditPerPage,
-			Offset: offset,
-		})
-	case serviceFilter != "":
-		events, err = h.queries.ListAuditEventsByService(ctx, gen.ListAuditEventsByServiceParams{
-			ServiceID: &serviceFilter,
-			Limit:     auditPerPage,
-			Offset:    offset,
-		})
-	default:
-		events, err = h.queries.ListAuditEvents(ctx, gen.ListAuditEventsParams{
-			Limit:  auditPerPage,
-			Offset: offset,
-		})
+	total, err := countAuditEvents(ctx, h.sqldb, filter)
+	if err != nil {
+		http.Error(w, "databasefeil: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
+	totalPages := int(math.Ceil(float64(total) / float64(auditPerPage)))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+
+	events, err := queryAuditEvents(ctx, h.sqldb, filter, auditPerPage, int64((page-1)*auditPerPage))
 	if err != nil {
 		http.Error(w, "databasefeil: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	total, _ := h.queries.CountAuditEvents(ctx)
-	totalPages := int(math.Ceil(float64(total) / float64(auditPerPage)))
-	if totalPages < 1 {
-		totalPages = 1
+	choices, err := loadAuditChoices(ctx, h.sqldb)
+	if err != nil {
+		http.Error(w, "databasefeil: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	var prevPage, nextPage int
@@ -77,51 +83,39 @@ func (h *AuditHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type pageData struct {
-		Events        []gen.AuditEvent
-		Email         string
-		ServiceFilter string
-		Page          int
-		TotalPages    int
-		PrevPage      int
-		NextPage      int
+		Events     []gen.AuditEvent
+		Filter     auditFilter
+		Choices    auditChoices
+		ExportURL  string
+		PrevURL    string
+		NextURL    string
+		Total      int64
+		Page       int
+		TotalPages int
+	}
+
+	// URL-ene bygges her, ikke i templaten — html/template ville escapet
+	// querystrengen som én parameterverdi og ødelagt den.
+	qs := filter.QueryString()
+	data := pageData{
+		Events: events, Filter: filter, Choices: choices,
+		ExportURL: "/admin/audit/export?" + qs, Total: total,
+		Page: page, TotalPages: totalPages,
+	}
+	if prevPage > 0 {
+		data.PrevURL = "/admin/audit?" + qs + "&page=" + strconv.Itoa(prevPage)
+	}
+	if nextPage > 0 {
+		data.NextURL = "/admin/audit?" + qs + "&page=" + strconv.Itoa(nextPage)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.listTpl.Execute(w, pageData{
-		Events: events, Email: email, ServiceFilter: serviceFilter,
-		Page: page, TotalPages: totalPages,
-		PrevPage: prevPage, NextPage: nextPage,
-	})
+	_ = h.listTpl.Execute(w, data)
 }
 
-// HandleExport skriver auditlogg som CSV med csvEsc på alle felt.
+// HandleExport skriver auditlogg som CSV med samme filter som listevisningen.
 func (h *AuditHandler) HandleExport(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	email := strings.TrimSpace(r.URL.Query().Get("email"))
-	serviceFilter := strings.TrimSpace(r.URL.Query().Get("service"))
-
-	var events []gen.AuditEvent
-	var err error
-
-	switch {
-	case email != "":
-		events, err = h.queries.ListAuditEventsByEmail(ctx, gen.ListAuditEventsByEmailParams{
-			Email:  &email,
-			Limit:  100000,
-			Offset: 0,
-		})
-	case serviceFilter != "":
-		events, err = h.queries.ListAuditEventsByService(ctx, gen.ListAuditEventsByServiceParams{
-			ServiceID: &serviceFilter,
-			Limit:     100000,
-			Offset:    0,
-		})
-	default:
-		events, err = h.queries.ListAuditEvents(ctx, gen.ListAuditEventsParams{
-			Limit:  100000,
-			Offset: 0,
-		})
-	}
+	events, err := queryAuditEvents(r.Context(), h.sqldb, parseAuditFilter(r), auditExportLimit, 0)
 	if err != nil {
 		http.Error(w, "databasefeil: "+err.Error(), http.StatusInternalServerError)
 		return
