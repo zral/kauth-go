@@ -4,6 +4,12 @@
 
 set -euo pipefail
 
+# Backupen er en komplett kopi av live-basen, inkludert OAuth client secrets
+# i services-tabellen. sqlite3 .backup lager filen med default umask, som ga
+# -rw-r--r-- — mens kauth.db selv står -rw-------. Uten dette lekker hver
+# backup det live-basen beskytter.
+umask 077
+
 DB_PATH="/home/lars/kauth-go/data/kauth.db"
 BACKUP_DIR="/home/lars/backups/kauth-go"
 KEEP_DAYS=30
