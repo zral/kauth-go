@@ -12,32 +12,41 @@ import (
 // ville "huk av alt" skjult hendelser som mangler metode eller tjeneste.
 const auditNoneValue = "__none__"
 
+// auditOpNot negerer et substring-søk. Alt annet betyr "inneholder".
+const auditOpNot = "not"
+
 // auditFilter er de parsede filterparameterne fra querystrengen.
 type auditFilter struct {
-	From     string // dato YYYY-MM-DD, inklusiv
-	To       string // dato YYYY-MM-DD, inklusiv
-	Email    string // substring
-	IP       string // substring
-	Details  string // substring
-	Events   []string
-	Methods  []string
-	Services []string
-	OK       []string // "1" og/eller "0"
+	From      string // dato YYYY-MM-DD, inklusiv
+	To        string // dato YYYY-MM-DD, inklusiv
+	Email     string // substring
+	EmailOp   string // auditOpNot negerer, ellers "inneholder"
+	IP        string // substring
+	IPOp      string
+	Details   string // substring
+	DetailsOp string
+	Events    []string
+	Methods   []string
+	Services  []string
+	OK        []string // "1" og/eller "0"
 }
 
 // parseAuditFilter leser filterparametere fra querystrengen.
 func parseAuditFilter(r *http.Request) auditFilter {
 	q := r.URL.Query()
 	return auditFilter{
-		From:     strings.TrimSpace(q.Get("from")),
-		To:       strings.TrimSpace(q.Get("to")),
-		Email:    strings.TrimSpace(q.Get("email")),
-		IP:       strings.TrimSpace(q.Get("ip")),
-		Details:  strings.TrimSpace(q.Get("details")),
-		Events:   q["event"],
-		Methods:  q["method"],
-		Services: q["service"],
-		OK:       q["ok"],
+		From:      strings.TrimSpace(q.Get("from")),
+		To:        strings.TrimSpace(q.Get("to")),
+		Email:     strings.TrimSpace(q.Get("email")),
+		EmailOp:   q.Get("email_op"),
+		IP:        strings.TrimSpace(q.Get("ip")),
+		IPOp:      q.Get("ip_op"),
+		Details:   strings.TrimSpace(q.Get("details")),
+		DetailsOp: q.Get("details_op"),
+		Events:    q["event"],
+		Methods:   q["method"],
+		Services:  q["service"],
+		OK:        q["ok"],
 	}
 }
 
@@ -50,6 +59,14 @@ func (f auditFilter) QueryString() string {
 	} {
 		if val != "" {
 			v.Set(key, val)
+		}
+	}
+	// Operatoren bæres bare med når den faktisk gjør noe.
+	for key, sub := range map[string]struct{ value, op string }{
+		"email_op": {f.Email, f.EmailOp}, "ip_op": {f.IP, f.IPOp}, "details_op": {f.Details, f.DetailsOp},
+	} {
+		if sub.value != "" && sub.op == auditOpNot {
+			v.Set(key, auditOpNot)
 		}
 	}
 	for key, vals := range map[string][]string{
@@ -127,15 +144,16 @@ func auditClauses(f auditFilter) ([]string, []any) {
 	for _, sub := range []struct {
 		column string
 		value  string
+		op     string
 	}{
-		{"email", f.Email},
-		{"ip_address", f.IP},
-		{"details", f.Details},
+		{"email", f.Email, f.EmailOp},
+		{"ip_address", f.IP, f.IPOp},
+		{"details", f.Details, f.DetailsOp},
 	} {
 		if sub.value == "" {
 			continue
 		}
-		clauses = append(clauses, sub.column+` LIKE ? ESCAPE '\'`)
+		clauses = append(clauses, likeClause(sub.column, sub.op))
 		args = append(args, "%"+escapeLike(sub.value)+"%")
 	}
 
@@ -202,6 +220,16 @@ func cleanChoices(values []string) []string {
 
 func placeholders(n int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// likeClause bygger substring-leddet. Negasjonen må ta med IS NULL: i SQL
+// er NOT LIKE udefinert for NULL, så rader uten verdi ville falt ut av et
+// "alt unntatt X"-søk.
+func likeClause(column, op string) string {
+	if op == auditOpNot {
+		return "(" + column + " IS NULL OR " + column + ` NOT LIKE ? ESCAPE '\')`
+	}
+	return column + ` LIKE ? ESCAPE '\'`
 }
 
 // escapeLike nøytraliserer LIKE-metategn slik at søket blir rent substring-søk.

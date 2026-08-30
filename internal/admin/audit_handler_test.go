@@ -135,3 +135,18 @@ func TestHandleList_EachGroupHasSelectAllControls(t *testing.T) {
 	assert.Equal(t, 4, strings.Count(body, `type="button" data-all="1"`))
 	assert.Equal(t, 4, strings.Count(body, `type="button" data-all="0"`))
 }
+
+func TestHandleList_SubstringFieldsHaveOperatorSelect(t *testing.T) {
+	body := renderAudit(t, "")
+	assert.Equal(t, 3, strings.Count(body, `value="not"`))
+	assert.Contains(t, body, `name="email_op"`)
+	assert.Contains(t, body, `name="ip_op"`)
+	assert.Contains(t, body, `name="details_op"`)
+}
+
+func TestHandleList_NegatedEmail_KeepsOperatorSelected(t *testing.T) {
+	body := renderAudit(t, "?email=lars%40spekto.no&email_op=not")
+	assert.Contains(t, body, `<option value="not" selected>`)
+	assert.NotContains(t, body, "lars@spekto.no</td>")
+	assert.Contains(t, body, "kari@pov.no")
+}

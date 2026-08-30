@@ -138,3 +138,27 @@ func TestLoadAuditChoices_AppendsNoneSentinelWhenNullsExist(t *testing.T) {
 	assert.Equal(t, []string{"google", "password", auditNoneValue}, choices.Methods)
 	assert.Equal(t, []string{"pov", "spekto", auditNoneValue}, choices.Services)
 }
+
+func TestQueryAuditEvents_NegatedEmail_KeepsRowsWithoutEmail(t *testing.T) {
+	ctx := context.Background()
+	sqldb, q, err := db.OpenMemory()
+	require.NoError(t, err)
+	t.Cleanup(func() { sqldb.Close() })
+
+	str := func(s string) *string { return &s }
+	require.NoError(t, q.InsertAuditEvent(ctx, gen.InsertAuditEventParams{
+		EventType: "login_success", Email: str("lars@spekto.no"), Success: 1,
+		CreatedAt: "2026-08-01T09:00:00Z"}))
+	require.NoError(t, q.InsertAuditEvent(ctx, gen.InsertAuditEventParams{
+		EventType: "login_success", Email: str("kari@pov.no"), Success: 1,
+		CreatedAt: "2026-08-02T09:00:00Z"}))
+	require.NoError(t, q.InsertAuditEvent(ctx, gen.InsertAuditEventParams{
+		EventType: "service_edited", Success: 1, CreatedAt: "2026-08-03T09:00:00Z"}))
+
+	f := auditFilter{Email: "lars@spekto.no", EmailOp: auditOpNot}
+	events, err := queryAuditEvents(ctx, sqldb, f, 50, 0)
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+	assert.Equal(t, "service_edited", events[0].EventType)
+	assert.Equal(t, "kari@pov.no", *events[1].Email)
+}

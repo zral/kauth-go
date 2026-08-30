@@ -156,3 +156,35 @@ func TestActiveCount_MatchesNumberOfSQLClauses(t *testing.T) {
 	assert.Equal(t, 3, f.ActiveCount())
 	assert.Equal(t, 2, strings.Count(where, " AND "))
 }
+
+func TestBuildAuditQuery_NegatedEmail_AlsoMatchesRowsWithoutEmail(t *testing.T) {
+	// NOT LIKE er NULL for NULL-kolonner, så uten IS NULL-leddet ville
+	// "alt unntatt min adresse" skjult alle rader uten e-post.
+	where, args := buildAuditQuery(auditFilter{Email: "lars@", EmailOp: auditOpNot})
+	assert.Equal(t, ` WHERE (email IS NULL OR email NOT LIKE ? ESCAPE '\')`, where)
+	assert.Equal(t, []any{"%lars@%"}, args)
+}
+
+func TestBuildAuditQuery_NegatedDetails_UsesSameEscaping(t *testing.T) {
+	_, args := buildAuditQuery(auditFilter{Details: "50%", DetailsOp: auditOpNot})
+	assert.Equal(t, []any{`%50\%%`}, args)
+}
+
+func TestBuildAuditQuery_OpWithoutValue_IsIgnored(t *testing.T) {
+	where, _ := buildAuditQuery(auditFilter{IPOp: auditOpNot})
+	assert.Equal(t, "", where)
+}
+
+func TestBuildAuditQuery_UnknownOp_FallsBackToInclude(t *testing.T) {
+	where, _ := buildAuditQuery(auditFilter{IP: "10.0.", IPOp: "tull"})
+	assert.Equal(t, ` WHERE ip_address LIKE ? ESCAPE '\'`, where)
+}
+
+func TestActiveCount_NegatedFieldCountsOnce(t *testing.T) {
+	assert.Equal(t, 1, auditFilter{Email: "lars@", EmailOp: auditOpNot}.ActiveCount())
+}
+
+func TestQueryString_PreservesNegation(t *testing.T) {
+	f := auditFilter{Email: "lars@", EmailOp: auditOpNot, IP: "10.0."}
+	assert.Equal(t, "email=lars%40&email_op=not&ip=10.0.", f.QueryString())
+}

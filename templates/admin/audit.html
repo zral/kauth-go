@@ -20,6 +20,8 @@
         .filter-row { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 1rem; }
         .field { display: flex; flex-direction: column; gap: 0.25rem; }
         .field label { font-size: 0.75rem; color: #64748b; }
+        .field .row { display: flex; gap: 0.3rem; }
+        select { padding: 0.4rem 0.3rem; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; font-size: 0.8rem; }
         input[type=text], input[type=search], input[type=date] { padding: 0.4rem 0.6rem; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; font-size: 0.875rem; }
         .groups { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
         .group { min-width: 9rem; max-width: 16rem; }
@@ -74,16 +76,34 @@
                 <input type="date" id="to" name="to" value="{{.Filter.To}}">
             </div>
             <div class="field">
-                <label for="email">E-post inneholder</label>
-                <input type="search" id="email" name="email" value="{{.Filter.Email}}" placeholder="@spekto.no">
+                <label for="email">E-post</label>
+                <div class="row">
+                    <select name="email_op" aria-label="E-post: inneholder eller inneholder ikke">
+                        <option value=""{{if ne $.Filter.EmailOp "not"}} selected{{end}}>inneholder</option>
+                        <option value="not"{{if eq $.Filter.EmailOp "not"}} selected{{end}}>inneholder ikke</option>
+                    </select>
+                    <input type="search" id="email" name="email" value="{{.Filter.Email}}" placeholder="@spekto.no">
+                </div>
             </div>
             <div class="field">
-                <label for="ip">IP inneholder</label>
-                <input type="search" id="ip" name="ip" value="{{.Filter.IP}}" placeholder="84.212.">
+                <label for="ip">IP</label>
+                <div class="row">
+                    <select name="ip_op" aria-label="IP: inneholder eller inneholder ikke">
+                        <option value=""{{if ne $.Filter.IPOp "not"}} selected{{end}}>inneholder</option>
+                        <option value="not"{{if eq $.Filter.IPOp "not"}} selected{{end}}>inneholder ikke</option>
+                    </select>
+                    <input type="search" id="ip" name="ip" value="{{.Filter.IP}}" placeholder="84.212.">
+                </div>
             </div>
             <div class="field">
-                <label for="details">Detaljer inneholder</label>
-                <input type="search" id="details" name="details" value="{{.Filter.Details}}" placeholder="invalid">
+                <label for="details">Detaljer</label>
+                <div class="row">
+                    <select name="details_op" aria-label="Detaljer: inneholder eller inneholder ikke">
+                        <option value=""{{if ne $.Filter.DetailsOp "not"}} selected{{end}}>inneholder</option>
+                        <option value="not"{{if eq $.Filter.DetailsOp "not"}} selected{{end}}>inneholder ikke</option>
+                    </select>
+                    <input type="search" id="details" name="details" value="{{.Filter.Details}}" placeholder="invalid">
+                </div>
             </div>
         </div>
 
