@@ -42,10 +42,12 @@ func appendTokenAndRT(target, token, rt string) string {
 
 // ServeDispatch håndterer GET /dispatch.
 // Leser token og rt fra URL query-params (ikke cookies — cross-host cookies virker ikke).
-// Tre-nivå routing:
+// Fem-nivå routing, mest presise kilde først:
 //  1. redirect_uri-cookie → IsAllowedCallback → redirect med ?token=#rt (slett cookie)
-//  2. token-claim org → match mot service.DefaultOrg → redirect CallbackUrl
-//  3. Fallback til default-tjenestens CallbackUrl
+//  2. ?service= — verifisert service-ID fra login-flyten → redirect CallbackUrl
+//  3. host-header → match mot service.AuthHost → redirect CallbackUrl
+//  4. token-claim org → match mot service.DefaultOrg → redirect CallbackUrl
+//  5. Fallback til default-tjenestens CallbackUrl
 func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	jwtToken := q.Get("token")
@@ -98,7 +100,20 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Nivå 2: host-match — bruker kom inn via en service-spesifikk auth-host
+	// Nivå 2: verifisert service-ID fra login-flyten.
+	// Login-handlerne kjenner tjenesten presist (HMAC-signert state for OIDC,
+	// resolvet tjeneste for magic/passord) og sender den hit. Uten den må vi
+	// gjette ut fra org-claims, og en bruker uten tjenestens default_org
+	// havner da på feil tjeneste.
+	if svcID := q.Get("service"); svcID != "" {
+		if svc := h.Registry.Resolve("", svcID, ""); svc != nil {
+			http.SetCookie(w, clearRedirectCookie)
+			http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
+			return
+		}
+	}
+
+	// Nivå 3: host-match — bruker kom inn via en service-spesifikk auth-host
 	// (auth.spekto.live → spekto, auth.lilleklo.work → vinkjeller).
 	// Dette må vinne over org-match for at f.eks. en konge med "lars" i orgs
 	// som logger inn på auth.spekto.live skal lande på spekto-app, ikke klarsyn.
@@ -114,7 +129,7 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Nivå 3: org-match via JWT-claims
+	// Nivå 4: org-match via JWT-claims
 	allSvcs := h.Registry.All()
 	for _, svc := range allSvcs {
 		if svc.DefaultOrg == nil {
@@ -129,7 +144,7 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Nivå 3: fallback til default-tjenestens callback
+	// Nivå 5: fallback til default-tjenestens callback
 	defaultSvc := h.Registry.ResolveOrDefault("", h.DefaultSvcID, "")
 	if defaultSvc != nil {
 		http.SetCookie(w, clearRedirectCookie)

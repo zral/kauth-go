@@ -266,5 +266,5 @@ func (h *MagicHandlers) VerifyToken(w http.ResponseWriter, r *http.Request) {
 		slog.Error("magic-link: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
 	}
 	h.aud.Log(r.Context(), audit.Event{Type: "magic_link_login", AuthMethod: "magic_link", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(accessToken)+"&rt="+url.QueryEscape(refreshToken), http.StatusFound)
+	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(accessToken)+"&rt="+url.QueryEscape(refreshToken)+"&service="+url.QueryEscape(svc.ID), http.StatusFound)
 }

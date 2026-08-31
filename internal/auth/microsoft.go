@@ -161,7 +161,7 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 		slog.Error("microsoft: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
 	}
 	h.aud.Log(ctx, audit.Event{Type: "microsoft_oidc_login", AuthMethod: "microsoft", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt), http.StatusFound)
+	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt)+"&service="+url.QueryEscape(svc.ID), http.StatusFound)
 }
 
 func (h *MicrosoftHandlers) findOrCreate(ctx context.Context, email, name string, svc *gen.Service) (gen.User, error) {
