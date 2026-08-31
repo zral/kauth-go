@@ -191,12 +191,30 @@ Brukeren går til en app (f.eks. `analyse.klarsyn.net`), blir redirected til aut
 1. App: `→ https://auth.<svc>/login?redirect_uri=<app-callback>`
 2. Login-siden setter `redirect_uri`-cookie via JS og redirecter til valgt auth-provider
 3. Provider-callback (`/callback`, `/ms-callback`, `/magic-login/{token}`, eller `POST /do-login`) utsteder JWT + refresh-token
-4. Callback redirecter til `GET /dispatch?token=<jwt>&rt=<refresh>` (URL-param, ikke cookie)
-5. Dispatcher leser tokenet, verifiserer signaturen, sjekker `redirect_uri`-cookien mot allowlist
+4. Callback redirecter til `GET /dispatch?token=<jwt>&rt=<refresh>&service=<id>` (URL-param, ikke cookie)
+5. Dispatcher leser tokenet, verifiserer signaturen og finner riktig tjeneste (se routing-nivåene under)
 6. Redirect til app-callback med `?token=<jwt>#rt=<refresh>` — JWT som query-param, refresh-token som URL-fragment (fragmentet sendes ikke til serveren, og ikke til Referer)
 7. App leser `?token=` fra URL, validerer mot JWKS
 
 Refresh-token-cookien settes parallelt på auth-domenet med `SameSite=None` slik at `POST /token` fungerer cross-origin.
+
+### Dispatcher-routing
+
+`/dispatch` avgjør hvor brukeren skal lande, og prøver kildene i tur — mest presise først. Første treff vinner:
+
+| Nivå | Kilde | Brukes av |
+|------|-------|-----------|
+| 1 | `redirect_uri`-cookie, sjekket mot tjenestenes allowlist | Apper som sender `?redirect_uri=` inn til `/login` |
+| 2 | `?service=<id>` — service-IDen login-flyten allerede har verifisert | Alle fire login-veiene |
+| 3 | Host-header mot `services.auth_host` | Tjenester med eget auth-domene |
+| 4 | `org`-claim mot `services.default_org` | Bakoverkompatibilitet |
+| 5 | Default-tjenestens `callback_url` | Siste utvei |
+
+Nivå 2 er den pålitelige: for Google og Microsoft kommer IDen fra den HMAC-signerte state-parameteren (`SignState`/`VerifyState`), som round-trippes gjennom provideren og ikke kan forfalskes. Magic-link og passord sender den resolvet tjenesten direkte.
+
+IDen valideres alltid mot registryet, og redirect går kun til `callback_url` slik den står i databasen — aldri til en URL fra requesten. En ukjent eller påfunnet `?service=` kan derfor ikke styre hvor brukeren havner; den faller bare gjennom til neste nivå.
+
+Nivå 4 er en heuristikk og bør ikke stoles på: den itererer over tjenestene i `display_name`-rekkefølge og tar den første med en `default_org` brukeren har. En bruker som ikke har tjenestens `default_org` blant sine orgs vil havne feil. Den står igjen kun for forespørsler uten `?service=`, og bør fjernes når ingenting eksternt bruker den (se `CHANGELOG.md`, Unreleased/Fixed).
 
 ### Intern dispatch (admin Google-flyten)
 
