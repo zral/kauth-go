@@ -56,7 +56,7 @@ func (h *PasswordHandlers) DoLogin(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	password := r.FormValue("password")
 	svcID := r.FormValue("service_id")
-	svc := h.reg.ResolveOrDefault(r.Host, svcID, "")
+	svc := resolveRequestedService(h.reg, r, svcID)
 
 	if svc.AuthPassword != 1 {
 		http.Error(w, "passord-innlogging ikke aktivert", http.StatusForbidden)

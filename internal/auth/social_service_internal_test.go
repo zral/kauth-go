@@ -40,3 +40,26 @@ func TestResolveSocialService(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveRequestedService(t *testing.T) {
+	reg := socialFixture()
+	cases := []struct{ name, host, id, want string }{
+		{"undertjeneste uten auth_host på foreldrehost", "auth.klarsyn.net", "analyse", "analyse"},
+		{"tjeneste med nettopp denne auth_host", "auth.spekto.live", "spekto", "spekto"},
+		{"tjeneste med annen auth_host gir hostens tjeneste", "auth.klarsyn.net", "spekto", "klarsyn"},
+		{"ukjent ID gir hostens tjeneste", "auth.klarsyn.net", "finnes-ikke", "klarsyn"},
+		{"ukjent ID og ukjent host gir default", "ukjent.example", "finnes-ikke", "klarsyn"},
+		{"fremmed ID på ukjent host gir default", "ukjent.example", "spekto", "klarsyn"},
+		{"tom ID gir hosten", "auth.spekto.live", "", "spekto"},
+		{"host i store bokstaver matcher", "AUTH.SPEKTO.LIVE", "spekto", "spekto"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "/x", nil)
+			r.Host = c.host
+			if got := resolveRequestedService(reg, r, c.id); got == nil || got.ID != c.want {
+				t.Errorf("fikk %v, ville ha %s", got, c.want)
+			}
+		})
+	}
+}

@@ -53,7 +53,7 @@ func (h *MagicHandlers) WaitForSends() { h.sendWG.Wait() }
 
 // ShowForm — GET /magic-login
 func (h *MagicHandlers) ShowForm(w http.ResponseWriter, r *http.Request) {
-	svc := h.reg.ResolveOrDefault(r.Host, r.URL.Query().Get("service"), "")
+	svc := resolveRequestedService(h.reg, r, r.URL.Query().Get("service"))
 	logoHTML := logoHTMLFor(svc)
 	bodyCss, beforeCss := buildBgCSS(svc.Theme, svc.BgImage, svc.BgCss)
 	locale := i18n.FromRequest(r)
@@ -127,7 +127,7 @@ func (h *MagicHandlers) RequestLink(w http.ResponseWriter, r *http.Request) {
 	if serviceID == "" {
 		serviceID = r.FormValue("service_id")
 	}
-	svc := h.reg.ResolveOrDefault(r.Host, serviceID, "")
+	svc := resolveRequestedService(h.reg, r, serviceID)
 
 	b := make([]byte, 32)
 	if _, err := randRead(b); err != nil {
@@ -279,7 +279,7 @@ func (h *MagicHandlers) storedService(row gen.MagicToken) *gen.Service {
 // ingenting telles i limiteren (P1).
 func (h *MagicHandlers) ShowConfirm(w http.ResponseWriter, r *http.Request) {
 	locale := i18n.FromRequest(r)
-	hint := h.reg.ResolveOrDefault(r.Host, r.URL.Query().Get("service"), "")
+	hint := resolveRequestedService(h.reg, r, r.URL.Query().Get("service"))
 
 	row, err := h.queries.GetValidMagicTokenByHash(r.Context(), gen.GetValidMagicTokenByHashParams{
 		TokenHash: token.HashOpaque(chi.URLParam(r, "token")),
@@ -304,7 +304,7 @@ func (h *MagicHandlers) Redeem(w http.ResponseWriter, r *http.Request) {
 	ua := r.Header.Get("User-Agent")
 	locale := i18n.FromRequest(r)
 	t := i18n.Get(locale)
-	hint := h.reg.ResolveOrDefault(r.Host, r.URL.Query().Get("service"), "")
+	hint := resolveRequestedService(h.reg, r, r.URL.Query().Get("service"))
 
 	hash := token.HashOpaque(chi.URLParam(r, "token"))
 	now := time.Now().UTC().Format(time.RFC3339)

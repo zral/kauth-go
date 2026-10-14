@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/zral/kauth-go/internal/audit"
 	"github.com/zral/kauth-go/internal/auth"
@@ -116,4 +118,57 @@ func TestRefreshToken_MissingTokenReturns400(t *testing.T) {
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, "invalid_request", body["error"])
+}
+
+// Passord-login skal velge tjeneste med samme regel som sosial login: en
+// undertjeneste på foreldrehosten vinner, en fremmed tenant gjør ikke.
+func TestPasswordLogin_ResolvesLikeSocial(t *testing.T) {
+	ctx := context.Background()
+	sqldb, q, err := db.OpenMemory()
+	require.NoError(t, err)
+	t.Cleanup(func() { sqldb.Close() })
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	mk := func(id string, authHost *string, isDefault int64) {
+		require.NoError(t, q.CreateService(ctx, gen.CreateServiceParams{
+			ID: id, DisplayName: id, Domain: id + ".test", AuthHost: authHost,
+			CallbackUrl: "https://" + id + ".test/cb", Theme: "light", AccentColor: "#000",
+			EmailFromName: id, AuthPassword: 1, IsDefault: isDefault,
+			JwtCookieName: "auth_token", AccessTokenTtl: "PT15M", Active: 1, UpdatedAt: now,
+		}))
+	}
+	fh, xh := "auth.forelder.test", "auth.fremmed.test"
+	mk("forelder", &fh, 1)
+	mk("under", nil, 0)
+	mk("fremmed", &xh, 0)
+
+	hashBytes, err := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.MinCost)
+	require.NoError(t, err)
+	hash := string(hashBytes)
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{
+		Email: "a@example.com", PasswordHash: &hash, Roles: "user", Orgs: "test", CreatedAt: now,
+	})
+	require.NoError(t, err)
+
+	aud := audit.NewNoop()
+	reg := service.NewRegistry(q)
+	require.NoError(t, reg.Warmup(ctx))
+	h := auth.NewPasswordHandlers(q, token.NewIssuerForTest(), token.NewRefreshService(sqldb, aud), reg, aud, true)
+
+	servedAs := func(svcID string) string {
+		form := url.Values{"email": {"a@example.com"}, "password": {"hunter2"}, "service_id": {svcID}}
+		req := httptest.NewRequest(http.MethodPost, "/do-login", strings.NewReader(form.Encode()))
+		req.Host = fh
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		h.DoLogin(w, req)
+		require.Equal(t, http.StatusFound, w.Code)
+		loc, err := url.Parse(w.Header().Get("Location"))
+		require.NoError(t, err)
+		return loc.Query().Get("service")
+	}
+	require.Equal(t, "under", servedAs("under"))
+	require.Equal(t, "forelder", servedAs("fremmed"))
+	require.Equal(t, "forelder", servedAs("finnes-ikke"))
+	require.Equal(t, "forelder", servedAs(""))
 }

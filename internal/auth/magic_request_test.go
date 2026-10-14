@@ -280,3 +280,84 @@ func TestMagicInsert_PurposeConsistency(t *testing.T) {
 	require.Equal(t, 1, f.rows(t, "purpose = 'service' AND service_id = 'klarsyn'"))
 	require.Zero(t, f.rows(t, "purpose = 'admin' OR service_id IS NULL"))
 }
+
+// requestOnHost sender som requestNoWait, men på gitt host og med valgfritt
+// skjemafelt.
+func (f *magicFixture) requestOnHost(h *MagicHandlers, host, email, svcID string) (*httptest.ResponseRecorder, time.Duration) {
+	form := url.Values{"email": {email}}
+	if svcID != "" {
+		form.Set("service", svcID)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/magic-login", strings.NewReader(form.Encode()))
+	req.Host = host
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	start := time.Now()
+	h.RequestLink(w, req)
+	h.sendWG.Wait()
+	return w, time.Since(start)
+}
+
+func withAuthHost(p gen.CreateServiceParams, host string) gen.CreateServiceParams {
+	p.AuthHost = &host
+	return p
+}
+
+func (f *magicFixture) storedServiceID(t *testing.T, email string) string {
+	t.Helper()
+	var sid string
+	require.NoError(t, f.sqldb.QueryRow("SELECT service_id FROM magic_tokens WHERE email = ?", email).Scan(&sid))
+	return sid
+}
+
+func TestRequestLink_SubServiceOnSharedHostBindsSubService(t *testing.T) {
+	f := newMagicFixture(t,
+		withAuthHost(magicSvc("forelder", 1, 1), "auth.forelder.test"),
+		magicSvc("under", 0, 1))
+	w, _ := f.requestOnHost(f.h, "auth.forelder.test", "a@x.no", "under")
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "under", f.storedServiceID(t, "a@x.no"))
+	require.Contains(t, f.mailer.links[0], "service=under")
+}
+
+func TestRequestLink_ForeignServiceFallsBackToHost(t *testing.T) {
+	f := newMagicFixture(t,
+		withAuthHost(magicSvc("forelder", 1, 1), "auth.forelder.test"),
+		withAuthHost(magicSvc("fremmed", 0, 1), "auth.fremmed.test"))
+	f.requestOnHost(f.h, "auth.forelder.test", "a@x.no", "fremmed")
+	require.Equal(t, "forelder", f.storedServiceID(t, "a@x.no"))
+}
+
+// Fremmed tjeneste, avslått metode, ukjent og ugyldig e-post skal ikke kunne
+// skilles fra en vellykket forespørsel på respons eller tid.
+func TestRequestLink_ConstantResponseAcrossServices(t *testing.T) {
+	f := newMagicFixture(t,
+		withAuthHost(magicSvc("forelder", 1, 1), "auth.forelder.test"),
+		withAuthHost(magicSvc("fremmed", 0, 1), "auth.fremmed.test"),
+		magicSvc("under", 0, 1),
+		magicSvc("uten", 0, 0))
+	type res struct {
+		code int
+		body string
+		d    time.Duration
+	}
+	var got []res
+	calls := [][2]string{
+		{"a@x.no", "under"}, {"b@x.no", "fremmed"}, {"c@x.no", "finnes-ikke"}, {"d@x.no", ""},
+		{"e@x.no", "uten"},      // regelen velger undertjenesten, men magic link er av
+		{"ugyldig", "under"},    // ugyldig e-post
+		{"a@@x.no", "forelder"}, // ugyldig e-post
+	}
+	for _, c := range calls {
+		w, d := f.requestOnHost(f.h, "auth.forelder.test", c[0], c[1])
+		got = append(got, res{w.Code, w.Body.String(), d})
+	}
+	for _, r := range got {
+		require.Equal(t, got[0].code, r.code)
+		require.Equal(t, got[0].body, r.body)
+		require.GreaterOrEqual(t, r.d, 200*time.Millisecond)
+	}
+	require.Equal(t, 4, f.mailer.count())
+	require.Less(t, f.mailer.count(), len(calls), "grenene uten e-post må faktisk finnes")
+	require.Zero(t, f.rows(t, "email = 'e@x.no' OR email = 'ugyldig'"))
+}
