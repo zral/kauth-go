@@ -43,6 +43,7 @@ Bruker `/common/oauth2/v2.0`-endepunktet for å akseptere både personlige Micro
 - **Tjenestebinding:** raden lagrer tjenesten som ble resolvet ved bestilling, ikke skjemaverdien. Er `auth_magic_link` av for tjenesten, settes ingen rad inn. Ved innløsning brukes bare den lagrede tjenesten, uansett `?service=` eller host. Er tjenesten inaktiv eller har magic link av da, gir det `error=expired`, og tokenet brennes
 - **Bekreftelsesside:** lenken i e-posten åpner `GET /magic-login/{token}`, som bare viser en side med én knapp. Siden har tjenestens tema, nb/en/de, ingen e-postadresse og ingen JavaScript. GET endrer ingenting og teller ikke i kvoten, så lenkeskannere og forhåndsvisning i e-postklienter bruker ikke opp tokenet. Knappen sender `POST /magic-login/{token}`, som bruker opp tokenet og logger inn. Ukjent, utløpt eller brukt token gir `error=expired`
 - **Samme origin:** POST krever samme origin (se Sec-Fetch under Sikkerhetsmekanismer). Et kryss-origin-forsøk gir `403` med en forklaring («åpne lenken i nettleseren»), og tokenet står urørt
+- **SMTP:** e-post sendes med 10 s dial-timeout og 30 s frist for hele samtalen, så en hengende server ikke samler goroutiner. STARTTLS brukes når serveren tilbyr det, og `KAUTH_SMTP_STARTTLS` krever det. Brevo-API-et har fortsatt egen tidsgrense på 10 s
 - **Formål:** `magic_tokens.purpose` skiller tjenestelenker (`service`, med `service_id`) fra admin-lenker (`admin`, uten `service_id`). Et token kan ikke brukes på feil side
 
 ### Passord
@@ -59,8 +60,12 @@ RS256-signerte. Claims:
 - `org` — array av tenant-slugs fra `users.orgs` (CSV-felt i DB, splittes ved utstedelse)
 - `groups` — array fra `users.roles`
 - `name` — valgfri
-- `token_use` — `access` eller `admin`
-- standard `iss`, `aud`, `iat`, `exp`, `nbf`
+- `token_use` — `access`, `id` eller `admin`
+- standard `iss`, `iat`, `exp`, `nbf`
+- `aud` — tjeneste-ID for access- og id_token (`["<svc.ID>"]`), `["kauth-admin"]` for admin-token. Gjelder alle innloggingsmetoder, `authorization_code`-flyten og refresh. Et refreshet token får tjenesten fra familiens lagrede rad, aldri fra requesten
+- `jti` — 128 bit fra `crypto/rand` (base64url) på alle signerte tokens (access, id, admin). Ikke lagret. Brukes til korrelasjon i audit og er grunnlaget for en senere denylist
+
+`id_token` har `aud=[svc.ID]`, `token_use=id` og `nonce` fra autorisasjonsforespørselen. Klientene må sjekke `token_use` (og `nonce` for id_token), siden access- og id_token har samme `aud`. En klient godtar `aud` som streng eller array. Kauth sjekker `aud` selv i `/dispatch` (se Dispatcher-routing), men en ressursserver som bare validerer signatur og `iss` godtar fortsatt et token for en annen tjeneste. Hver klient krever `aud` i en egen leveranse (se BACKLOG).
 
 TTL settes per tjeneste via `services.access_token_ttl` (ISO 8601-varighet, f.eks. `PT15M`, `PT8H`, `P1D`).
 
@@ -105,7 +110,7 @@ Klienten får generisk avvisning, og hele kjeden er død for både angriper og l
 Løser inn en klar mangel i den ellers OIDC-flavored bespoke flyten over:
 et standard OIDC-klientbibliotek (`oidc-client-ts`, `authlib` osv.) kan ikke
 brukes mot `/login`+`/dispatch` slik de fungerte alene — token kom tilbake
-direkte i URL-en, uten `aud`/`nonce`, uten en `code`-runde å bytte inn. Dette
+direkte i URL-en, uten `nonce` og uten en `code`-runde å bytte inn. Dette
 er nødvendig for en klient kauth ikke selv kontrollerer kildekoden til.
 
 ### Forespørselen (`/login` som authorization_endpoint)
@@ -164,10 +169,10 @@ kode utstedes. Det viste seg utilstrekkelig, og verdt å forklare hvorfor,
 siden feilen er lett å gjenta.
 
 `?service=` er en vanlig URL-parameter — ikke en verdi bundet til tokenet.
-Et vanlig access-token har ingen `aud`, så `/dispatch` kan ikke vite hvilken
-tjeneste et gitt token faktisk ble utstedt for; den kan bare lese hva URL-en
-*påstår*. En bruker med et helt legitimt token for tjeneste B (som de har
-lovlig tilgang til) kan derfor, mens en `oidc_authz`-cookie for tjeneste A
+Et vanlig access-token hadde den gangen ingen `aud`, så `/dispatch` kunne ikke
+vite hvilken tjeneste et gitt token faktisk ble utstedt for; den kunne bare
+lese hva URL-en *påstår*. En bruker med et helt legitimt token for tjeneste B (som de har
+lovlig tilgang til) kunne derfor, mens en `oidc_authz`-cookie for tjeneste A
 ligger fra tidligere (fra å ha klikket "logg inn" i partner-app A, uten å
 fullføre den runden), gå rett til `/dispatch?token=<B-token>&service=A` —
 uten noensinne å ha gått via A sin egen login-handler, der A sine
@@ -175,7 +180,7 @@ uten noensinne å ha gått via A sin egen login-handler, der A sine
 passerer (URL-en er internt konsistent), og en A-kode utstedes til en
 bruker som aldri har blitt vurdert mot A sine regler.
 
-Løsningen: `/token` er det ENESTE stedet i hele flyten som kan vite sikkert
+Løsningen: `/token` er stedet i flyten som kan vite sikkert
 hvilken tjeneste som skal autorisere brukeren, fordi det er der `svc` slås
 opp fra koden selv (`row.ServiceID`), ikke fra en URL-parameter klienten
 kontrollerer. `authorizationCodeGrant` kaller derfor `checkPolicy(user, svc)`
@@ -189,6 +194,8 @@ ikke-OIDC-gren, og `/dispatch` beholder `?service=`-sjekken — begge er
 fortsatt fornuftig hygiene og feiler trygt (retur til `/login` er aldri
 skadelig), men ingen av dem er nå det som faktisk beskytter mot
 tilgangsomgåelse. Det er `checkPolicy` i `/token` som gjør den jobben.
+
+Fra 010 binder nivå 0 i `/dispatch` koden til tokenets `aud`. `checkPolicy` i `/token` er fortsatt eneste sted som evaluerer A sine regler mot dagens brukerdata.
 
 ### Innløsning (`POST /token`, `grant_type=authorization_code`)
 
@@ -214,22 +221,20 @@ forespørsel som refresh). For `authorization_code`:
    URL-parameter). Dette er den reelle beskyttelsen mot tilgangsomgåelse,
    se forklaringen over
 6. Konsum og første refresh-rad skjer i én transaksjon (`ConsumeAuthorizationCodeChecked`, med alle predikater i `WHERE`). Koden får `family_id` fra den nye familien. Ved parallelle forsøk vinner høyst ett, og taperen klassifiseres som gjenbruk. Øvrige kodefeil gir `400 invalid_grant`, interne feil `500 server_error`
-7. Ved suksess utstedes access- og refresh-token, med access-tokenet utstedt
-   via `Issuer.IssueAccessForAudience` — `aud`=client_id, i motsetning til
-   det vanlige access-tokenet fra `IssueAccess` (utstedt til tjenester vi
-   selv kontrollerer, uten `aud`). Riktig for et token som nå kan havne hos
-   en ressursserver på en ekstern parts side
+7. Ved suksess utstedes access- og refresh-token. Access-tokenet har `aud=[client_id]`, som alle andre access-tokens. Audit `authorization_code_exchanged` har `jti_access`, `jti_id` (`-` uten id_token) og `family` i `details`
 8. `id_token` (`Issuer.IssueIDToken`, `aud`=client_id, `nonce` speilet fra
    requesten) utstedes KUN hvis scope inneholder `openid` (OIDC Core
    §3.1.3.3) — en ren OAuth2-klient som aldri ba om `openid` skal ikke få et
    identitetstoken den ikke forventer
 
-**Ressursserveres eget ansvar:** kauth setter nå `aud` på tokens utstedt via
-denne flyten, men om en intern ressursserver (minliste, bildegalleri,
-spekto, ...) faktisk validerer `aud` er opp til den serveren selv. Sjekk
-dette før en tjeneste faktisk åpnes for en ekstern OIDC-klient — hvis
-ressursserveren kun validerer signaturen, kan et token utstedt til
-partneren i prinsippet brukes mot den også.
+**Ressursserveres eget ansvar:** kauth setter `aud` på alle access-tokens, men
+om en intern ressursserver (minliste, bildegalleri, spekto, ...) faktisk
+validerer `aud` er opp til den serveren selv. Sjekk dette før en tjeneste
+faktisk åpnes for en ekstern OIDC-klient. Hvis ressursserveren kun validerer
+signaturen, kan et token utstedt til partneren i prinsippet brukes mot den
+også. Gjenbruk av en kode revokerer familien, men access-tokens som allerede
+er utstedt lever ut TTL, siden klientene validerer lokalt. `jti` og `family` i
+auditen gjør det mulig å se hvilke tokens det gjelder.
 
 ### Cleanup
 
@@ -248,6 +253,8 @@ tokens og refresh tokens — se [Bakgrunnsjobber](#bakgrunnsjobber).
 4. **Suffix-match redirect_uri mot service.domain** — for sub-domener uten egen service-rad
 
 Cache invalideres ved Create/Update i admin-panelet.
+
+**Eksplisitt tjeneste-ID og host (alle fire innloggingsmetoder).** Google, Microsoft, magic link (skjemafelt `service` med fallback `service_id`, `?service=` på GET og tema-hint) og passord (`service_id`) bruker samme regel (`resolveRequestedService`). Oppgitt ID vinner over host bare når tjenesten ikke har egen `auth_host`, eller når `auth_host` er akkurat denne hosten. Ellers brukes hostens tjeneste, uten nivå 3-sjanse. Ukjent ID faller også til hosten, og ukjent ID på ukjent host gir default-tjenesten. En undertjeneste uten egen `auth_host` (wspekto) kan derfor bindes fra enhver host, og policy, `aud` og callback følger den bundne tjenesten.
 
 ### Per-tjeneste branding
 
@@ -416,6 +423,10 @@ Refresh-token-cookien settes parallelt på auth-domenet med `SameSite=None` slik
 | 4 | `org`-claim mot `services.default_org` | Bakoverkompatibilitet |
 | 5 | Default-tjenestens `callback_url` | Siste utvei |
 
+**Nivå 0 (OIDC `authorization_code`).** Med `oidc_authz`-cookie lager `/dispatch` en kode bare hvis tokenets `aud` inneholder `client_id` og tokenet er ferskt: `iat` høyst 120 s gammelt, med 30 s slingring for `iat` i framtiden. Manglende `iat` eller `aud` avvises. Ved avvik går brukeren til `/login`, ingen kode lages, og audit logger `dispatch_aud_mismatch` (`level=0`) eller `dispatch_token_stale`. Ferskhetskravet begrenser hva et lekket eller gammelt token kan brukes til via `/dispatch?token=`.
+
+**Nivå 1–5 auditeres, men avvises ikke.** Er målet verken i tokenets `aud` eller deler callback med `aud`-tjenesten (klarsyn og analyse), logges `dispatch_aud_mismatch` med `level=N`, `token_aud` og `target`. Rutingen er uendret. Auditen skal vise om noen klient trenger avvisning før den slås på (se BACKLOG).
+
 Nivå 2 er den pålitelige: for Google og Microsoft kommer IDen fra den HMAC-signerte state-parameteren (`SignState`/`VerifyState`), som round-trippes gjennom provideren og ikke kan forfalskes. Magic-link og passord sender den resolvet tjenesten direkte.
 
 IDen valideres alltid mot registryet, og redirect går kun til `callback_url` slik den står i databasen — aldri til en URL fra requesten. En ukjent eller påfunnet `?service=` kan derfor ikke styre hvor brukeren havner; den faller bare gjennom til neste nivå.
@@ -429,14 +440,14 @@ Intern-sti-grenen i `/dispatch` er fjernet: på nivå 1 godtas bare en `redirect
 ## Audit-logg
 
 Lagret i `audit_events`-tabellen med felter:
-- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, ...
+- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, ...
 - `auth_method` — `google`, `microsoft`, `magic_link`, `password`, `refresh`
 - `email`, `service_id`, `ip_address`, `user_agent`
 - `success` — bool, alltid eksplisitt satt av applikasjonen
 - `details` — fritekst, brukes for grunn på feilet login. `refresh_token_reuse` har `gap_s=<n>`, `user_deactivated` har `id=<n> revoked=<antall>` eller `id=<n> revoke_failed` (deaktiveringen står selv om revokeringen feiler; refresh for deaktivert bruker avvises uansett)
 - `created_at` — ISO 8601 UTC
 
-Nye event-typer fra 009: `authorization_code_invalid`, `authorization_code_mismatch`, `authorization_code_reuse`, `authorization_code_exchanged`. Admin-skriv har `actor=<e-post>` i `details`. Skrivingen er asynkron via kø, bortsett fra admin-skriv (se Audit-isolering).
+Nye event-typer fra 009: `authorization_code_invalid`, `authorization_code_mismatch`, `authorization_code_reuse`, `authorization_code_exchanged`. Fra 010: `authorization_code_exchanged` har `jti_access`, `jti_id` og `family` i `details`, og `authorization_code_reuse` har `family`. `dispatch_aud_mismatch` har `level=<0-5>`, `token_aud` og `target`, og `dispatch_token_stale` har `age_s=<n>`, eller `iat=missing` når `iat` mangler. Ingen av dem har token eller kode i `details`. Admin-skriv har `actor=<e-post>` i `details`. Skrivingen er asynkron via kø, bortsett fra admin-skriv (se Audit-isolering).
 
 90 dagers retensjon (cleanup-jobb sletter eldre). Eksporteres via admin GUI som CSV.
 

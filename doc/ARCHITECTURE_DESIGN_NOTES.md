@@ -122,3 +122,25 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - Akseptert restrisiko, login-CSRF (P1): bekreftelsessiden viser ikke e-postadressen. Et offer som trykker på en lenke en angriper har bestilt til sin egen adresse, kan dermed logges inn som angriperen (sosial manipulering).
 - Akseptert restrisiko, logout (P2/PB3): `same-site` og bar GET revokerer. En kompromittert søster-app, eller toppnivå-navigasjon fra en annen side, kan logge brukeren ut. Det gir en uønsket utlogging, ingen tilgang.
 - Akseptert restrisiko: 3 bestillinger per 15 min blokkerer offerets magic link (kvote-DoS, som før).
+
+---
+
+## ADN 12 — Access-tokens bærer `aud` = tjeneste-ID og `jti`. Klientene håndhever `aud` i egne leveranser (2026-10-14)
+
+**Status:** Vedtatt 2026-10-14 (implementert på branch, i prod etter deploy)
+→ Analyse: [doc/features/010_AN_HERD_FLYTER_DEL3.md](features/010_AN_HERD_FLYTER_DEL3.md)
+
+**Beslutning:**
+1. **Alle access-tokens har `aud = [svc.ID]`** for tjenesten de ble utstedt for, uansett innloggingsmetode og også etter refresh. Et refreshet token arver refresh-familiens lagrede tjeneste, aldri tjenesten fra requesten. Dette gjeninnfører Quarkus-ADN 5. id_token (`aud=[svc.ID]`, `token_use=id`) og admin-token (`aud=["kauth-admin"]`, `token_use=admin`) er uendret.
+2. **Alle signerte tokens har en `jti`** (128 bit, ikke lagret). Den brukes til korrelasjon i audit og som grunnlag for en senere denylist eller introspection.
+3. **Kauth håndhever `aud` der kauth selv veksler tokenet til noe nytt:** `/dispatch` nivå 0 lager bare en kode for klienten som står i `aud`, og bare for et ferskt token (PB1). Nivå 1–5 auditeres foreløpig, uten avvisning.
+4. **Tilbaketrekking av access-tokens er ikke mulig hos klientene**, fordi de validerer lokalt. Kort TTL er tiltaket. Ved gjenbruk av en kode logger kauth `jti` og familie, men lover ikke mer.
+5. **Kontrakt for klientene:** `aud` kan komme som streng eller som array. Klienten godtar sin egen tjeneste-ID (tabell i analysen §3 A6) og krever `token_use == "access"`. Access- og id_token har samme `aud`, så klientene må også sjekke `token_use` for id_token og `nonce`. `typ: at+jwt` vurderes senere. Hver klient innfører sjekken i en egen leveranse, tidligst én access-TTL og én refresh-syklus etter at kauth med `aud` er i prod.
+6. **Tjenestevalg følger én regel for alle innloggingsmetoder.** En eksplisitt tjeneste-ID vinner over hosten bare når tjenesten ikke har egen `auth_host`, eller når den har akkurat denne hosten (PR #6, nå også for magic link og passord). En tjeneste uten egen `auth_host` kan bindes fra enhver host. Det er bevisst, fordi undertjenester deler host med foreldretjenesten. Policy, `aud` og callback følger den bundne tjenesten.
+
+**Begrunnelse:** Uten `aud` er et token for én tjeneste gyldig hos alle de andre, og `/dispatch` kan gjøre et token for B om til en kode for A. Kauth kan ikke tvinge klientene til å sjekke, men kan sørge for at informasjonen finnes og håndheve den selv. Å legge til `aud` brekker ingen klient (kartlagt 2026-10-14). Å kreve den er en separat endring per klient med egen risiko.
+
+**Konsekvens:**
+- Ingen klient er beskyttet mot tokens på tvers av tjenester før den selv sjekker `aud`.
+- analyse.klarsyn.net er samme app som klarsyn (klarsyn-web). Den logger inn som `klarsyn` og får `aud=klarsyn`. Tjenesteraden `analyse` er i praksis ubrukt.
+- Univers (TTL 12 t) er den største eksponeringen for lekkede access-tokens, uavhengig av `aud`.

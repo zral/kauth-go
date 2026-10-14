@@ -14,8 +14,8 @@ Sist gjennomgått: 2026-10-14
 |---|-----|---------|-----|
 | 1 | **007 Akutt sikkerhetsherding** (Fase 0) | Ett-klikks kjede fra lenke til admin-overtakelse i prod (K1+K2). Tilgangskrav nulles stille ved admin-lagring (H1) | ROADMAP §2.1–2.2 |
 | 2 | Beslutning B1–B6 | Blokkerer analyse for Fase 1–2 | ROADMAP §4 |
-| 3 | 010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5) | 008 og 009 er levert. Gjenstår: `aud`, `jti` og tilbaketrekking av access-tokens, også fra en gjenbrukt kode | ROADMAP §5 |
-| 4 | 011–012 Stabil identitet (Fase 2) | Må være på plass før flere leverandører kommer til | ADN 7 |
+| 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | Implementert, venter på deploy. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
+| 4 | **Neste:** 011–012 Stabil identitet (Fase 2) | Må være på plass før flere leverandører kommer til | ADN 7 |
 
 ## Senere
 
@@ -32,7 +32,7 @@ Sist gjennomgått: 2026-10-14
 | Rotering av per-tjeneste OAuth-credentials | Kan ikke gjøres i admin-UI etter 007 F4 (bevisst). Må gjøres direkte i DB, eller i et eget skjema med secret-felt som bare kan skrives | ROADMAP M12 |
 | Rate limit og dummy-bcrypt på `/do-login`, eller fjern passordkoden helt (B4) | Når `KAUTH_PASSWORD_LOGIN_ENABLED=true` gjelder fortsatt: ingen rate limit og et timing-orakel for brukeroppregning. Bryteren står av i prod (007 F6, security M1) | ROADMAP M10, B4 |
 | Strip standardport og konverter IDN i `KAUTH_CORS_ORIGINS` | `https://a.example:443` og Unicode-verter godtas, men matcher aldri det nettleseren sender (007 F7, code review S-b) | ROADMAP H7 |
-| Begrens audit-rader fra gjentatte `/dispatch`-kall | En autentisert bruker kan generere mange audit-rader via gjentatte `/dispatch`-kall (`redirect_service_mismatch`). Vurder rate limit eller dedup (007 F9) | — |
+| Begrens audit-rader fra gjentatte `/dispatch`-kall | En autentisert bruker kan generere mange audit-rader via gjentatte `/dispatch`-kall (`redirect_service_mismatch`). Vurder rate limit eller dedup. Gjelder også `dispatch_aud_mismatch` og `dispatch_token_stale` (007 F9, 010 F3 M2) | — |
 | Sterkere kilde-autentisering for `CF-Connecting-IP` | Loopback-tillit betyr at lokale prosesser på boksen kan sette klient-IP. Vurder unix-socket eller delt hemmelighet fra cloudflared (007 F10) | — |
 | vinkjeller: del refresh på tvers av faner (Web Locks/single-flight, som klarsyn) | Samtidige refresh fra flere faner gir reuse, og etter 008 logger det ut begge parter (008 F2, ADN 10 pkt 5) | ROADMAP H6 |
 | Overvåk W1-utløseren: reuse med `gap_s ≤ 2`, samme IP og UA | Slår den til, revurder idempotensvindu for samtidig refresh. Ellers ingen tiltak (008, ADN 10 pkt 5) | ROADMAP H6 |
@@ -47,8 +47,19 @@ Sist gjennomgått: 2026-10-14
 | vinkjeller og univers-authgate kaller ikke kauth `/logout` | Refresh-familien revokeres ikke ved utlogging der. spekto bør bekreftes (009 P-betingelser) | ROADMAP H6 |
 | Audit i samme transaksjon som admin-endringen | I dag logges `LogSync` etter at endringen er lagret. Feiler audit, står endringen og listen viser advarsel. Gjøres ved behov (009 F7) | ADN 11 |
 | PB2 fail-open som beredskap | Magic-bekreftelse og admin-POST avvises når både `Sec-Fetch-Site` og gyldig `Origin` mangler. Viser P7 (iPhone-Mail, Gmail-appen) eller drift problemer, kan sjekken snus til fail-open uten DB-endring (009 PB2) | ADN 11 |
-| Magic link og passord resolver host før `?service=` | Samme mønster som Google/MS hadde før PR #6: en undertjeneste uten egen `auth_host` (analyse, wspekto) resolves som foreldretjenesten på delt host (`magic.go`, `password.go`). Ved OIDC svikter det lukket (Nivå 0 mismatcher). Bruk `resolveSocialService`-regelen (PR #6 review) | ADN 11 |
-| SMTP-grenen i `internal/mail` mangler dial-timeout | `smtp.Dial` uten tidsgrense, og sendingen er asynkron. En hengende SMTP-server gir opphopning av goroutiner. Bruk `net.DialTimeout` + deadline, ev. semafor rundt sendingen. Brevo har 10 s (009 F3 S-a) | — |
+| vinkjeller: krev `aud` (streng eller array) og `token_use` | Kauth setter `aud=vinkjeller` fra 010. Tidligst én access-TTL og én refresh-syklus etter deploy av 010 | ADN 12 |
+| pov (spekto, spekto-dev): krev `aud` (streng eller array) og `token_use` | Som over. Godta begge tjeneste-ID-ene | ADN 12 |
+| klarsyn-web: krev `aud` (streng eller array) og `token_use` | Som over. analyse.klarsyn.net logger inn som `klarsyn`, så `aud=klarsyn` dekker begge | ADN 12 |
+| univers/authgate: krev `aud` (streng eller array) og `token_use` | Som over, `aud=univers` | ADN 12 |
+| wspekto: krev `aud` (streng eller array) og `token_use` | Repoet avklares først. Som over, `aud=wspekto` | ADN 12 |
+| Engangs-handoff i stedet for access-token i `/dispatch?token=` | Tokenet ligger i URL-en (historikk, Referer, logger). Ferskhetskravet på nivå 0 begrenser skaden, men fjerner den ikke (010) | ADN 12 |
+| `auth_time`-claim som ferskhetsgrunnlag på `/dispatch` nivå 0 | Settes bare ved interaktiv innlogging og arves ved refresh. Uten den kan et lekket refresh-token gå via refresh til nivå 0 og lage en ny familie med ny absolutt levetid (010 F3, security M1) | ADN 12 |
+| Introspection eller `jti`-denylist | Access-tokens kan ikke trekkes tilbake hos klientene før de utløper. `jti` finnes fra 010 (ADN 12 pkt 4) | ADN 12 |
+| Kortere access-TTL for univers (12 t) og refresh i authgate | Største eksponering for lekkede access-tokens, uavhengig av `aud` (ADN 12) | ROADMAP H5 |
+| Håndhev `aud` på `/dispatch` nivå 1–5 | Når `dispatch_aud_mismatch` er ren i auditen. Nå bare logget (010 F3) | ADN 12 |
+| `fetchmeta.SameOrigin` på `POST /do-login` og `POST /magic-login` | Login-CSRF: en fremmed side kan logge offeret inn på en konto angriperen kontrollerer. Fantes fra før, men gjelder nå alle auth-hoster. Passord er av i prod (010 F2, security M1) | ADN 11 |
+| Avvis eller logg på `/token` når familiens `auth_host` ≠ `r.Host` | Passord på fremmed host med undertjeneste setter `refresh_token`-cookie på den hosten (010 F2, security M2) | — |
+| `DoLogin` 403/401 avslører om passord er på per tjeneste | Tjeneste-ID-er er ikke hemmelige, så lav alvorlighet. Tas sammen med B4 (010 F2, security S1) | ROADMAP B4 |
+| Den ubrukte `analyse`-raden i `services` | analyse.klarsyn.net logger inn som `klarsyn`, så raden brukes ikke. Fjern eller dokumenter (010) | ADN 12 |
 | Kvote-DoS på magic link | 3 bestillinger per 15 min blokkerer offerets magic link. Akseptert risiko, som før 009 (009 F3 S3s) | ADN 11 |
 | Unicode-bretting for eldre ikke-ASCII-rader | Go `ToLower` bretter Unicode, SQLite `lower()` bare ASCII. En eldre rad som `Ø@x.no` finnes ikke med `ø@x.no` og gir duplikatkonto. 0 slike rader i prod. Løses med varig identitet i Fase 2 (009 F9 S1) | ROADMAP M11, ADN 7 |
-| Tilbaketrekking av access-tokens fra gjenbrukt autorisasjonskode | Familien revokeres, men access-tokens lever ut TTL til `jti` finnes. Hører til H5 i 010 (009 F8) | ROADMAP H5 |
