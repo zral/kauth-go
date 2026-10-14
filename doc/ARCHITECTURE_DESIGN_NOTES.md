@@ -144,3 +144,26 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - Ingen klient er beskyttet mot tokens på tvers av tjenester før den selv sjekker `aud`.
 - analyse.klarsyn.net er samme app som klarsyn (klarsyn-web). Den logger inn som `klarsyn` og får `aud=klarsyn`. Tjenesteraden `analyse` er i praksis ubrukt.
 - Univers (TTL 12 t) er den største eksponeringen for lekkede access-tokens, uavhengig av `aud`.
+
+---
+
+## ADN 13 — Identitet er en kobling `(issuer, subject)` til en intern bruker med opak `public_id`. E-post er et attributt (2026-10-14)
+
+**Status:** Under analyse
+→ Analyse: [doc/features/011_AN_STABIL_IDENTITET.md](features/011_AN_STABIL_IDENTITET.md)
+
+**Beslutning (foreslått):**
+1. **En ekstern identitet er `(issuer, subject)`** i `user_identities`, unik og knyttet til én bruker. Google: `iss` + `sub`. Microsoft: `https://login.microsoftonline.com/{tid}/v2.0` + `oid`, fordi `sub` er parvis per Entra-app og kauth har to apper.
+2. **Innlogging slår opp identiteten først.** En koblet identitet vinner over e-posten i claimet. En ukjent identitet kobles automatisk til brukeren med samme leverandørbekreftede e-post (ADN 10), eller registreres. Om det skjer, styres av `auto_link` per tjeneste (B1, default 1 = som i dag). Med `auto_link=0` kobles bare brukerens *første* fødererte identitet på e-post (overgang fra e-postmodellen). Deretter avvises nye kontoer til eksplisitt kobling finnes (012). Koblingene er globale for brukeren, og policyen til tjenesten der innloggingen skjer, gjelder. Admin-innlogging bruker alltid `auto_link=0`.
+3. **Magic link lagres ikke som identitet.** Magic-identiteten *er* `users.email`, og kan aldri være sterkere enn e-postkontoen bak.
+4. **Hver bruker har en `public_id`** (UUID v4 fra `crypto/rand`) som aldri endres. Den er `sub` for tjenester med `sub_format=id`. Default `email` gir uendrede tokens. Klientene bytter én og én i egne leveranser, og matcher eksisterende brukere på `email`-claimet første gang.
+5. **Refresh-familier og autorisasjonskoder bindes til `user_id`.** E-post blir værende på radene for audit og som fallback for migrerte rader.
+6. **`users.email` endres ikke automatisk** når leverandørens e-post endres. E-postendring, eksplisitt kobling, frakobling og recovery kommer i 012.
+
+**Begrunnelse:** ADN 7 sier at kauth eier identiteten, men i dag er e-postadressen identiteten. Det bryter med OIDC Core §5.7, gjør at en gjenbrukt adresse arver en konto, og gir klientene ingen stabil nøkkel. Fase 3–5 og streng kontokobling (B1) forutsetter en tabell over koblinger.
+
+**Konsekvens:**
+- Med `auto_link=1` kan den som kontrollerer en adresse koble en ny leverandørkonto til en eksisterende bruker, med samme tillit som magic link. `auto_link=0` på én tjeneste beskytter ikke mot koblinger som er gjort via en annen tjeneste. Full beskyttelse krever `auto_link=0` på alle tjenestene brukeren bruker.
+- En bruker med `auto_link=0` som bytter leverandørkonto, kommer ikke inn med den nye kontoen før eksplisitt kobling finnes (012).
+- Ingen identiteter kan fylles inn ved migrering, siden kauth aldri har lagret `sub`/`oid`. De oppstår ved første innlogging etter deploy.
+- Migrasjonen stopper ved ikke-normaliserte eller ikke-ASCII e-poster i stedet for å slå sammen. Etterpå går e-postoppslag på eksakt Go-normalisert verdi, som løser Unicode-brettingen.
