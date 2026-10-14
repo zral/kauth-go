@@ -127,7 +127,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 12 — Access-tokens bærer `aud` = tjeneste-ID og `jti`. Klientene håndhever `aud` i egne leveranser (2026-10-14)
 
-**Status:** Vedtatt 2026-10-14 (implementert på branch, i prod etter deploy)
+**Status:** Implementert (2026-10-14). I prod som tag `010`
 → Analyse: [doc/features/010_AN_HERD_FLYTER_DEL3.md](features/010_AN_HERD_FLYTER_DEL3.md)
 
 **Beslutning:**
