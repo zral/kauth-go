@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,15 @@ import (
 	"github.com/zral/kauth-go/internal/fetchmeta"
 	"github.com/zral/kauth-go/internal/service"
 	"github.com/zral/kauth-go/internal/token"
+)
+
+const (
+	// dispatchMaxTokenAge er hvor gammelt et access-token kan være når det
+	// veksles til en autorisasjonskode på nivå 0. Et lekket token skal ikke
+	// kunne veksles til en refresh-familie resten av TTL-en (010 PD4).
+	dispatchMaxTokenAge = 120 * time.Second
+	// dispatchClockSkew er toleransen for iat i framtiden (klokkeavvik).
+	dispatchClockSkew = 30 * time.Second
 )
 
 // DispatchHandler håndterer post-login routing og utlogging.
@@ -135,6 +145,24 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
+		// ?service= er klientstyrt, så tokenet må selv være utstedt for klienten
+		// koden gjelder. Uten dette kunne et B-token veksles til en A-kode
+		// (010 PD3). Tokens uten aud (utstedt før aud ble innført) avvises også.
+		if _, err := h.Issuer.Verify(jwtToken, token.Expect{TokenUse: "access", Audience: oidcReq.ClientID}); err != nil {
+			h.logDispatchAudit(r, "dispatch_aud_mismatch", claims.Email, svc.ID,
+				fmt.Sprintf("level=0 token_aud=%s target=%s", audDetail(claims), svc.ID))
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		if age, ok := tokenAge(claims, time.Now()); !ok {
+			detail := "iat=missing"
+			if claims.IssuedAt != nil {
+				detail = fmt.Sprintf("age_s=%d", int64(age.Seconds()))
+			}
+			h.logDispatchAudit(r, "dispatch_token_stale", claims.Email, svc.ID, detail)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 		code, err := GenerateAuthorizationCode()
 		if err != nil {
 			http.Error(w, "intern feil", http.StatusInternalServerError)
@@ -190,8 +218,15 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		if target != nil {
+			loginInAud := false
 			if !sharedWithLogin {
 				h.logServiceMismatch(r, claims.Email, loginSvc, target.ID)
+				// Samme faktum som aud-avviket når innloggingstjenesten er aud:
+				// da logges bare redirect_service_mismatch, ikke et dobbelt event.
+				loginInAud = slices.Contains(claims.Audience, loginSvc)
+			}
+			if !loginInAud {
+				h.auditAudMismatch(r, claims, 1, target, redirectURI)
 			}
 			http.Redirect(w, r, appendTokenAndRT(redirectURI, jwtToken, rt), http.StatusSeeOther)
 			return
@@ -206,6 +241,7 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 	if svcID := q.Get("service"); svcID != "" {
 		if svc := h.Registry.Resolve("", svcID, ""); svc != nil {
 			clearRedirect()
+			h.auditAudMismatch(r, claims, 2, svc, "")
 			http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
 			return
 		}
@@ -221,6 +257,7 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		for _, svc := range allSvcs {
 			if svc.AuthHost != nil && strings.ToLower(*svc.AuthHost) == hostLc {
 				clearRedirect()
+				h.auditAudMismatch(r, claims, 3, svc, "")
 				http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
 				return
 			}
@@ -236,6 +273,7 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		for _, org := range claims.Org {
 			if org == *svc.DefaultOrg {
 				clearRedirect()
+				h.auditAudMismatch(r, claims, 4, svc, "")
 				http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
 				return
 			}
@@ -246,10 +284,73 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 	defaultSvc := h.Registry.ResolveOrDefault("", h.DefaultSvcID, "")
 	if defaultSvc != nil {
 		clearRedirect()
+		h.auditAudMismatch(r, claims, 5, defaultSvc, "")
 		http.Redirect(w, r, appendTokenAndRT(defaultSvc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// tokenAge gir tokenets alder og om den er innenfor ferskhetskravet på nivå 0.
+// Manglende iat regnes som for gammelt: et token uten tidsstempel kan ikke
+// bevises ferskt.
+func tokenAge(claims *token.Claims, now time.Time) (time.Duration, bool) {
+	if claims.IssuedAt == nil {
+		return 0, false
+	}
+	age := now.Sub(claims.IssuedAt.Time)
+	return age, age <= dispatchMaxTokenAge && age >= -dispatchClockSkew
+}
+
+// audDetail lister tokenets aud til audit-details, "-" når den mangler.
+// Verdien kommer fra et signert token, så den kan ikke forfalske felt.
+func audDetail(claims *token.Claims) string {
+	if len(claims.Audience) == 0 {
+		return "-"
+	}
+	return strings.Join(claims.Audience, ",")
+}
+
+// auditAudMismatch logger at tokenet ble utstedt for en annen tjeneste enn den
+// rutingen sender til (nivå 1-5). Bare audit: PB2 i 010 holder håndhevingen
+// tilbake til auditen har vist at rutingen er ren. Delt callback (klarsyn og
+// analyse) er ikke avvik, så målets callback sjekkes mot aud-tjenestene.
+// callback er tom når målets egen CallbackUrl brukes.
+func (h *DispatchHandler) auditAudMismatch(r *http.Request, claims *token.Claims, level int, target *gen.Service, callback string) {
+	if slices.Contains(claims.Audience, target.ID) {
+		return
+	}
+	callbacks := []string{callback}
+	if callback == "" {
+		callbacks = strings.Split(target.CallbackUrl, ",")
+	}
+	for _, id := range claims.Audience {
+		audSvc := h.Registry.Resolve("", id, "")
+		for _, cb := range callbacks {
+			if h.Registry.IsAllowedCallback(audSvc, strings.TrimSpace(cb)) {
+				return
+			}
+		}
+	}
+	h.logDispatchAudit(r, "dispatch_aud_mismatch", claims.Email, target.ID,
+		fmt.Sprintf("level=%d token_aud=%s target=%s", level, audDetail(claims), target.ID))
+}
+
+// logDispatchAudit skriver audit uavhengig av at klienten kobler fra.
+// Verken token, rt eller cookie-verdi skal inn i details.
+func (h *DispatchHandler) logDispatchAudit(r *http.Request, typ, email, svcID, details string) {
+	if h.Audit == nil {
+		return
+	}
+	h.Audit.Log(context.WithoutCancel(r.Context()), audit.Event{
+		Type:      typ,
+		Email:     email,
+		ServiceID: svcID,
+		IP:        ClientIP(r),
+		UA:        r.Header.Get("User-Agent"),
+		Success:   false,
+		Details:   details,
+	})
 }
 
 // logServiceMismatch registrerer at nivå 1 sender brukeren til en callback som

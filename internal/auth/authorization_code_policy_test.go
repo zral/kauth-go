@@ -24,22 +24,15 @@ import (
 
 func strPtrPolicy(s string) *string { return &s }
 
-// Regresjonstest for angrepet Lars beskrev i PR-diskusjonen
+// Forsvar i dybden for angrepet Lars beskrev i PR-diskusjonen
 // (github.com/zral/kauth-go/pull/1): ?service= på /dispatch er en
-// URL-parameter angriperen selv styrer — ikke en verdi bundet til tokenet
-// (vanlige access-tokens har ingen aud). En bruker med et GYLDIG token for
-// tjeneste B (som de har lovlig tilgang til) kan derfor, mens de har en
-// legitim oidc_authz-cookie for tjeneste A liggende (fra å ha klikket
-// "logg inn" i partner-app A), hoppe forbi A sin egen login-handler helt
-// og gå rett til /dispatch?token=<B-token>&service=A.
-//
-// service-ID-sjekken i dispatch.go (lagt til i forrige revisjon) stopper
-// IKKE dette — den sjekker bare at URL-en er intern konsistent
-// (?service=A == cookiens client_id), ikke at brukeren faktisk har rett
-// til A. Det er derfor /token MÅ håndheve svc.RequireRole/EnforceOrg for
-// A på nytt (via checkPolicy) idet koden løses inn — det er det eneste
-// stedet i hele flyten som faktisk kan vite hvilken tjeneste som skal
-// autorisere brukeren.
+// URL-parameter angriperen selv styrer. Siden 010 bærer access-tokens aud,
+// og /dispatch nivå 0 avviser et B-token for en A-kode (se
+// TestDispatchLevel0_RejectsTokenForOtherService), så det opprinnelige
+// angrepet stoppes der. Denne testen dekker laget bak: et token som har
+// riktig aud for A, men der brukeren ikke (lenger) oppfyller A sin
+// require_role, må likevel avvises idet koden løses inn. Policyen
+// evalueres derfor på nytt i /token (checkPolicy).
 func TestAuthorizationCodeGrant_RejectsUserWithoutRequiredRoleEvenWithValidCodeAndPKCE(t *testing.T) {
 	ctx := context.Background()
 	sqldb, q, err := db.OpenMemory()
@@ -78,12 +71,12 @@ func TestAuthorizationCodeGrant_RejectsUserWithoutRequiredRoleEvenWithValidCodeA
 	dispatchH := &auth.DispatchHandler{Registry: reg, Issuer: iss, Queries: q, DefaultSvcID: "minliste"}
 	tokenH := auth.NewPasswordHandlers(q, iss, refSvc, reg, aud, true)
 
-	svcB, err := q.GetServiceByID(ctx, "minliste")
+	svcA, err := q.GetServiceByID(ctx, "veivakt")
 	require.NoError(t, err)
 
-	// Steg 1: brukeren har et helt legitimt token for B (de logget faktisk
-	// inn der, og har rett til det).
-	tokenForB, err := iss.IssueAccess(user, svcB)
+	// Steg 1: brukeren har et ferskt token med aud=veivakt (f.eks. utstedt
+	// før require_role ble strammet inn), men mangler rollen nå.
+	tokenForA, err := iss.IssueAccess(user, svcA)
 	require.NoError(t, err)
 
 	// Steg 2: en legitim oidc_authz-cookie for A ligger fra tidligere
@@ -97,19 +90,17 @@ func TestAuthorizationCodeGrant_RejectsUserWithoutRequiredRoleEvenWithValidCodeA
 		State: "s1", CodeChallenge: challenge, CodeChallengeMethod: "S256",
 	})
 
-	// Steg 3: angrepet — B sitt token + ?service=veivakt, rett til /dispatch,
-	// UTEN å noensinne ha gått via veivakt sin egen login-handler (der
-	// checkPolicy ville stoppet dem).
-	dispatchReq := httptest.NewRequest(http.MethodGet, "/dispatch?token="+url.QueryEscape(tokenForB)+"&service=veivakt", nil)
+	// Steg 3: tokenet med aud=veivakt rett til /dispatch, uten å ha gått via
+	// veivakt sin login-handler (der checkPolicy ville stoppet brukeren).
+	dispatchReq := httptest.NewRequest(http.MethodGet, "/dispatch?token="+url.QueryEscape(tokenForA)+"&service=veivakt", nil)
 	for _, c := range cookieWriter.Result().Cookies() {
 		dispatchReq.AddCookie(c)
 	}
 	dispatchW := httptest.NewRecorder()
 	dispatchH.ServeDispatch(dispatchW, dispatchReq)
 
-	// Dispatch alene kan ikke oppdage dette (den vet bare at URL-en er
-	// internt konsistent) — den utsteder en kode. Det er FORVENTET og
-	// dokumenterer nettopp hvorfor sjekken må ligge i /token.
+	// Dispatch ser et gyldig, ferskt token for A og utsteder en kode. Policy
+	// hører hjemme i /token, som er det neste laget.
 	require.Equal(t, http.StatusSeeOther, dispatchW.Code)
 	loc := dispatchW.Header().Get("Location")
 	require.True(t, strings.HasPrefix(loc, "https://veivakt.app/auth/callback?"))

@@ -50,7 +50,7 @@ func TestRedeemAuthorizationCode_InsertFailureRollsBackConsume(t *testing.T) {
 		func(ctx context.Context, fn func(token.CodeQuerier) error) error {
 			return txr(ctx, func(q token.CodeQuerier) error { return fn(failingCodeInsert{q}) })
 		}, audit.NewNoop())
-	_, err := failing.RedeemAuthorizationCode(ctx, p, testUser(), testService(), "ip", "ua")
+	_, _, err := failing.RedeemAuthorizationCode(ctx, p, testUser(), testService(), "ip", "ua")
 	if err == nil || errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("forventet intern feil, fikk %v", err)
 	}
@@ -70,7 +70,7 @@ func TestRedeemAuthorizationCode_FamilyIDMatchesRefreshRow(t *testing.T) {
 	p := seedCode(t, sqlDB, testUser())
 
 	svc := token.NewRefreshService(sqlDB, audit.NewNoop())
-	plain, err := svc.RedeemAuthorizationCode(ctx, p, testUser(), testService(), "ip", "ua")
+	plain, fam, err := svc.RedeemAuthorizationCode(ctx, p, testUser(), testService(), "ip", "ua")
 	if err != nil {
 		t.Fatalf("RedeemAuthorizationCode: %v", err)
 	}
@@ -79,12 +79,15 @@ func TestRedeemAuthorizationCode_FamilyIDMatchesRefreshRow(t *testing.T) {
 		t.Fatalf("GetAuthorizationCodeByHash: %v", err)
 	}
 	rt := rowByPlain(t, sqlDB, plain)
+	if fam != rt.FamilyID {
+		t.Fatalf("returnert familie-ID %s må være lik refresh-raden (%s)", fam, rt.FamilyID)
+	}
 	if code.Used != 1 || code.FamilyID == nil || *code.FamilyID != rt.FamilyID {
 		t.Fatalf("family_id på kode (%v) må være lik refresh-raden (%s), used=%d", code.FamilyID, rt.FamilyID, code.Used)
 	}
 
 	// Andre innløsning: ingen rad oppfyller predikatene.
-	if _, err := svc.RedeemAuthorizationCode(ctx, p, testUser(), testService(), "ip", "ua"); !errors.Is(err, sql.ErrNoRows) {
+	if _, _, err := svc.RedeemAuthorizationCode(ctx, p, testUser(), testService(), "ip", "ua"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("forventet sql.ErrNoRows, fikk %v", err)
 	}
 }

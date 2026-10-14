@@ -205,17 +205,18 @@ type CodeRedemption struct {
 // én transaksjon. Feiler innsettingen, står koden ubrukt (used=0), så en
 // intern feil ikke koster klienten koden. sql.ErrNoRows betyr at ingen rad
 // oppfylte predikatene (tapt kappløp, gjenbruk eller utløp); kalleren klassifiserer.
-func (s *RefreshService) RedeemAuthorizationCode(ctx context.Context, p CodeRedemption, user gen.User, svc gen.Service, ip, ua string) (string, error) {
+// Returnerer klartekst-refresh-token og familie-ID (til audit).
+func (s *RefreshService) RedeemAuthorizationCode(ctx context.Context, p CodeRedemption, user gen.User, svc gen.Service, ip, ua string) (string, string, error) {
 	// Familie-ID før transaksjonen: den skrives både på koden og på refresh-raden,
 	// og er det som lar gjenbruk av koden revokere akkurat denne familien.
 	familyID, err := generateFamilyID()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	now := time.Now().UTC()
 	plain, params, err := newRootToken(user, svc, familyID, now)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	err = s.runCode(ctx, func(q CodeQuerier) error {
 		if _, err := q.ConsumeAuthorizationCodeChecked(ctx, gen.ConsumeAuthorizationCodeCheckedParams{
@@ -235,13 +236,13 @@ func (s *RefreshService) RedeemAuthorizationCode(ctx context.Context, p CodeRede
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", err
+			return "", "", err
 		}
-		return "", fmt.Errorf("løse inn autorisasjonskode: %w", err)
+		return "", "", fmt.Errorf("løse inn autorisasjonskode: %w", err)
 	}
 	// Audit etter COMMIT, som i Rotate.
 	s.audit.Log(ctx, audit.Event{Type: "refresh_token_issued", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	return plain, nil
+	return plain, familyID, nil
 }
 
 func (s *RefreshService) Rotate(ctx context.Context, plainToken, ip, ua string) (*RotationResult, error) {

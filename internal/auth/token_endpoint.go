@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -84,18 +85,12 @@ func (h *PasswordHandlers) authorizationCodeGrant(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Kritisk: svc.RequireRole/EnforceOrg må håndheves HER, ikke antas
-	// dekket av at brukeren en gang logget inn et sted. /dispatch sin
-	// service-ID-sjekk (q.Get("service") == oidcReq.ClientID) er IKKE nok —
-	// den er en URL-parameter angriperen selv styrer når /dispatch kalles
-	// direkte, ikke en verdi bundet til tokenet (vanlige access-tokens har
-	// ingen aud). En bruker med et gyldig token for tjeneste B kan derfor gå
-	// rett til /dispatch?token=<B-token>&service=A og få en A-kode uten å
-	// noensinne ha gått via A sin login-handler, der checkPolicy normalt
-	// ville stoppet dem. Denne sjekken er derfor det ENESTE stedet i hele
-	// authorization_code-flyten som faktisk håndhever A sine tilgangsregler
-	// — se PR-diskusjonen (github.com/zral/kauth-go/pull/1) for det fulle
-	// angrepsscenarioet.
+	// Forsvar i dybden: /dispatch binder koden til tokenets aud (nivå 0 krever
+	// aud == client_id og et ferskt token), så et B-token kan ikke lenger
+	// veksles til en A-kode. Policyen for A evalueres likevel her, siden
+	// rolle og org kan ha endret seg siden innloggingen, og fordi dette er
+	// det eneste punktet som ikke avhenger av hva /dispatch fikk i URL-en.
+	// Se PR-diskusjonen (github.com/zral/kauth-go/pull/1).
 	if err := checkPolicy(user, svc); err != nil {
 		h.aud.Log(r.Context(), audit.Event{Type: "authorization_code_policy_denied", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: false})
 		writeTokenError(w, http.StatusBadRequest, "invalid_grant")
@@ -123,17 +118,18 @@ func (h *PasswordHandlers) authorizationCodeGrant(w http.ResponseWriter, r *http
 	// id_token er en OIDC-ting (OIDC Core §3.1.3.3): utstedes kun når
 	// openid-scopet faktisk ble bedt om. En ren OAuth2-klient som aldri ba
 	// om openid skal ikke få et identitetstoken den ikke forventer.
-	idToken := ""
+	idToken, jtiID := "", "-"
 	if scopeContains(scope, "openid") {
-		idToken, err = h.issuer.IssueIDToken(user, *svc, nonce)
+		idIssued, err := h.issuer.IssueIDTokenDetailed(user, *svc, nonce)
 		if err != nil {
 			slog.Error("authorization_code: utstedelse av id_token feilet", "err", err)
 			writeTokenError(w, http.StatusInternalServerError, "server_error")
 			return
 		}
+		idToken, jtiID = idIssued.Token, idIssued.JTI
 	}
 
-	rt, err := h.refresh.RedeemAuthorizationCode(r.Context(), token.CodeRedemption{
+	rt, family, err := h.refresh.RedeemAuthorizationCode(r.Context(), token.CodeRedemption{
 		CodeHash:      codeHash,
 		ServiceID:     clientID,
 		RedirectURI:   redirectURI,
@@ -168,7 +164,9 @@ func (h *PasswordHandlers) authorizationCodeGrant(w http.ResponseWriter, r *http
 		return
 	}
 
-	h.aud.Log(r.Context(), audit.Event{Type: "authorization_code_exchanged", AuthMethod: "authorization_code", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
+	// jti og familie lar en lekket token spores til innløsningen.
+	h.aud.Log(r.Context(), audit.Event{Type: "authorization_code_exchanged", AuthMethod: "authorization_code", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true,
+		Details: fmt.Sprintf("jti_access=%s jti_id=%s family=%s", atIssued.JTI, jtiID, family)})
 
 	ttl, err := token.ParseISO8601Duration(svc.AccessTokenTtl)
 	if err != nil || ttl <= 0 {
@@ -204,11 +202,14 @@ func (h *PasswordHandlers) rejectCode(w http.ResponseWriter, r *http.Request, ro
 			break
 		}
 		details := ""
+		if row.FamilyID != nil {
+			details = "family=" + *row.FamilyID
+		}
 		// WithoutCancel: revokeringen skal fullføres selv om klienten kobler fra,
 		// ellers overlever angriperens (eller vinnerens) familie.
 		if row.FamilyID != nil {
 			if err := h.refresh.RevokeFamily(context.WithoutCancel(r.Context()), *row.FamilyID, "authorization_code_reuse"); err != nil {
-				details = "revoke_failed"
+				details += " revoke_failed"
 			}
 		}
 		event("authorization_code_reuse", details)

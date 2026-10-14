@@ -295,7 +295,7 @@ func TestAuthorizationCodeGrant_ReuseRevokeFailureIsAudited(t *testing.T) {
 
 	w := redeem(h, "kode-rf", reuseRedirect, "veivakt", verifier)
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Equal(t, "revoke_failed", auditDetails(t, q, "authorization_code_reuse"))
+	require.Equal(t, "family=fam-x revoke_failed", auditDetails(t, q, "authorization_code_reuse"))
 }
 
 // Deterministisk tapt kappløp: konsumet gir ErrNoRows fordi en vinner nettopp
