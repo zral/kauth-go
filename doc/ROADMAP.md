@@ -107,8 +107,8 @@ Alvorlighet: **K** kritisk · **H** høy · **M** middels · **L** lav. «Prod»
 
 | # | Spørsmål | Anbefaling |
 |---|---|---|
-| B1 | **Kontokobling:** skal samme e-post fra to leverandører automatisk bli samme bruker? | **Nei.** Hver ekstern identitet `(iss, sub)` er sin egen kobling; ny kobling bare etter fersk innlogging med en eksisterende. Overgang: eksisterende e-postbrukere får identiteten koblet *ved første innlogging etter migreringen*, kun fra Google med `email_verified` / MS med `xms_edov` / magic link. Deretter låses koblingen |
-| B2 | **`sub`-semantikk:** e-post → stabil ID | Per tjeneste-flagg `sub_format` (`email` default, `id` opt-in). Klientene (vinkjeller, pov, klarsyn, spekto) migreres én og én; `email`-claim beholdes |
+| B1 ✔ | **Kontokobling:** skal samme e-post fra to leverandører automatisk bli samme bruker? | **Nei.** Hver ekstern identitet `(iss, sub)` er sin egen kobling; ny kobling bare etter fersk innlogging med en eksisterende. Overgang: eksisterende e-postbrukere får identiteten koblet *ved første innlogging etter migreringen*, kun fra Google med `email_verified` / MS med `xms_edov` / magic link. Deretter låses koblingen. **Besluttet 2026-10-14:** konfigurerbart per tjeneste, med automatisk kobling på e-post (som i dag) som default |
+| B2 ✔ | **`sub`-semantikk:** e-post → stabil ID | Per tjeneste-flagg `sub_format` (`email` default, `id` opt-in). Klientene (vinkjeller, pov, klarsyn, spekto) migreres én og én; `email`-claim beholdes. **Besluttet 2026-10-14:** som anbefalt |
 | B3 | **Legacy token-i-URL:** når skal den slutte? | Fase 0 gjør den trygg (K1, L4, Referrer-Policy, loggredigering). Per-tjeneste av-bryter i Fase 1; av som default for nye tjenester; fjernes når alle klienter er på code+PKCE |
 | B4 | **Passord:** fjerne helt eller beholde av? | Global kill-switch nå (default av). Fjern koden når ingen tjeneste har `auth_password=1` |
 | B5 | **Microsoft-tenants:** alle eller allowlist? | `xms_edov` påkrevd for alle; valgfri `tid`-allowlist per tjeneste |
