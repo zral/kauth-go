@@ -1,6 +1,7 @@
 package token
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
@@ -118,7 +119,29 @@ func splitCSV(s string) []string {
 	return out
 }
 
-func (i *Issuer) buildClaims(user gen.User, ttl time.Duration, tokenUse string) Claims {
+// Issued er et signert token sammen med jti-en det bærer. Kallere som skal
+// knytte tokenet til audit trenger jti uten å parse sitt eget token usignert.
+type Issued struct {
+	Token string
+	JTI   string
+}
+
+// newJTI lager en uforutsigbar token-ID på 16 byte (128 bit). Feil fra
+// rand returneres uten fallback: en forutsigbar jti ville gjort den verdiløs
+// som referanse for tilbaketrekking.
+func newJTI() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generere jti: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func (i *Issuer) buildClaims(user gen.User, ttl time.Duration, tokenUse string) (Claims, error) {
+	jti, err := newJTI()
+	if err != nil {
+		return Claims{}, err
+	}
 	now := time.Now().UTC()
 	name := ""
 	if user.Name != nil {
@@ -126,6 +149,7 @@ func (i *Issuer) buildClaims(user gen.User, ttl time.Duration, tokenUse string) 
 	}
 	return Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
 			Issuer:    i.issuer,
 			Subject:   user.Email,
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -137,7 +161,22 @@ func (i *Issuer) buildClaims(user gen.User, ttl time.Duration, tokenUse string) 
 		Groups:   splitCSV(user.Roles),
 		Name:     name,
 		TokenUse: tokenUse,
+	}, nil
+}
+
+// signClaims er det eneste stedet tokens bygges, slik at ingen utstedelsessti kan glemme aud eller jti.
+func (i *Issuer) signClaims(user gen.User, ttl time.Duration, tokenUse string, aud string, nonce string) (Issued, error) {
+	claims, err := i.buildClaims(user, ttl, tokenUse)
+	if err != nil {
+		return Issued{}, err
 	}
+	claims.Audience = jwt.ClaimStrings{aud}
+	claims.Nonce = nonce
+	s, err := i.sign(claims)
+	if err != nil {
+		return Issued{}, err
+	}
+	return Issued{Token: s, JTI: claims.ID}, nil
 }
 
 func (i *Issuer) sign(claims Claims) (string, error) {
@@ -149,50 +188,45 @@ func (i *Issuer) sign(claims Claims) (string, error) {
 	return s, nil
 }
 
-// IssueAccess utsteder et access-token for brukeren med TTL fra tjenestekonfigurasjon.
-// Faller tilbake til defaultTTL hvis tjenestens AccessTokenTtl ikke kan tolkes.
+func (i *Issuer) serviceTTL(svc gen.Service) time.Duration {
+	if d, err := ParseISO8601Duration(svc.AccessTokenTtl); err == nil && d > 0 {
+		return d
+	}
+	return i.defaultTTL
+}
+
+// IssueAccessDetailed utsteder et access-token med TTL fra tjenestekonfigurasjon
+// (defaultTTL hvis den ikke kan tolkes). aud er tjeneste-ID, slik at en
+// ressursserver kan avvise et token utstedt for en annen tjeneste. jti
+// returneres så kallere kan logge den uten å parse tokenet.
+func (i *Issuer) IssueAccessDetailed(user gen.User, svc gen.Service) (Issued, error) {
+	return i.signClaims(user, i.serviceTTL(svc), "access", svc.ID, "")
+}
+
+// IssueAccess er IssueAccessDetailed uten jti, for kallere som bare trenger tokenet.
 func (i *Issuer) IssueAccess(user gen.User, svc gen.Service) (string, error) {
-	ttl := i.defaultTTL
-	if d, err := ParseISO8601Duration(svc.AccessTokenTtl); err == nil && d > 0 {
-		ttl = d
-	}
-	return i.sign(i.buildClaims(user, ttl, "access"))
+	out, err := i.IssueAccessDetailed(user, svc)
+	return out.Token, err
 }
 
-// IssueAccessForAudience er IssueAccess, men med aud satt til den
-// oppgitte klienten. Brukt av authorization_code-grant: et access-token
-// utstedt til en ekstern klient bør bære en aud en ressursserver KAN
-// håndheve, i motsetning til det vanlige access-tokenet (utstedt til
-// tjenester vi selv kontrollerer, der aud historisk ikke har vært satt).
-func (i *Issuer) IssueAccessForAudience(user gen.User, svc gen.Service, aud string) (string, error) {
-	ttl := i.defaultTTL
-	if d, err := ParseISO8601Duration(svc.AccessTokenTtl); err == nil && d > 0 {
-		ttl = d
-	}
-	claims := i.buildClaims(user, ttl, "access")
-	claims.Audience = jwt.ClaimStrings{aud}
-	return i.sign(claims)
-}
-
-// IssueWithTTL utsteder et access-token med eksplisitt TTL. Brukes bl.a. for negative TTL i tester.
+// IssueWithTTL finnes for tester (bl.a. negativ TTL). Produksjonskode skal bruke tjenestens TTL via IssueAccess.
 func (i *Issuer) IssueWithTTL(user gen.User, svc gen.Service, ttl time.Duration) (string, error) {
-	return i.sign(i.buildClaims(user, ttl, "access"))
+	out, err := i.signClaims(user, ttl, "access", svc.ID, "")
+	return out.Token, err
 }
 
-// IssueIDToken utsteder et ekte OIDC id_token (OIDC Core §2): aud=client_id
-// (=tjeneste-ID, se service.Registry) og nonce speilet fra
-// /authorize-requesten. Atskilt fra IssueAccess — et access-token har ingen
-// aud/nonce og skal ikke tolkes som identitetsbevis av en klient, kun som
-// bearer-credential mot ressursservere som stoler på kauth.
+// IssueIDTokenDetailed utsteder et ekte OIDC id_token (OIDC Core §2): aud=client_id
+// (=tjeneste-ID, se service.Registry) og nonce speilet fra /authorize-requesten.
+// Et id_token er identitetsbevis for klienten, ikke en bearer-credential mot
+// ressursservere; token_use=id skiller det fra access-tokenet.
+func (i *Issuer) IssueIDTokenDetailed(user gen.User, svc gen.Service, nonce string) (Issued, error) {
+	return i.signClaims(user, i.serviceTTL(svc), "id", svc.ID, nonce)
+}
+
+// IssueIDToken er IssueIDTokenDetailed uten jti.
 func (i *Issuer) IssueIDToken(user gen.User, svc gen.Service, nonce string) (string, error) {
-	ttl := i.defaultTTL
-	if d, err := ParseISO8601Duration(svc.AccessTokenTtl); err == nil && d > 0 {
-		ttl = d
-	}
-	claims := i.buildClaims(user, ttl, "id")
-	claims.Audience = jwt.ClaimStrings{svc.ID}
-	claims.Nonce = nonce
-	return i.sign(claims)
+	out, err := i.IssueIDTokenDetailed(user, svc, nonce)
+	return out.Token, err
 }
 
 // AdminAudience er aud-verdien på admin-tokens. Admin-middleware krever den,
@@ -220,9 +254,8 @@ func (i *Issuer) IssueAdmin(user gen.User, adminTTL time.Duration) (string, erro
 	if adminTTL <= 0 {
 		adminTTL = i.adminTTL
 	}
-	claims := i.buildClaims(user, adminTTL, "admin")
-	claims.Audience = jwt.ClaimStrings{AdminAudience}
-	return i.sign(claims)
+	out, err := i.signClaims(user, adminTTL, "admin", AdminAudience, "")
+	return out.Token, err
 }
 
 // Verify validerer signatur, issuer og utløp, og krever i tillegg forventet

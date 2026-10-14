@@ -226,3 +226,27 @@ func TestAuthorizationCodeGrant_RedirectURIMismatchRejected(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// K1: aud på access-tokenet er client_id, som før aud ble satt for alle tokens.
+func TestAuthorizationCodeGrant_AccessAudienceIsClient(t *testing.T) {
+	h, q, user, _ := setupAuthCodeTest(t)
+	verifier, challenge := pkcePair()
+	insertAuthCode(t, q, "test-code-aud", user.Email, "https://veivakt.app/auth/callback", challenge, "S256", "openid", "n")
+
+	form := url.Values{
+		"grant_type": {"authorization_code"}, "code": {"test-code-aud"},
+		"redirect_uri": {"https://veivakt.app/auth/callback"}, "client_id": {"veivakt"},
+		"code_verifier": {verifier},
+	}
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Token(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	claims := jwtPayload(t, body["access_token"].(string))
+	require.Equal(t, []any{"veivakt"}, claims["aud"])
+	require.NotEmpty(t, claims["jti"])
+}

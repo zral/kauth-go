@@ -3,6 +3,7 @@ package token_test
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -148,7 +149,7 @@ func TestIssueAdmin_HasAdminAudience(t *testing.T) {
 	}
 }
 
-// R6: access- og id-token skal ha uendrede claims i Fase 0.
+// R6: nonce og token_use er uendret; access-token har siden 010 aud=[svc.ID].
 func TestIssueAccessAndID_ClaimsUnchanged(t *testing.T) {
 	iss := newTestIssuer(t)
 
@@ -160,8 +161,8 @@ func TestIssueAccessAndID_ClaimsUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify access: %v", err)
 	}
-	if ac.TokenUse != "access" || len(ac.Audience) != 0 || ac.Nonce != "" {
-		t.Errorf("access-token skal ikke ha aud/nonce: use=%q aud=%v nonce=%q", ac.TokenUse, ac.Audience, ac.Nonce)
+	if ac.TokenUse != "access" || !slices.Equal(ac.Audience, []string{"testsvc"}) || ac.Nonce != "" {
+		t.Errorf("access-token skal ha aud=[svc.ID] og ingen nonce: use=%q aud=%v nonce=%q", ac.TokenUse, ac.Audience, ac.Nonce)
 	}
 
 	idt, err := iss.IssueIDToken(testUser(), testService(), "n-123")
@@ -310,5 +311,126 @@ func TestVerify_RejectsRS384(t *testing.T) {
 	}
 	if _, err := iss.Verify(rs256, token.ExpectAccess); err != nil {
 		t.Fatalf("RS256 skal godtas: %v", err)
+	}
+}
+
+func TestIssueAccess_HasServiceAudience(t *testing.T) {
+	iss := newTestIssuer(t)
+	for _, id := range []string{"svca", "svcb"} {
+		svc := testService()
+		svc.ID = id
+		tok, err := iss.IssueAccess(testUser(), svc)
+		if err != nil {
+			t.Fatalf("IssueAccess: %v", err)
+		}
+		claims, err := iss.Verify(tok, token.ExpectAccess)
+		if err != nil {
+			t.Fatalf("Verify: %v", err)
+		}
+		if !slices.Equal(claims.Audience, []string{id}) {
+			t.Errorf("forventet aud=[%s], fikk %v", id, claims.Audience)
+		}
+	}
+}
+
+func TestIssue_JTIUniqueAndLong(t *testing.T) {
+	iss := newTestIssuer(t)
+	seen := map[string]bool{}
+	check := func(tok string) {
+		t.Helper()
+		var claims token.Claims
+		if _, _, err := jwt.NewParser().ParseUnverified(tok, &claims); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(claims.ID)
+		if err != nil || len(raw) != 16 {
+			t.Fatalf("jti %q skal være 16 byte base64url, fikk len=%d err=%v", claims.ID, len(raw), err)
+		}
+		if seen[claims.ID] {
+			t.Fatalf("duplisert jti %q", claims.ID)
+		}
+		seen[claims.ID] = true
+	}
+	// 100 runder er nok til å fange konstant eller kort jti. RSA-signering er treg på RPi5.
+	for n := 0; n < 100; n++ {
+		a, err := iss.IssueAccessDetailed(testUser(), testService())
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(a.Token)
+		id, err := iss.IssueIDTokenDetailed(testUser(), testService(), "n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(id.Token)
+		adm, err := iss.IssueAdmin(testUser(), time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(adm)
+	}
+	if len(seen) != 300 {
+		t.Errorf("forventet 300 unike jti, fikk %d", len(seen))
+	}
+}
+
+func TestIssued_JTIMatchesTokenClaim(t *testing.T) {
+	iss := newTestIssuer(t)
+	a, err := iss.IssueAccessDetailed(testUser(), testService())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := iss.Verify(a.Token, token.ExpectAccess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.JTI == "" || claims.ID != a.JTI {
+		t.Errorf("Issued.JTI %q skal være lik jti i tokenet %q", a.JTI, claims.ID)
+	}
+}
+
+func TestIssueAdmin_AudienceUnchanged(t *testing.T) {
+	iss := newTestIssuer(t)
+	tok, err := iss.IssueAdmin(testUser(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := iss.Verify(tok, token.ExpectAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(claims.Audience, []string{token.AdminAudience}) {
+		t.Errorf("admin aud endret: %v", claims.Audience)
+	}
+}
+
+func TestIssueIDToken_AudienceAndUseUnchanged(t *testing.T) {
+	iss := newTestIssuer(t)
+	tok, err := iss.IssueIDToken(testUser(), testService(), "n-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := iss.Verify(tok, token.Expect{TokenUse: "id", Audience: "testsvc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.Nonce != "n-1" || claims.TokenUse != "id" {
+		t.Errorf("uventede claims: %+v", claims)
+	}
+}
+
+// /api/me og nivå 1-5 bruker ExpectAccess uten aud; nye tokens med aud skal passere.
+func TestVerify_AccessWithAudience_PassesExpectAccess(t *testing.T) {
+	iss := newTestIssuer(t)
+	tok, err := iss.IssueAccess(testUser(), testService())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := iss.Verify(tok, token.ExpectAccess)
+	if err != nil {
+		t.Fatalf("ExpectAccess skal godta token med aud: %v", err)
+	}
+	if len(claims.Audience) != 1 {
+		t.Errorf("forventet aud satt, fikk %v", claims.Audience)
 	}
 }

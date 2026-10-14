@@ -113,12 +113,13 @@ func (h *PasswordHandlers) authorizationCodeGrant(w http.ResponseWriter, r *http
 
 	// Tokens som kan feile signeres før koden konsumeres, slik at en intern
 	// feil ikke brenner koden.
-	at, err := h.issuer.IssueAccessForAudience(user, *svc, clientID)
+	atIssued, err := h.issuer.IssueAccessDetailed(user, *svc)
 	if err != nil {
 		slog.Error("authorization_code: utstedelse av access-token feilet", "err", err)
 		writeTokenError(w, http.StatusInternalServerError, "server_error")
 		return
 	}
+	at := atIssued.Token
 	// id_token er en OIDC-ting (OIDC Core §3.1.3.3): utstedes kun når
 	// openid-scopet faktisk ble bedt om. En ren OAuth2-klient som aldri ba
 	// om openid skal ikke få et identitetstoken den ikke forventer.

@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -341,4 +343,32 @@ func TestRefreshService_UnknownTokenIs401InvalidOrExpired(t *testing.T) {
 	w := f.post("aldri-utstedt", "svca")
 	require.Equal(t, http.StatusUnauthorized, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "invalid_or_expired_token")
+}
+
+// jwtPayload dekoder payloaden uten signaturverifikasjon; testene her
+// undersøker bare hva kauth faktisk utstedte.
+func jwtPayload(t *testing.T, tok string) map[string]any {
+	t.Helper()
+	parts := strings.Split(tok, ".")
+	require.Len(t, parts, 3)
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	return m
+}
+
+// K2: aud følger familiens lagrede tjeneste, aldri skjemafeltet.
+func TestRefreshGrant_AudienceFromFamily(t *testing.T) {
+	f, _, b := newRefreshFx(t, nil, 0, nil)
+	plain, err := f.refSvc.Issue(context.Background(), f.user, b, "127.0.0.1", "t")
+	require.NoError(t, err)
+
+	w := f.post(plain, "svca")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	claims := jwtPayload(t, body["access_token"].(string))
+	assert.Equal(t, []any{"svcb"}, claims["aud"])
+	assert.NotEmpty(t, claims["jti"])
 }
