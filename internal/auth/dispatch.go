@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -163,16 +165,51 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
+		// Tokenets sub må være det tjenesten forventer (e-post eller public_id
+		// etter sub_format), og brukeren må finnes og være aktiv. Koden bindes
+		// til user_id, så senere e-postendring ikke flytter sesjonen (011 PD12).
+		// sub_format=id: brukeren finnes via public_id i sub, og e-posten i
+		// tokenet må tilhøre samme bruker. email: som før, sub må være e-posten.
+		var user gen.User
+		var err error
+		if svc.SubFormat == "id" {
+			user, err = h.Queries.GetActiveUserByPublicID(r.Context(), claims.Subject)
+		} else {
+			user, err = h.Queries.GetActiveUserByEmail(r.Context(), NormalizeEmail(claims.Email))
+		}
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				slog.Error("dispatch: brukeroppslag feilet", "error", err)
+				http.Error(w, "intern feil", http.StatusInternalServerError)
+				return
+			}
+			h.logDispatchAudit(r, "dispatch_subject_mismatch", claims.Email, svc.ID, "level=0 reason=no_active_user")
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		subOK := claims.Subject == user.Email
+		if svc.SubFormat == "id" {
+			subOK = NormalizeEmail(claims.Email) == user.Email
+		}
+		if !subOK {
+			// Selve subject logges ikke; sub_format er nok til å forstå avviket.
+			h.logDispatchAudit(r, "dispatch_subject_mismatch", user.Email, svc.ID,
+				"level=0 sub_format="+svc.SubFormat)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 		code, err := GenerateAuthorizationCode()
 		if err != nil {
 			http.Error(w, "intern feil", http.StatusInternalServerError)
 			return
 		}
+		userID := user.ID
 		expiresAt := time.Now().UTC().Add(60 * time.Second).Format("2006-01-02T15:04:05Z")
 		err = h.Queries.InsertAuthorizationCode(r.Context(), gen.InsertAuthorizationCodeParams{
 			Code:                token.HashOpaque(code),
 			ServiceID:           oidcReq.ClientID,
-			Email:               claims.Email,
+			Email:               user.Email,
+			UserID:              &userID,
 			RedirectUri:         oidcReq.RedirectURI,
 			Scope:               nullableStr(oidcReq.Scope),
 			Nonce:               nullableStr(oidcReq.Nonce),

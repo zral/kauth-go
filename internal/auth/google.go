@@ -351,7 +351,14 @@ func (h *GoogleHandlers) findOrCreate(ctx context.Context, email, name string, s
 	if svc.DefaultOrg != nil {
 		org = *svc.DefaultOrg
 	}
+	// Feil her avbryter før noen rad skrives: en bruker uten ekte public_id
+	// skal aldri opprettes.
+	publicID, err := token.NewPublicID()
+	if err != nil {
+		return gen.User{}, fmt.Errorf("auto-registrering: %w", err)
+	}
 	u, err = h.queries.CreateUser(ctx, gen.CreateUserParams{
+		PublicID:  publicID,
 		Email:     email,
 		Name:      &name,
 		Roles:     role,

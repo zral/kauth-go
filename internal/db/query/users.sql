@@ -4,6 +4,9 @@ SELECT * FROM users WHERE email = ? LIMIT 1;
 -- name: GetActiveUserByEmail :one
 SELECT * FROM users WHERE email = ? AND deactivated_at IS NULL LIMIT 1;
 
+-- name: GetActiveUserByPublicID :one
+SELECT * FROM users WHERE public_id = ? AND deactivated_at IS NULL;
+
 -- name: GetUserByID :one
 SELECT * FROM users WHERE id = ?;
 
@@ -11,8 +14,8 @@ SELECT * FROM users WHERE id = ?;
 SELECT * FROM users WHERE id = ? AND deactivated_at IS NULL;
 
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, name, roles, orgs, created_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO users (public_id, email, password_hash, name, roles, orgs, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateUserLastLogin :exec

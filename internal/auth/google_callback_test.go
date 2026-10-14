@@ -12,6 +12,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/token"
 )
 
 func TestGoogleInitiate_SendsNonceFromState(t *testing.T) {
@@ -216,7 +217,7 @@ func TestGoogleFinish_MixedCaseEmail_FindsExistingUser(t *testing.T) {
 	} {
 		t.Run(tc.stored, func(t *testing.T) {
 			f := newAdminFlowFixture(t)
-			existing, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{Email: tc.stored, Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+			existing, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: tc.stored, Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 			require.NoError(t, err)
 			before := f.countFn()
 
@@ -248,7 +249,7 @@ func TestGoogleFinish_NewUserStoredNormalized(t *testing.T) {
 
 func TestGoogleFinish_CreateConflict_LoginFailedAudited(t *testing.T) {
 	f := newAdminFlowFixture(t)
-	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 	now := "2026-01-02T00:00:00Z"
 	_, err = f.q.DeactivateUser(context.Background(), gen.DeactivateUserParams{DeactivatedAt: &now, ID: u.ID})
@@ -270,7 +271,7 @@ func TestGoogleFinish_CreateConflict_LoginFailedAudited(t *testing.T) {
 
 func TestGoogleFindOrCreate_OnlyUniqueViolationIsConflict(t *testing.T) {
 	f := newAdminFlowFixture(t)
-	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 	now := "2026-01-02T00:00:00Z"
 	_, err = f.q.DeactivateUser(context.Background(), gen.DeactivateUserParams{DeactivatedAt: &now, ID: u.ID})
@@ -296,7 +297,7 @@ func TestGoogleFindOrCreate_OnlyUniqueViolationIsConflict(t *testing.T) {
 // Admin-grenen normaliserer e-posten også i audit, ikke bare i oppslaget.
 func TestCompleteAdminLogin_EmailNormalizedInAudit(t *testing.T) {
 	f := newAdminFlowFixture(t)
-	_, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{Email: "admin@x.no", Roles: "user, konge", CreatedAt: "2026-01-01T00:00:00Z"})
+	_, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "admin@x.no", Roles: "user, konge", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 
 	w := httptest.NewRecorder()

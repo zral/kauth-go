@@ -42,7 +42,7 @@ func newAdminFlowFixture(t *testing.T) *adminFlowFixture {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	mkUser := func(email, roles string) gen.User {
-		u, err := q.CreateUser(context.Background(), gen.CreateUserParams{Email: email, Roles: roles, Orgs: "lars", CreatedAt: now})
+		u, err := q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: email, Roles: roles, Orgs: "lars", CreatedAt: now})
 		require.NoError(t, err)
 		return u
 	}

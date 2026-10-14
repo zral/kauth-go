@@ -31,7 +31,7 @@ func newVerifyFixture(t *testing.T) (*AuthHandler, *gen.Queries, *token.Issuer) 
 	sqldb.SetMaxOpenConns(1)
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = q.CreateUser(context.Background(), gen.CreateUserParams{Email: "konge@example.com", Roles: "konge", Orgs: "lars", CreatedAt: now})
+	_, err = q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "konge@example.com", Roles: "konge", Orgs: "lars", CreatedAt: now})
 	require.NoError(t, err)
 
 	issuer := token.NewIssuerForTest()
@@ -225,7 +225,8 @@ func TestAdminMagicToken_StoredAsHash(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { sqldb.Close() })
 	_, err = q.CreateUser(context.Background(), gen.CreateUserParams{
-		Email: "konge@example.com", Roles: "konge", Orgs: "lars",
+		PublicID: token.MustNewPublicID(),
+		Email:    "konge@example.com", Roles: "konge", Orgs: "lars",
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	require.NoError(t, err)

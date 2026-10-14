@@ -15,13 +15,13 @@ import (
 func seedCode(t *testing.T, sqlDB *sql.DB, user gen.User) token.CodeRedemption {
 	t.Helper()
 	q := gen.New(sqlDB)
-	if _, err := q.CreateUser(context.Background(), gen.CreateUserParams{
-		Email: user.Email, Roles: "user", Orgs: "x", CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		t.Fatalf("CreateUser: %v", err)
+	// openTxDB har allerede lagt inn testUser() (ID 1).
+	u, err := q.GetUserByEmail(context.Background(), user.Email)
+	if err != nil {
+		t.Fatalf("GetUserByEmail: %v", err)
 	}
 	if err := q.InsertAuthorizationCode(context.Background(), gen.InsertAuthorizationCodeParams{
-		Code: token.HashOpaque("kode"), ServiceID: "testsvc", Email: user.Email,
+		Code: token.HashOpaque("kode"), ServiceID: "testsvc", Email: user.Email, UserID: &u.ID,
 		RedirectUri: "https://testsvc.test/cb", CodeChallenge: "chal", CodeChallengeMethod: "S256",
 		CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 		ExpiresAt: time.Now().UTC().Add(time.Minute).Format("2006-01-02T15:04:05Z"),

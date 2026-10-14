@@ -9,6 +9,7 @@ import (
 
 	"github.com/zral/kauth-go/internal/db"
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/token"
 )
 
 func TestIsUniqueViolation(t *testing.T) {
@@ -16,11 +17,11 @@ func TestIsUniqueViolation(t *testing.T) {
 	require.NoError(t, err)
 	sqldb.SetMaxOpenConns(1)
 	ctx := context.Background()
-	p := gen.CreateUserParams{Email: "a@b.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"}
+	p := gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@b.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"}
 	_, err = q.CreateUser(ctx, p)
 	require.NoError(t, err)
 
-	_, err = q.CreateUser(ctx, gen.CreateUserParams{Email: "A@B.no", Roles: "user", CreatedAt: p.CreatedAt})
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "A@B.no", Roles: "user", CreatedAt: p.CreatedAt})
 	require.Error(t, err)
 	require.True(t, isUniqueViolation(err))
 
@@ -28,7 +29,7 @@ func TestIsUniqueViolation(t *testing.T) {
 	require.False(t, isUniqueViolation(errors.New("annen feil")))
 
 	require.NoError(t, sqldb.Close())
-	_, err = q.CreateUser(ctx, gen.CreateUserParams{Email: "c@d.no", Roles: "user", CreatedAt: p.CreatedAt})
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "c@d.no", Roles: "user", CreatedAt: p.CreatedAt})
 	require.Error(t, err)
 	require.False(t, isUniqueViolation(err))
 }

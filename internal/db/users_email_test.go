@@ -8,14 +8,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/token"
 )
 
 func TestUsersEmailNormIndex_RejectsCaseDuplicate(t *testing.T) {
 	_, q := openTestDB(t)
 	ctx := context.Background()
-	_, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "a@x.no", Roles: "user", Orgs: "o", CreatedAt: "2026-01-01T00:00:00Z"})
+	_, err := q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@x.no", Roles: "user", Orgs: "o", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
-	_, err = q.CreateUser(ctx, gen.CreateUserParams{Email: " A@X.no", Roles: "user", Orgs: "o", CreatedAt: "2026-01-01T00:00:00Z"})
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: " A@X.no", Roles: "user", Orgs: "o", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.Error(t, err)
 }
 
@@ -24,7 +25,7 @@ func TestUsersEmailNormIndex_RejectsCaseDuplicate(t *testing.T) {
 func TestGetActiveUserByEmail_Exact(t *testing.T) {
 	_, q := openTestDB(t)
 	ctx := context.Background()
-	_, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "a@x.no", Roles: "user", Orgs: "o", CreatedAt: "2026-01-01T00:00:00Z"})
+	_, err := q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@x.no", Roles: "user", Orgs: "o", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 	u, err := q.GetActiveUserByEmail(ctx, "a@x.no")
 	require.NoError(t, err)

@@ -365,7 +365,14 @@ func (h *MagicHandlers) Redeem(w http.ResponseWriter, r *http.Request) {
 		if svc.DefaultRole != nil && *svc.DefaultRole != "" {
 			defaultRole = *svc.DefaultRole
 		}
+		publicID, err := token.NewPublicID()
+		if err != nil {
+			slog.Error("magic-link: kunne ikke lage public_id", "service", svc.ID, "error", err)
+			http.Error(w, t.ErrInternal, http.StatusInternalServerError)
+			return
+		}
 		user, err = h.queries.CreateUser(r.Context(), gen.CreateUserParams{
+			PublicID:  publicID,
 			Email:     NormalizeEmail(magic.Email),
 			Roles:     defaultRole,
 			Orgs:      defaultOrg,

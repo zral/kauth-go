@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -91,6 +92,7 @@ func setupDeactEnv(t *testing.T) *deactEnv {
 	h := NewUsersHandler(q, aud)
 	r := chi.NewRouter()
 	r.Post("/admin/users/{id}/deactivate", h.HandleDeactivate)
+	r.Post("/admin/users", h.HandleCreate)
 	return &deactEnv{sqldb: sqldb, q: q, refSv: token.NewRefreshService(sqldb, aud), mux: r}
 }
 
@@ -104,7 +106,8 @@ func (e *deactEnv) deactivate(id string) *httptest.ResponseRecorder {
 func (e *deactEnv) mkUser(t *testing.T, email string) gen.User {
 	t.Helper()
 	u, err := e.q.CreateUser(context.Background(), gen.CreateUserParams{
-		Email: email, Roles: "user", Orgs: "", CreatedAt: "2026-10-01T10:00:00Z",
+		PublicID: token.MustNewPublicID(),
+		Email:    email, Roles: "user", Orgs: "", CreatedAt: "2026-10-01T10:00:00Z",
 	})
 	require.NoError(t, err)
 	return u
@@ -261,4 +264,52 @@ func TestDeactivate_RevokeFails_StillSucceedsWithAudit(t *testing.T) {
 			fmt.Sprintf("id=%d revoke_failed", user.ID)).Scan(&n)
 		return n == 1
 	}, 2*time.Second, 10*time.Millisecond)
+}
+
+// K11/PD14: rader knyttet via user_id revokeres selv om e-posten på raden er
+// endret, og rader uten user_id fanges på e-post uansett store og små bokstaver.
+func TestDeactivate_RevokesByUserIDAndMixedCaseEmail(t *testing.T) {
+	e := setupDeactEnv(t)
+	ctx := context.Background()
+	user := e.mkUser(t, "ola@example.com")
+	other := e.mkUser(t, "kari@example.com")
+
+	byID, err := e.refSv.Issue(ctx, user, gen.Service{ID: "svca"}, "", "")
+	require.NoError(t, err)
+	legacy, err := e.refSv.Issue(ctx, user, gen.Service{ID: "svca"}, "", "")
+	require.NoError(t, err)
+	otherTok, err := e.refSv.Issue(ctx, other, gen.Service{ID: "svca"}, "", "")
+	require.NoError(t, err)
+
+	sum := func(p string) string { s := sha256.Sum256([]byte(p)); return hex.EncodeToString(s[:]) }
+	_, err = e.sqldb.Exec("UPDATE refresh_tokens SET email = 'gammel@example.com' WHERE token_hash = ?", sum(byID))
+	require.NoError(t, err)
+	_, err = e.sqldb.Exec("UPDATE refresh_tokens SET user_id = NULL, email = ' OLA@Example.com' WHERE token_hash = ?", sum(legacy))
+	require.NoError(t, err)
+
+	w := e.deactivate(strconv.FormatInt(user.ID, 10))
+	require.Equal(t, http.StatusSeeOther, w.Code, w.Body.String())
+
+	for name, p := range map[string]string{"user_id": byID, "e-post": legacy} {
+		rv, reason := e.rtState(t, p)
+		assert.EqualValues(t, 1, rv, name)
+		assert.Equal(t, "user_deactivated", reason.String, name)
+	}
+	rv, _ := e.rtState(t, otherTok)
+	assert.EqualValues(t, 0, rv)
+}
+
+// K7: admin-opprettede brukere får en public_id fra Go, ikke bare DB-default.
+func TestCreate_SetsPublicID(t *testing.T) {
+	e := setupDeactEnv(t)
+	form := url.Values{"email": {"Ny@Example.com"}, "roles": {"user"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/users", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	e.mux.ServeHTTP(w, req)
+	require.Equal(t, http.StatusSeeOther, w.Code, w.Body.String())
+
+	u, err := e.q.GetUserByEmail(context.Background(), "ny@example.com")
+	require.NoError(t, err)
+	assert.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`, u.PublicID)
 }

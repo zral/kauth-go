@@ -21,12 +21,13 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash, name, roles, orgs, created_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO users (public_id, email, password_hash, name, roles, orgs, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id
 `
 
 type CreateUserParams struct {
+	PublicID     string  `json:"public_id"`
 	Email        string  `json:"email"`
 	PasswordHash *string `json:"password_hash"`
 	Name         *string `json:"name"`
@@ -37,6 +38,7 @@ type CreateUserParams struct {
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, createUser,
+		arg.PublicID,
 		arg.Email,
 		arg.PasswordHash,
 		arg.Name,
@@ -104,6 +106,28 @@ SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deac
 
 func (q *Queries) GetActiveUserByID(ctx context.Context, id int64) (User, error) {
 	row := q.db.QueryRowContext(ctx, getActiveUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Name,
+		&i.Roles,
+		&i.Orgs,
+		&i.CreatedAt,
+		&i.LastLogin,
+		&i.DeactivatedAt,
+		&i.PublicID,
+	)
+	return i, err
+}
+
+const getActiveUserByPublicID = `-- name: GetActiveUserByPublicID :one
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE public_id = ? AND deactivated_at IS NULL
+`
+
+func (q *Queries) GetActiveUserByPublicID(ctx context.Context, publicID string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getActiveUserByPublicID, publicID)
 	var i User
 	err := row.Scan(
 		&i.ID,

@@ -161,7 +161,8 @@ func adminDB(t *testing.T, email, roles string) *gen.Queries {
 	sqldb.SetMaxOpenConns(1)
 	t.Cleanup(func() { sqldb.Close() })
 	_, err = q.CreateUser(context.Background(), gen.CreateUserParams{
-		Email: email, Roles: roles, Orgs: "", CreatedAt: "2026-10-01T10:00:00Z",
+		PublicID: token.MustNewPublicID(),
+		Email:    email, Roles: roles, Orgs: "", CreatedAt: "2026-10-01T10:00:00Z",
 	})
 	require.NoError(t, err)
 	return q

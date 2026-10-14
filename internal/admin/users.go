@@ -15,10 +15,12 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"modernc.org/sqlite"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/zral/kauth-go/internal/audit"
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/token"
 )
 
 const usersPerPage = 25
@@ -192,7 +194,14 @@ func (h *UsersHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		namePtr = &name
 	}
 
-	_, err := h.queries.CreateUser(r.Context(), gen.CreateUserParams{
+	publicID, err := token.NewPublicID()
+	if err != nil {
+		slog.Error("admin: kunne ikke lage public_id", "err", err)
+		h.renderEditError(w, gen.User{Roles: roles, Orgs: orgs}, true, email, "Intern feil ved opprettelse.")
+		return
+	}
+	_, err = h.queries.CreateUser(r.Context(), gen.CreateUserParams{
+		PublicID:     publicID,
 		Email:        email,
 		PasswordHash: passwordHash,
 		Name:         namePtr,
@@ -201,7 +210,13 @@ func (h *UsersHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    now,
 	})
 	if err != nil {
-		h.renderEditError(w, gen.User{Roles: roles, Orgs: orgs}, true, email, "Feil ved opprettelse: "+err.Error())
+		slog.Error("admin: opprettelse av bruker feilet", "err", err)
+		msg := "Feil ved opprettelse."
+		var se *sqlite.Error
+		if errors.As(err, &se) && (se.Code() == 2067 || se.Code() == 1555) { // UNIQUE / PRIMARYKEY
+			msg = "Feil ved opprettelse: finnes e-posten allerede?"
+		}
+		h.renderEditError(w, gen.User{Roles: roles, Orgs: orgs}, true, email, msg)
 		return
 	}
 

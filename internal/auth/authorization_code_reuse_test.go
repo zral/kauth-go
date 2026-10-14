@@ -45,7 +45,8 @@ func setupReuseTest(t *testing.T, withAudit bool) (*auth.PasswordHandlers, *sql.
 		Active: 1, UpdatedAt: now,
 	}))
 	user, err := q.CreateUser(ctx, gen.CreateUserParams{
-		Email: "sjafor@example.com", Roles: "user", Orgs: "drivstoffprisene", CreatedAt: now,
+		PublicID: token.MustNewPublicID(),
+		Email:    "sjafor@example.com", Roles: "user", Orgs: "drivstoffprisene", CreatedAt: now,
 	})
 	require.NoError(t, err)
 

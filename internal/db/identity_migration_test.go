@@ -9,6 +9,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/token"
 )
 
 var uuidV4 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -175,9 +176,9 @@ func TestUserIdentity_UniqueIssuerSubject(t *testing.T) {
 	require.NoError(t, err)
 	defer sqldb.Close()
 	ctx := context.Background()
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "a@x.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@x.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
-	v, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "b@x.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+	v, err := q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "b@x.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 
 	p := gen.InsertIdentityParams{UserID: u.ID, Provider: "google", Issuer: "https://accounts.google.com", Subject: "s1", CreatedAt: "2026-01-01T00:00:00Z"}
@@ -214,7 +215,11 @@ func TestCreateUser_DefaultPublicID(t *testing.T) {
 	ctx := context.Background()
 	seen := map[string]bool{}
 	for _, e := range []string{"a@x.no", "b@x.no", "c@x.no", "d@x.no"} {
-		u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: e, Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+		// Rå INSERT uten public_id: seed-SQL og H2-import går denne stien.
+		// CreateUser setter nå alltid verdien selv.
+		_, err := sqldb.ExecContext(ctx, `INSERT INTO users (email, roles, created_at) VALUES (?, 'user', '2026-01-01T00:00:00Z')`, e)
+		require.NoError(t, err)
+		u, err := q.GetUserByEmail(ctx, e)
 		require.NoError(t, err)
 		require.Regexp(t, uuidV4, u.PublicID)
 		require.False(t, seen[u.PublicID])

@@ -18,7 +18,12 @@ var ErrTokenReuse = errors.New("refresh-token gjenbruk oppdaget — familie tilb
 var ErrTokenRevoked = errors.New("refresh-token er tilbakekalt")
 
 // ServiceID er tjenesten lagret på den konsumerte raden; tom når raden har NULL.
-type RotationResult struct{ NewToken, Email, FamilyID, ServiceID string }
+// UserID er raden sin bruker-FK; nil for rader migrert uten e-postmatch. Kalleren
+// slår da opp på e-post (011 PD13).
+type RotationResult struct {
+	NewToken, Email, FamilyID, ServiceID string
+	UserID                               *int64
+}
 
 // RefreshQuerier er interfacet RefreshService trenger fra DB-laget.
 // Eksportert slik at tester kan injisere stubs.
@@ -140,6 +145,10 @@ func computeExpiresAt(now time.Time, familyExpStr *string) (time.Time, error) {
 // Delt av Issue og RedeemAuthorizationCode slik at familiens utløp og
 // felt ikke kan divergere mellom de to veiene.
 func newRootToken(user gen.User, svc gen.Service, familyID string, now time.Time) (string, gen.InsertRefreshTokenParams, error) {
+	// Uten bruker-ID ville raden mistet koblingen som overlever e-postendring.
+	if user.ID == 0 {
+		return "", gen.InsertRefreshTokenParams{}, errors.New("refresh-token krever bruker med ID")
+	}
 	plain, err := generatePlainToken()
 	if err != nil {
 		return "", gen.InsertRefreshTokenParams{}, err
@@ -161,9 +170,11 @@ func newRootToken(user gen.User, svc gen.Service, familyID string, now time.Time
 	}
 
 	svcID := svc.ID
+	userID := user.ID
 	return plain, gen.InsertRefreshTokenParams{
 		TokenHash:       HashOpaque(plain),
 		Email:           user.Email,
+		UserID:          &userID,
 		ServiceID:       &svcID,
 		FamilyID:        familyID,
 		ParentID:        nil,
@@ -277,6 +288,7 @@ func (s *RefreshService) Rotate(ctx context.Context, plainToken, ip, ua string) 
 		if err := q.InsertRefreshToken(ctx, gen.InsertRefreshTokenParams{
 			TokenHash:       HashOpaque(newPlain),
 			Email:           consumed.Email,
+			UserID:          consumed.UserID,
 			ServiceID:       consumed.ServiceID,
 			FamilyID:        consumed.FamilyID,
 			ParentID:        &parentID,
@@ -304,7 +316,7 @@ func (s *RefreshService) Rotate(ctx context.Context, plainToken, ip, ua string) 
 	// Audit etter COMMIT: en audit-feil eller -forsinkelse skal ikke holde
 	// skrivelåsen, og en rullet tilbake rotasjon skal ikke logges som vellykket.
 	s.audit.Log(ctx, audit.Event{Type: "refresh_token_rotated", Email: consumed.Email, ServiceID: svcID, IP: ip, UA: ua, Success: true})
-	return &RotationResult{NewToken: newPlain, Email: consumed.Email, FamilyID: consumed.FamilyID, ServiceID: svcID}, nil
+	return &RotationResult{NewToken: newPlain, Email: consumed.Email, FamilyID: consumed.FamilyID, ServiceID: svcID, UserID: consumed.UserID}, nil
 }
 
 // classifyRejected skiller gjenbruk fra ukjent/utløpt/revokert token etter at

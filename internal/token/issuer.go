@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -137,7 +138,10 @@ func newJTI() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (i *Issuer) buildClaims(user gen.User, ttl time.Duration, tokenUse string) (Claims, error) {
+// buildClaims lager claimsettet. svc er nil for admin-tokens, som alltid har
+// e-post som sub. For tjenester med sub_format=id er sub brukerens uforanderlige
+// public_id (011 PD11); e-post ligger uansett i email-claimen.
+func (i *Issuer) buildClaims(user gen.User, svc *gen.Service, ttl time.Duration, tokenUse string) (Claims, error) {
 	jti, err := newJTI()
 	if err != nil {
 		return Claims{}, err
@@ -147,11 +151,19 @@ func (i *Issuer) buildClaims(user gen.User, ttl time.Duration, tokenUse string) 
 	if user.Name != nil {
 		name = *user.Name
 	}
+	subject := user.Email
+	if svc != nil && svc.SubFormat == "id" {
+		// En tom sub ville gjort alle brukere like for klienten; heller feile.
+		if user.PublicID == "" {
+			return Claims{}, errors.New("bruker mangler public_id for sub_format=id")
+		}
+		subject = user.PublicID
+	}
 	return Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        jti,
 			Issuer:    i.issuer,
-			Subject:   user.Email,
+			Subject:   subject,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
@@ -165,8 +177,8 @@ func (i *Issuer) buildClaims(user gen.User, ttl time.Duration, tokenUse string) 
 }
 
 // signClaims er det eneste stedet tokens bygges, slik at ingen utstedelsessti kan glemme aud eller jti.
-func (i *Issuer) signClaims(user gen.User, ttl time.Duration, tokenUse string, aud string, nonce string) (Issued, error) {
-	claims, err := i.buildClaims(user, ttl, tokenUse)
+func (i *Issuer) signClaims(user gen.User, svc *gen.Service, ttl time.Duration, tokenUse string, aud string, nonce string) (Issued, error) {
+	claims, err := i.buildClaims(user, svc, ttl, tokenUse)
 	if err != nil {
 		return Issued{}, err
 	}
@@ -200,7 +212,7 @@ func (i *Issuer) serviceTTL(svc gen.Service) time.Duration {
 // ressursserver kan avvise et token utstedt for en annen tjeneste. jti
 // returneres så kallere kan logge den uten å parse tokenet.
 func (i *Issuer) IssueAccessDetailed(user gen.User, svc gen.Service) (Issued, error) {
-	return i.signClaims(user, i.serviceTTL(svc), "access", svc.ID, "")
+	return i.signClaims(user, &svc, i.serviceTTL(svc), "access", svc.ID, "")
 }
 
 // IssueAccess er IssueAccessDetailed uten jti, for kallere som bare trenger tokenet.
@@ -211,7 +223,7 @@ func (i *Issuer) IssueAccess(user gen.User, svc gen.Service) (string, error) {
 
 // IssueWithTTL finnes for tester (bl.a. negativ TTL). Produksjonskode skal bruke tjenestens TTL via IssueAccess.
 func (i *Issuer) IssueWithTTL(user gen.User, svc gen.Service, ttl time.Duration) (string, error) {
-	out, err := i.signClaims(user, ttl, "access", svc.ID, "")
+	out, err := i.signClaims(user, &svc, ttl, "access", svc.ID, "")
 	return out.Token, err
 }
 
@@ -220,7 +232,7 @@ func (i *Issuer) IssueWithTTL(user gen.User, svc gen.Service, ttl time.Duration)
 // Et id_token er identitetsbevis for klienten, ikke en bearer-credential mot
 // ressursservere; token_use=id skiller det fra access-tokenet.
 func (i *Issuer) IssueIDTokenDetailed(user gen.User, svc gen.Service, nonce string) (Issued, error) {
-	return i.signClaims(user, i.serviceTTL(svc), "id", svc.ID, nonce)
+	return i.signClaims(user, &svc, i.serviceTTL(svc), "id", svc.ID, nonce)
 }
 
 // IssueIDToken er IssueIDTokenDetailed uten jti.
@@ -254,7 +266,7 @@ func (i *Issuer) IssueAdmin(user gen.User, adminTTL time.Duration) (string, erro
 	if adminTTL <= 0 {
 		adminTTL = i.adminTTL
 	}
-	out, err := i.signClaims(user, adminTTL, "admin", AdminAudience, "")
+	out, err := i.signClaims(user, nil, adminTTL, "admin", AdminAudience, "")
 	return out.Token, err
 }
 

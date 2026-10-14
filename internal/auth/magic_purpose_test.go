@@ -38,7 +38,7 @@ func TestMagicVerifyToken_PurposeBinding(t *testing.T) {
 		EmailFromName: "Klarsyn", AuthMagicLink: 1, IsDefault: 1,
 		JwtCookieName: "auth_token", AccessTokenTtl: "PT15M", Active: 1, UpdatedAt: nowStr,
 	}))
-	_, err = q.CreateUser(ctx, gen.CreateUserParams{Email: "konge@example.com", Roles: "konge", Orgs: "lars", CreatedAt: nowStr})
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "konge@example.com", Roles: "konge", Orgs: "lars", CreatedAt: nowStr})
 	require.NoError(t, err)
 
 	svcID := "klarsyn"

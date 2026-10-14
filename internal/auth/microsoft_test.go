@@ -136,7 +136,7 @@ func newMSFixture(t *testing.T, autoRegister int64, requireRole *string) (*msFix
 		EmailFromName: "Klarsyn", AuthMicrosoft: 1, AutoRegister: autoRegister, RequireRole: requireRole,
 		JwtCookieName: "auth_token", AccessTokenTtl: "PT15M", Active: 1, UpdatedAt: ts,
 	}))
-	_, err = q.CreateUser(context.Background(), gen.CreateUserParams{Email: "kjent@example.com", Roles: "user", Orgs: "", CreatedAt: ts})
+	_, err = q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "kjent@example.com", Roles: "user", Orgs: "", CreatedAt: ts})
 	require.NoError(t, err)
 	svc := gen.Service{ID: "klarsyn", Domain: "klarsyn.net", IsDefault: 1, CallbackUrl: "https://klarsyn.net/auth/callback",
 		AuthMicrosoft: 1, AutoRegister: autoRegister, RequireRole: requireRole, Active: 1}
@@ -332,7 +332,7 @@ func TestMSFinish_MixedCaseEmail_FindsExistingUser(t *testing.T) {
 	} {
 		t.Run(tc.stored, func(t *testing.T) {
 			f, svc := newMSFixture(t, 1, nil)
-			existing, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{Email: tc.stored, Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+			existing, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: tc.stored, Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 			require.NoError(t, err)
 			before := msUserCount(t, f)
 
@@ -364,7 +364,7 @@ func TestMSFinish_NewUserStoredNormalized(t *testing.T) {
 
 func TestMSFinish_CreateConflict_LoginFailedAudited(t *testing.T) {
 	f, svc := newMSFixture(t, 1, nil)
-	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 	now := "2026-01-02T00:00:00Z"
 	_, err = f.q.DeactivateUser(context.Background(), gen.DeactivateUserParams{DeactivatedAt: &now, ID: u.ID})
@@ -386,7 +386,7 @@ func TestMSFinish_CreateConflict_LoginFailedAudited(t *testing.T) {
 
 func TestMSFindOrCreate_OnlyUniqueViolationIsConflict(t *testing.T) {
 	f, svc := newMSFixture(t, 1, nil)
-	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 	now := "2026-01-02T00:00:00Z"
 	_, err = f.q.DeactivateUser(context.Background(), gen.DeactivateUserParams{DeactivatedAt: &now, ID: u.ID})

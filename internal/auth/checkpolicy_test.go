@@ -63,7 +63,8 @@ func TestDoLogin_RejectsUserWithoutRequiredRole(t *testing.T) {
 	hash := string(hashBytes)
 
 	user, err := q.CreateUser(ctx, gen.CreateUserParams{
-		Email: "bruker@example.com", PasswordHash: &hash,
+		PublicID: token.MustNewPublicID(),
+		Email:    "bruker@example.com", PasswordHash: &hash,
 		Roles: "sysadmin", // inneholder "admin" som substring, men er IKKE rollen "admin"
 		Orgs:  "test", CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
@@ -93,7 +94,8 @@ func TestMagicLinkVerify_RejectsUserWithoutRequiredRole(t *testing.T) {
 
 	setupCheckPolicyService(t, q, "restricted", strPtrCP("admin"))
 	user, err := q.CreateUser(ctx, gen.CreateUserParams{
-		Email: "bruker@example.com", Roles: "sysadmin", Orgs: "test",
+		PublicID: token.MustNewPublicID(),
+		Email:    "bruker@example.com", Roles: "sysadmin", Orgs: "test",
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	require.NoError(t, err)
@@ -142,7 +144,8 @@ func TestDoLogin_GlobalSwitchOffReturns403(t *testing.T) {
 	require.NoError(t, err)
 	hash := string(hashBytes)
 	user, err := q.CreateUser(ctx, gen.CreateUserParams{
-		Email: "bruker@example.com", PasswordHash: &hash, Roles: "user", Orgs: "test",
+		PublicID: token.MustNewPublicID(),
+		Email:    "bruker@example.com", PasswordHash: &hash, Roles: "user", Orgs: "test",
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	require.NoError(t, err)

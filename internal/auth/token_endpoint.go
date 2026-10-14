@@ -74,7 +74,7 @@ func (h *PasswordHandlers) authorizationCodeGrant(w http.ResponseWriter, r *http
 		return
 	}
 
-	user, err := h.queries.GetActiveUserByEmail(r.Context(), NormalizeEmail(row.Email))
+	user, err := h.activeSessionUser(r.Context(), row.UserID)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			slog.Error("authorization_code: brukeroppslag feilet", "err", err)
@@ -183,6 +183,17 @@ func (h *PasswordHandlers) authorizationCodeGrant(w http.ResponseWriter, r *http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// activeSessionUser finner brukeren en refresh-rad eller kode tilhører, bare via
+// user_id. En rad uten user_id (ingen e-postmatch ved migrering) behandles som
+// «ingen aktiv bruker»: en e-post-fallback ville bundet en gammel familie til
+// en senere opprettet konto med samme adresse (011 PD13, sikkerhetsvurdering M2).
+func (h *PasswordHandlers) activeSessionUser(ctx context.Context, userID *int64) (gen.User, error) {
+	if userID == nil {
+		return gen.User{}, sql.ErrNoRows
+	}
+	return h.queries.GetActiveUserByID(ctx, *userID)
 }
 
 // rejectCode skriver 400 invalid_grant og returnerer true når koden ikke kan
@@ -307,7 +318,7 @@ func (h *PasswordHandlers) RefreshToken(w http.ResponseWriter, r *http.Request) 
 	// ellers kan barnet fra rotasjonen overleve.
 	revokeCtx := context.WithoutCancel(r.Context())
 
-	user, err := h.queries.GetActiveUserByEmail(r.Context(), NormalizeEmail(result.Email))
+	user, err := h.activeSessionUser(r.Context(), result.UserID)
 	if err != nil {
 		// Rotasjonen har allerede laget et barn; det må ikke overleve en deaktivert bruker.
 		// Forbigående DB-feil revokerer ikke, så brukeren slipper ny innlogging for SQLITE_BUSY.

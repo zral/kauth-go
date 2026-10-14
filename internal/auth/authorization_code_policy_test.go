@@ -59,7 +59,8 @@ func TestAuthorizationCodeGrant_RejectsUserWithoutRequiredRoleEvenWithValidCodeA
 		Active: 1, UpdatedAt: now,
 	}))
 	user, err := q.CreateUser(ctx, gen.CreateUserParams{
-		Email: "angriper@example.com", Roles: "user", Orgs: "drivstoffprisene", CreatedAt: now,
+		PublicID: token.MustNewPublicID(),
+		Email:    "angriper@example.com", Roles: "user", Orgs: "drivstoffprisene", CreatedAt: now,
 	})
 	require.NoError(t, err)
 

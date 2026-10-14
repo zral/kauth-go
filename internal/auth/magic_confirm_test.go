@@ -54,7 +54,7 @@ func newConfirmFixture(t *testing.T) *confirmFixture {
 		Theme: "light", AccentColor: "#000", EmailFromName: "Auto", AuthMagicLink: 1, AutoRegister: 1,
 		JwtCookieName: "auth_token", AccessTokenTtl: "PT15M", Active: 1, UpdatedAt: now,
 	}))
-	_, err = q.CreateUser(ctx, gen.CreateUserParams{Email: "bruker@example.com", Roles: "user", Orgs: "o", CreatedAt: now})
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "bruker@example.com", Roles: "user", Orgs: "o", CreatedAt: now})
 	require.NoError(t, err)
 
 	reg := service.NewRegistry(q)

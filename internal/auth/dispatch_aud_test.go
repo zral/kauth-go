@@ -85,6 +85,11 @@ func newOIDCAudFixture(t *testing.T) *audFixture {
 			Active: 1, UpdatedAt: now,
 		}))
 	}
+	// Nivå 0 slår opp brukeren fra tokenets e-post (011 PD12).
+	_, err := f.q.CreateUser(ctx, gen.CreateUserParams{
+		PublicID: token.MustNewPublicID(), Email: "sjafor@example.com", Roles: "user", Orgs: "x", CreatedAt: now,
+	})
+	require.NoError(t, err)
 	reg := service.NewRegistry(f.q)
 	require.NoError(t, reg.Warmup(ctx))
 	f.h.Registry = reg
@@ -168,7 +173,9 @@ func TestDispatchLevel0_StaleBoundary(t *testing.T) {
 		wantOK bool
 	}{
 		{"121s er for gammelt", 121 * time.Second, false},
-		{"119s er fersk", 119 * time.Second, true},
+		// iat rundes ned til hele sekunder, og testen kan bruke over ett sekund
+		// på en treg maskin. 119 s ga derfor sporadisk 120+ s ved sjekken.
+		{"115s er fersk", 115 * time.Second, true},
 		{"10s i framtiden er innenfor slingringen", -10 * time.Second, true},
 		{"60s i framtiden avvises", -60 * time.Second, false},
 	}

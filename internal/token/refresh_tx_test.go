@@ -42,6 +42,11 @@ func seedService(t *testing.T, q *gen.Queries) {
 	if err != nil {
 		t.Fatalf("CreateService: %v", err)
 	}
+	// refresh_tokens.user_id har FK mot users; testUser() har ID 1.
+	u, err := q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: testUser().Email, Roles: "bruker", CreatedAt: "2026-01-01T00:00:00Z"})
+	if err != nil || u.ID != testUser().ID {
+		t.Fatalf("seed testUser: id=%d err=%v", u.ID, err)
+	}
 }
 
 type failingInsert struct{ token.RefreshQuerier }

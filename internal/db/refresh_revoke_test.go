@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/token"
 )
 
 type revokeRow struct {
@@ -121,7 +122,7 @@ func TestGetRefreshChild(t *testing.T) {
 func TestRevokeUserRefreshTokens_ByUserIDWhenEmailDiffers(t *testing.T) {
 	ctx := context.Background()
 	sqldb, q := openTestDB(t)
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "a@x.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@x.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 
 	insertRT(t, q, "old", "old@x.no", "fam-old", nil)

@@ -18,6 +18,7 @@ import (
 	"github.com/zral/kauth-go/internal/config"
 	"github.com/zral/kauth-go/internal/db"
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/token"
 )
 
 type countingMailer struct {
@@ -52,7 +53,7 @@ func newLoginFixtureDB(t *testing.T) (*AuthHandler, *countingMailer, func(string
 	t.Cleanup(func() { sqldb.Close() })
 	now := time.Now().UTC().Format(time.RFC3339)
 	for email, roles := range map[string]string{"konge@example.com": "konge", "vanlig@example.com": "user"} {
-		_, err = q.CreateUser(context.Background(), gen.CreateUserParams{Email: email, Roles: roles, Orgs: "o", CreatedAt: now})
+		_, err = q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: email, Roles: roles, Orgs: "o", CreatedAt: now})
 		require.NoError(t, err)
 	}
 	m := &countingMailer{}
@@ -144,7 +145,8 @@ func TestAdminLoginPost_InvalidEmail_NoRowNoMail(t *testing.T) {
 	h, m, count, sqldb := newLoginFixtureDB(t)
 	// Brukere med ugyldige adresser (f.eks. importert tull) skal likevel ikke få lenke.
 	_, err := gen.New(sqldb).CreateUser(context.Background(), gen.CreateUserParams{
-		Email: "a@b@x.no", Roles: "konge", Orgs: "o", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		PublicID: token.MustNewPublicID(),
+		Email:    "a@b@x.no", Roles: "konge", Orgs: "o", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 	require.NoError(t, err)
 	for _, e := range []string{"", "a@@x.no", "a@b@x.no", "konge@example.com\r\nBcc: x@y.no", "@x.no", strings.Repeat("a", 250) + "@x.no"} {
 		postLogin(h, e)

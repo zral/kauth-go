@@ -50,7 +50,8 @@ func setupAuthCodeTest(t *testing.T) (*auth.PasswordHandlers, *gen.Queries, gen.
 	}))
 
 	user, err := q.CreateUser(ctx, gen.CreateUserParams{
-		Email: "sjafor@example.com", Roles: "user", Orgs: "drivstoffprisene", CreatedAt: now,
+		PublicID: token.MustNewPublicID(),
+		Email:    "sjafor@example.com", Roles: "user", Orgs: "drivstoffprisene", CreatedAt: now,
 	})
 	require.NoError(t, err)
 	svc, err := q.GetServiceByID(ctx, "veivakt")
@@ -79,8 +80,11 @@ func insertAuthCode(t *testing.T, q *gen.Queries, code, email, redirectURI, chal
 	if nonce != "" {
 		noncePtr = &nonce
 	}
+	// /dispatch lagrer user_id på koden; /token slår opp på den alene.
+	u, err := q.GetUserByEmail(context.Background(), auth.NormalizeEmail(email))
+	require.NoError(t, err)
 	require.NoError(t, q.InsertAuthorizationCode(context.Background(), gen.InsertAuthorizationCodeParams{
-		Code: token.HashOpaque(code), ServiceID: "veivakt", Email: email, RedirectUri: redirectURI,
+		Code: token.HashOpaque(code), ServiceID: "veivakt", Email: email, UserID: &u.ID, RedirectUri: redirectURI,
 		CodeChallenge: challenge, CodeChallengeMethod: method, Scope: scopePtr, Nonce: noncePtr,
 		CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05Z"), ExpiresAt: expiresAt,
 	}))

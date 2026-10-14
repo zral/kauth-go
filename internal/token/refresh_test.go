@@ -17,7 +17,7 @@ type stubRefreshDB struct {
 
 func (s *stubRefreshDB) InsertRefreshToken(_ context.Context, p gen.InsertRefreshTokenParams) error {
 	s.tokens = append(s.tokens, gen.RefreshToken{
-		ID: s.nextID, TokenHash: p.TokenHash, Email: p.Email,
+		ID: s.nextID, TokenHash: p.TokenHash, Email: p.Email, UserID: p.UserID,
 		ServiceID: p.ServiceID, FamilyID: p.FamilyID, ParentID: p.ParentID,
 		ExpiresAt: p.ExpiresAt, FamilyExpiresAt: p.FamilyExpiresAt,
 		Used: 0, Revoked: 0,

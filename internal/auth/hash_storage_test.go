@@ -39,7 +39,7 @@ func TestMagicToken_StoredAsHash(t *testing.T) {
 		AuthMagicLink: 1, JwtCookieName: "auth_token", AccessTokenTtl: "PT15M",
 		Active: 1, UpdatedAt: "2026-01-01T00:00:00Z",
 	}))
-	_, err = q.CreateUser(ctx, gen.CreateUserParams{Email: "a@b.no", Roles: "user", Orgs: "o", CreatedAt: "2026-01-01T00:00:00Z"})
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@b.no", Roles: "user", Orgs: "o", CreatedAt: "2026-01-01T00:00:00Z"})
 	require.NoError(t, err)
 	reg := service.NewRegistry(q)
 	require.NoError(t, reg.Warmup(ctx))

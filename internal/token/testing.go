@@ -64,3 +64,13 @@ func StubTxRunner(q RefreshQuerier) TxRunner {
 
 // HashForTest eksponerer token-hashen slik at tester kan slå opp rader.
 func HashForTest(plain string) string { return HashOpaque(plain) }
+
+// MustNewPublicID lager en public_id for testbrukere. Panics ved feil — kun
+// ment for testoppsett.
+func MustNewPublicID() string {
+	id, err := NewPublicID()
+	if err != nil {
+		panic(err)
+	}
+	return id
+}

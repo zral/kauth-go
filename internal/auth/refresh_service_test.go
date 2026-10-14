@@ -67,7 +67,8 @@ func newRefreshFx(t *testing.T, aRole *string, aEnforce int64, aOrg *string) (*r
 	a := mkService(t, q, "svca", "a_tok", "PT30M", 1, aRole, aEnforce, aOrg)
 	b := mkService(t, q, "svcb", "b_tok", "PT15M", 1, nil, 0, nil)
 	user, err := q.CreateUser(context.Background(), gen.CreateUserParams{
-		Email: "alice@example.com", Roles: "user", Orgs: "org1", CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		PublicID: token.MustNewPublicID(),
+		Email:    "alice@example.com", Roles: "user", Orgs: "org1", CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	require.NoError(t, err)
 	reg := service.NewRegistry(q)
@@ -182,8 +183,11 @@ func insertRaw(t *testing.T, q *gen.Queries, plain, email, family string, svcID 
 	t.Helper()
 	sum := sha256.Sum256([]byte(plain))
 	now := time.Now().UTC()
+	// /token slår opp på user_id alene (M2); raden knyttes til brukeren e-posten normaliseres til.
+	u, err := q.GetUserByEmail(context.Background(), auth.NormalizeEmail(email))
+	require.NoError(t, err)
 	require.NoError(t, q.InsertRefreshToken(context.Background(), gen.InsertRefreshTokenParams{
-		TokenHash: hex.EncodeToString(sum[:]), Email: email, ServiceID: svcID, FamilyID: family,
+		TokenHash: hex.EncodeToString(sum[:]), Email: email, UserID: &u.ID, ServiceID: svcID, FamilyID: family,
 		CreatedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(time.Hour).Format(time.RFC3339),
 	}))
 }

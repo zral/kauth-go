@@ -40,7 +40,8 @@ func setupRefreshTest(t *testing.T) (*auth.PasswordHandlers, *token.RefreshServi
 	}))
 
 	user, err := q.CreateUser(ctx, gen.CreateUserParams{
-		Email: "alice@example.com", Roles: "user", Orgs: "vinkjeller", CreatedAt: now,
+		PublicID: token.MustNewPublicID(),
+		Email:    "alice@example.com", Roles: "user", Orgs: "vinkjeller", CreatedAt: now,
 	})
 	require.NoError(t, err)
 	svc, err := q.GetServiceByID(ctx, "vinkjeller")
@@ -146,7 +147,8 @@ func TestPasswordLogin_ResolvesLikeSocial(t *testing.T) {
 	require.NoError(t, err)
 	hash := string(hashBytes)
 	_, err = q.CreateUser(ctx, gen.CreateUserParams{
-		Email: "a@example.com", PasswordHash: &hash, Roles: "user", Orgs: "test", CreatedAt: now,
+		PublicID: token.MustNewPublicID(),
+		Email:    "a@example.com", PasswordHash: &hash, Roles: "user", Orgs: "test", CreatedAt: now,
 	})
 	require.NoError(t, err)
 
