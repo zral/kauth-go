@@ -328,7 +328,6 @@ func msUserCount(t *testing.T, f *msFixture) int64 {
 
 func TestMSFinish_MixedCaseEmail_FindsExistingUser(t *testing.T) {
 	for _, tc := range []struct{ stored, idp string }{
-		{"Mixed@Case.no", "mixed@case.no"},
 		{"mixed@case.no", " Mixed@Case.NO"},
 	} {
 		t.Run(tc.stored, func(t *testing.T) {

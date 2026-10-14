@@ -323,6 +323,7 @@ func (h *UsersHandler) HandleDeactivate(w http.ResponseWriter, r *http.Request) 
 	var details string
 	revoked, err := h.queries.RevokeUserRefreshTokens(ctx, gen.RevokeUserRefreshTokensParams{
 		RevokedReason: &reason,
+		UserID:        &id,
 		Email:         email,
 	})
 	if err != nil {

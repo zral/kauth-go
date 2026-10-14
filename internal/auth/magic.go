@@ -351,7 +351,7 @@ func (h *MagicHandlers) Redeem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.queries.GetActiveUserByEmail(r.Context(), magic.Email)
+	user, err := h.queries.GetActiveUserByEmail(r.Context(), NormalizeEmail(magic.Email))
 	if err != nil {
 		if svc.AutoRegister != 1 {
 			h.redirectWithError(w, r, svc.ID, "no_account", locale)
@@ -366,7 +366,7 @@ func (h *MagicHandlers) Redeem(w http.ResponseWriter, r *http.Request) {
 			defaultRole = *svc.DefaultRole
 		}
 		user, err = h.queries.CreateUser(r.Context(), gen.CreateUserParams{
-			Email:     magic.Email,
+			Email:     NormalizeEmail(magic.Email),
 			Roles:     defaultRole,
 			Orgs:      defaultOrg,
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),

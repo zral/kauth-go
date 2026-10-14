@@ -366,7 +366,10 @@ func buildUpdateParams(r *http.Request, existing gen.Service, now string) gen.Up
 		RefreshTokenMaxAge:    cp.RefreshTokenMaxAge,
 		Active:                cp.Active,
 		UpdatedAt:             now,
-		ID:                    existing.ID,
+		// Ingen skjemafelt ennå (011 F4): lagring skal aldri nulle verdiene.
+		SubFormat: existing.SubFormat,
+		AutoLink:  existing.AutoLink,
+		ID:        existing.ID,
 	}
 }
 

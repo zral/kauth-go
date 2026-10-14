@@ -294,7 +294,7 @@ func (h *AuthHandler) HandleVerifyPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.queries.GetActiveUserByEmail(ctx, mt.Email)
+	user, err := h.queries.GetActiveUserByEmail(ctx, token.NormalizeEmail(mt.Email))
 	if err != nil || !hasRole(user.Roles, "konge") {
 		h.auditor.Log(ctx, audit.Event{
 			Type:    "admin_login",

@@ -54,6 +54,8 @@ type CreateServiceParams struct {
 	UpdatedAt             string  `json:"updated_at"`
 }
 
+// sub_format and auto_link are deliberately not set here: the column defaults
+// ('email', 1) apply until admin gets fields for them (011 F4).
 func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) error {
 	_, err := q.db.ExecContext(ctx, createService,
 		arg.ID,
@@ -93,7 +95,7 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) er
 }
 
 const getDefaultService = `-- name: GetDefaultService :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services WHERE is_default = 1 AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services WHERE is_default = 1 AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetDefaultService(ctx context.Context) (Service, error) {
@@ -132,12 +134,14 @@ func (q *Queries) GetDefaultService(ctx context.Context) (Service, error) {
 		&i.Active,
 		&i.UpdatedAt,
 		&i.EmailFromAddress,
+		&i.SubFormat,
+		&i.AutoLink,
 	)
 	return i, err
 }
 
 const getServiceByAuthHost = `-- name: GetServiceByAuthHost :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services WHERE auth_host = ? AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services WHERE auth_host = ? AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetServiceByAuthHost(ctx context.Context, authHost *string) (Service, error) {
@@ -176,12 +180,14 @@ func (q *Queries) GetServiceByAuthHost(ctx context.Context, authHost *string) (S
 		&i.Active,
 		&i.UpdatedAt,
 		&i.EmailFromAddress,
+		&i.SubFormat,
+		&i.AutoLink,
 	)
 	return i, err
 }
 
 const getServiceByID = `-- name: GetServiceByID :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services WHERE id = ? AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services WHERE id = ? AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetServiceByID(ctx context.Context, id string) (Service, error) {
@@ -220,12 +226,14 @@ func (q *Queries) GetServiceByID(ctx context.Context, id string) (Service, error
 		&i.Active,
 		&i.UpdatedAt,
 		&i.EmailFromAddress,
+		&i.SubFormat,
+		&i.AutoLink,
 	)
 	return i, err
 }
 
 const listActiveServices = `-- name: ListActiveServices :many
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services WHERE active = 1 ORDER BY display_name
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services WHERE active = 1 ORDER BY display_name
 `
 
 func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
@@ -270,6 +278,8 @@ func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
 			&i.Active,
 			&i.UpdatedAt,
 			&i.EmailFromAddress,
+			&i.SubFormat,
+			&i.AutoLink,
 		); err != nil {
 			return nil, err
 		}
@@ -285,7 +295,7 @@ func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
 }
 
 const listAllServices = `-- name: ListAllServices :many
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address FROM services ORDER BY display_name
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services ORDER BY display_name
 `
 
 func (q *Queries) ListAllServices(ctx context.Context) ([]Service, error) {
@@ -330,6 +340,8 @@ func (q *Queries) ListAllServices(ctx context.Context) ([]Service, error) {
 			&i.Active,
 			&i.UpdatedAt,
 			&i.EmailFromAddress,
+			&i.SubFormat,
+			&i.AutoLink,
 		); err != nil {
 			return nil, err
 		}
@@ -354,7 +366,7 @@ UPDATE services SET
     google_client_id = ?, google_client_secret = ?,
     microsoft_client_id = ?, microsoft_client_secret = ?,
     jwt_cookie_name = ?, access_token_ttl = ?, refresh_token_max_age = ?,
-    active = ?, updated_at = ?
+    active = ?, updated_at = ?, sub_format = ?, auto_link = ?
 WHERE id = ?
 `
 
@@ -390,6 +402,8 @@ type UpdateServiceParams struct {
 	RefreshTokenMaxAge    *string `json:"refresh_token_max_age"`
 	Active                int64   `json:"active"`
 	UpdatedAt             string  `json:"updated_at"`
+	SubFormat             string  `json:"sub_format"`
+	AutoLink              int64   `json:"auto_link"`
 	ID                    string  `json:"id"`
 }
 
@@ -426,6 +440,8 @@ func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) er
 		arg.RefreshTokenMaxAge,
 		arg.Active,
 		arg.UpdatedAt,
+		arg.SubFormat,
+		arg.AutoLink,
 		arg.ID,
 	)
 	return err

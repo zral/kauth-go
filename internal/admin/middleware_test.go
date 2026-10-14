@@ -223,11 +223,12 @@ func TestAdminAuthMiddleware_DBError_Rejected(t *testing.T) {
 }
 
 func TestAdminAuthMiddleware_ActorInContext(t *testing.T) {
-	// Mixed case i DB: aktøren er e-posten slik raden har den.
-	q := adminDB(t, "Konge@Example.com", "user,konge")
+	// Oppslaget er eksakt (010-migrasjonen krever normaliserte e-poster), så
+	// aktøren er e-posten slik raden har den.
+	q := adminDB(t, "konge@example.com", "user,konge")
 	code, _, called, actor := serveAdmin(t, q, "text/html")
 	assert.Equal(t, http.StatusOK, code)
 	assert.True(t, called)
-	assert.Equal(t, "Konge@Example.com", actor)
+	assert.Equal(t, "konge@example.com", actor)
 	assert.Equal(t, "", ActorFromContext(context.Background()))
 }

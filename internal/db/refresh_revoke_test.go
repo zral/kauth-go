@@ -89,13 +89,13 @@ func TestRevokeUserRefreshTokens_OnlyThatUser(t *testing.T) {
 		RevokedReason: &reason, Email: "a@x.no",
 	})
 	require.NoError(t, err)
-	assert.EqualValues(t, 2, n, "bare ikke-revokerte rader telles")
+	assert.EqualValues(t, 3, n, "bare ikke-revokerte rader telles")
 
 	assert.Equal(t, "user_deactivated", rtState(t, sqldb, "a1").reason.String)
 	assert.Equal(t, "user_deactivated", rtState(t, sqldb, "a2").reason.String)
 	assert.Equal(t, "user_logout", rtState(t, sqldb, "a3").reason.String)
 	assert.EqualValues(t, 0, rtState(t, sqldb, "b1").revoked)
-	assert.EqualValues(t, 0, rtState(t, sqldb, "upper").revoked, "e-post matches eksakt")
+	assert.EqualValues(t, 1, rtState(t, sqldb, "upper").revoked, "e-post matches uavhengig av case (PD14)")
 }
 
 func TestGetRefreshChild(t *testing.T) {
@@ -115,4 +115,26 @@ func TestGetRefreshChild(t *testing.T) {
 	require.NoError(t, sqldb.QueryRow("SELECT id FROM refresh_tokens WHERE token_hash = ?", hash64("child")).Scan(&childID))
 	_, err = q.GetRefreshChild(ctx, gen.GetRefreshChildParams{FamilyID: "fam-1", ParentID: &childID})
 	assert.ErrorIs(t, err, sql.ErrNoRows)
+}
+
+// user_id-grenen: raden har gammel e-post, men peker på brukeren.
+func TestRevokeUserRefreshTokens_ByUserIDWhenEmailDiffers(t *testing.T) {
+	ctx := context.Background()
+	sqldb, q := openTestDB(t)
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "a@x.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+	require.NoError(t, err)
+
+	insertRT(t, q, "old", "old@x.no", "fam-old", nil)
+	insertRT(t, q, "other", "other@x.no", "fam-other", nil)
+	_, err = sqldb.Exec("UPDATE refresh_tokens SET user_id = ? WHERE token_hash = ?", u.ID, hash64("old"))
+	require.NoError(t, err)
+
+	reason := "user_deactivated"
+	n, err := q.RevokeUserRefreshTokens(ctx, gen.RevokeUserRefreshTokensParams{
+		RevokedReason: &reason, UserID: &u.ID, Email: "a@x.no",
+	})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, n)
+	assert.EqualValues(t, 1, rtState(t, sqldb, "old").revoked)
+	assert.EqualValues(t, 0, rtState(t, sqldb, "other").revoked)
 }

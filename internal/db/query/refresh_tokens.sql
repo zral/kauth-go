@@ -1,8 +1,8 @@
 -- name: InsertRefreshToken :exec
 INSERT INTO refresh_tokens
-    (token_hash, email, service_id, family_id, parent_id,
+    (token_hash, email, user_id, service_id, family_id, parent_id,
      created_at, expires_at, family_expires_at, ip_address, user_agent)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ConsumeRefreshToken :one
 UPDATE refresh_tokens
@@ -18,7 +18,7 @@ WHERE family_id = ? AND revoked = 0;
 -- name: RevokeUserRefreshTokens :execrows
 UPDATE refresh_tokens
 SET revoked = 1, revoked_reason = ?
-WHERE email = ? AND revoked = 0;
+WHERE (user_id = sqlc.arg(user_id) OR lower(trim(email)) = lower(trim(sqlc.arg(email)))) AND revoked = 0;
 
 -- name: GetRefreshChild :one
 SELECT created_at FROM refresh_tokens

@@ -23,7 +23,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, name, roles, orgs, created_at)
 VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at
+RETURNING id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id
 `
 
 type CreateUserParams struct {
@@ -55,6 +55,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.LastLogin,
 		&i.DeactivatedAt,
+		&i.PublicID,
 	)
 	return i, err
 }
@@ -76,7 +77,7 @@ func (q *Queries) DeactivateUser(ctx context.Context, arg DeactivateUserParams) 
 }
 
 const getActiveUserByEmail = `-- name: GetActiveUserByEmail :one
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at FROM users WHERE lower(trim(email)) = lower(trim(?1)) AND deactivated_at IS NULL LIMIT 1
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE email = ? AND deactivated_at IS NULL LIMIT 1
 `
 
 func (q *Queries) GetActiveUserByEmail(ctx context.Context, email string) (User, error) {
@@ -92,12 +93,35 @@ func (q *Queries) GetActiveUserByEmail(ctx context.Context, email string) (User,
 		&i.CreatedAt,
 		&i.LastLogin,
 		&i.DeactivatedAt,
+		&i.PublicID,
+	)
+	return i, err
+}
+
+const getActiveUserByID = `-- name: GetActiveUserByID :one
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE id = ? AND deactivated_at IS NULL
+`
+
+func (q *Queries) GetActiveUserByID(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRowContext(ctx, getActiveUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Name,
+		&i.Roles,
+		&i.Orgs,
+		&i.CreatedAt,
+		&i.LastLogin,
+		&i.DeactivatedAt,
+		&i.PublicID,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at FROM users WHERE lower(trim(email)) = lower(trim(?1)) LIMIT 1
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE email = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -113,12 +137,35 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.LastLogin,
 		&i.DeactivatedAt,
+		&i.PublicID,
+	)
+	return i, err
+}
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE id = ?
+`
+
+func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Name,
+		&i.Roles,
+		&i.Orgs,
+		&i.CreatedAt,
+		&i.LastLogin,
+		&i.DeactivatedAt,
+		&i.PublicID,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at FROM users ORDER BY email LIMIT ? OFFSET ?
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users ORDER BY email LIMIT ? OFFSET ?
 `
 
 type ListUsersParams struct {
@@ -145,6 +192,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.CreatedAt,
 			&i.LastLogin,
 			&i.DeactivatedAt,
+			&i.PublicID,
 		); err != nil {
 			return nil, err
 		}
@@ -160,7 +208,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 }
 
 const listUsersByOrg = `-- name: ListUsersByOrg :many
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at FROM users WHERE orgs LIKE ? ORDER BY email LIMIT ? OFFSET ?
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE orgs LIKE ? ORDER BY email LIMIT ? OFFSET ?
 `
 
 type ListUsersByOrgParams struct {
@@ -188,6 +236,7 @@ func (q *Queries) ListUsersByOrg(ctx context.Context, arg ListUsersByOrgParams) 
 			&i.CreatedAt,
 			&i.LastLogin,
 			&i.DeactivatedAt,
+			&i.PublicID,
 		); err != nil {
 			return nil, err
 		}

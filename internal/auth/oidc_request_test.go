@@ -183,6 +183,7 @@ func TestDispatch_OIDCCookiePresent_RedirectURIWithExistingQueryParams(t *testin
 		AutoRegister: svc.AutoRegister, AuthGoogle: svc.AuthGoogle,
 		JwtCookieName: svc.JwtCookieName, AccessTokenTtl: svc.AccessTokenTtl,
 		Active: svc.Active, UpdatedAt: svc.UpdatedAt, ID: "veivakt",
+		SubFormat: svc.SubFormat, AutoLink: svc.AutoLink,
 	}))
 	require.NoError(t, h.Registry.Invalidate(ctx))
 

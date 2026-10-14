@@ -13,7 +13,7 @@ const consumeRefreshToken = `-- name: ConsumeRefreshToken :one
 UPDATE refresh_tokens
 SET used = 1
 WHERE token_hash = ? AND used = 0 AND revoked = 0 AND expires_at > ?
-RETURNING id, token_hash, email, service_id, family_id, parent_id, created_at, expires_at, family_expires_at, used, revoked, revoked_reason, ip_address, user_agent
+RETURNING id, token_hash, email, service_id, family_id, parent_id, created_at, expires_at, family_expires_at, used, revoked, revoked_reason, ip_address, user_agent, user_id
 `
 
 type ConsumeRefreshTokenParams struct {
@@ -39,6 +39,7 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, arg ConsumeRefreshTok
 		&i.RevokedReason,
 		&i.IpAddress,
 		&i.UserAgent,
+		&i.UserID,
 	)
 	return i, err
 }
@@ -89,7 +90,7 @@ func (q *Queries) GetRefreshChild(ctx context.Context, arg GetRefreshChildParams
 }
 
 const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
-SELECT id, token_hash, email, service_id, family_id, parent_id, created_at, expires_at, family_expires_at, used, revoked, revoked_reason, ip_address, user_agent FROM refresh_tokens WHERE token_hash = ? LIMIT 1
+SELECT id, token_hash, email, service_id, family_id, parent_id, created_at, expires_at, family_expires_at, used, revoked, revoked_reason, ip_address, user_agent, user_id FROM refresh_tokens WHERE token_hash = ? LIMIT 1
 `
 
 func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
@@ -110,20 +111,22 @@ func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (
 		&i.RevokedReason,
 		&i.IpAddress,
 		&i.UserAgent,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const insertRefreshToken = `-- name: InsertRefreshToken :exec
 INSERT INTO refresh_tokens
-    (token_hash, email, service_id, family_id, parent_id,
+    (token_hash, email, user_id, service_id, family_id, parent_id,
      created_at, expires_at, family_expires_at, ip_address, user_agent)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertRefreshTokenParams struct {
 	TokenHash       string  `json:"token_hash"`
 	Email           string  `json:"email"`
+	UserID          *int64  `json:"user_id"`
 	ServiceID       *string `json:"service_id"`
 	FamilyID        string  `json:"family_id"`
 	ParentID        *int64  `json:"parent_id"`
@@ -138,6 +141,7 @@ func (q *Queries) InsertRefreshToken(ctx context.Context, arg InsertRefreshToken
 	_, err := q.db.ExecContext(ctx, insertRefreshToken,
 		arg.TokenHash,
 		arg.Email,
+		arg.UserID,
 		arg.ServiceID,
 		arg.FamilyID,
 		arg.ParentID,
@@ -169,16 +173,17 @@ func (q *Queries) RevokeFamilyTokens(ctx context.Context, arg RevokeFamilyTokens
 const revokeUserRefreshTokens = `-- name: RevokeUserRefreshTokens :execrows
 UPDATE refresh_tokens
 SET revoked = 1, revoked_reason = ?
-WHERE email = ? AND revoked = 0
+WHERE (user_id = ?2 OR lower(trim(email)) = lower(trim(?3))) AND revoked = 0
 `
 
 type RevokeUserRefreshTokensParams struct {
 	RevokedReason *string `json:"revoked_reason"`
+	UserID        *int64  `json:"user_id"`
 	Email         string  `json:"email"`
 }
 
 func (q *Queries) RevokeUserRefreshTokens(ctx context.Context, arg RevokeUserRefreshTokensParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, revokeUserRefreshTokens, arg.RevokedReason, arg.Email)
+	result, err := q.db.ExecContext(ctx, revokeUserRefreshTokens, arg.RevokedReason, arg.UserID, arg.Email)
 	if err != nil {
 		return 0, err
 	}

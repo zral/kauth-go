@@ -31,6 +31,7 @@ type AuthorizationCode struct {
 	ExpiresAt           string  `json:"expires_at"`
 	Used                int64   `json:"used"`
 	FamilyID            *string `json:"family_id"`
+	UserID              *int64  `json:"user_id"`
 }
 
 type MagicToken struct {
@@ -60,6 +61,7 @@ type RefreshToken struct {
 	RevokedReason   *string `json:"revoked_reason"`
 	IpAddress       *string `json:"ip_address"`
 	UserAgent       *string `json:"user_agent"`
+	UserID          *int64  `json:"user_id"`
 }
 
 type Service struct {
@@ -95,6 +97,8 @@ type Service struct {
 	Active                int64   `json:"active"`
 	UpdatedAt             string  `json:"updated_at"`
 	EmailFromAddress      *string `json:"email_from_address"`
+	SubFormat             string  `json:"sub_format"`
+	AutoLink              int64   `json:"auto_link"`
 }
 
 type User struct {
@@ -107,4 +111,16 @@ type User struct {
 	CreatedAt     string  `json:"created_at"`
 	LastLogin     *string `json:"last_login"`
 	DeactivatedAt *string `json:"deactivated_at"`
+	PublicID      string  `json:"public_id"`
+}
+
+type UserIdentity struct {
+	ID         int64   `json:"id"`
+	UserID     int64   `json:"user_id"`
+	Provider   string  `json:"provider"`
+	Issuer     string  `json:"issuer"`
+	Subject    string  `json:"subject"`
+	Email      *string `json:"email"`
+	CreatedAt  string  `json:"created_at"`
+	LastUsedAt *string `json:"last_used_at"`
 }

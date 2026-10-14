@@ -372,3 +372,18 @@ func TestRefreshGrant_AudienceFromFamily(t *testing.T) {
 	assert.Equal(t, []any{"svcb"}, claims["aud"])
 	assert.NotEmpty(t, claims["jti"])
 }
+
+// PD10: oppslaget er eksakt, så token_endpoint må normalisere e-posten fra
+// raden. En eldre rad med blandet case skal ikke gi user_inactive-revokering.
+func TestRefreshGrant_MixedCaseRowEmail_StillFindsUser(t *testing.T) {
+	f, a, _ := newRefreshFx(t, nil, 0, nil)
+	insertRaw(t, f.q, "plain-mixed", " Alice@Example.COM", "fam-mixed", &a.ID)
+
+	w := f.post("plain-mixed", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 0, f.auditCount(t, "refresh_user_inactive"))
+	var revoked int
+	require.NoError(t, f.sqldb.QueryRow("SELECT COUNT(*) FROM refresh_tokens WHERE family_id='fam-mixed' AND revoked=1").Scan(&revoked))
+	assert.Zero(t, revoked)
+}

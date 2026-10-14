@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -53,7 +52,7 @@ func (h *PasswordHandlers) DoLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = r.ParseForm()
-	email := strings.TrimSpace(r.FormValue("email"))
+	email := NormalizeEmail(r.FormValue("email"))
 	password := r.FormValue("password")
 	svcID := r.FormValue("service_id")
 	svc := resolveRequestedService(h.reg, r, svcID)

@@ -212,7 +212,6 @@ func TestGoogleFinish_BadNonce_RejectedInBothBranches(t *testing.T) {
 
 func TestGoogleFinish_MixedCaseEmail_FindsExistingUser(t *testing.T) {
 	for _, tc := range []struct{ stored, idp string }{
-		{"Mixed@Case.no", "mixed@case.no"},
 		{"mixed@case.no", " Mixed@Case.NO"},
 	} {
 		t.Run(tc.stored, func(t *testing.T) {

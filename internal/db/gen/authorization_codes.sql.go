@@ -19,7 +19,7 @@ WHERE code = ?2
   AND code_challenge_method = 'S256'
   AND used = 0
   AND expires_at > ?6
-RETURNING id, code, service_id, email, redirect_uri, scope, nonce, code_challenge, code_challenge_method, created_at, expires_at, used, family_id
+RETURNING id, code, service_id, email, redirect_uri, scope, nonce, code_challenge, code_challenge_method, created_at, expires_at, used, family_id, user_id
 `
 
 type ConsumeAuthorizationCodeCheckedParams struct {
@@ -55,6 +55,7 @@ func (q *Queries) ConsumeAuthorizationCodeChecked(ctx context.Context, arg Consu
 		&i.ExpiresAt,
 		&i.Used,
 		&i.FamilyID,
+		&i.UserID,
 	)
 	return i, err
 }
@@ -84,7 +85,7 @@ func (q *Queries) DeleteExpiredAuthorizationCodes(ctx context.Context, expiresAt
 }
 
 const getAuthorizationCodeByHash = `-- name: GetAuthorizationCodeByHash :one
-SELECT id, code, service_id, email, redirect_uri, scope, nonce, code_challenge, code_challenge_method, created_at, expires_at, used, family_id FROM authorization_codes WHERE code = ?1
+SELECT id, code, service_id, email, redirect_uri, scope, nonce, code_challenge, code_challenge_method, created_at, expires_at, used, family_id, user_id FROM authorization_codes WHERE code = ?1
 `
 
 func (q *Queries) GetAuthorizationCodeByHash(ctx context.Context, codeHash string) (AuthorizationCode, error) {
@@ -104,19 +105,21 @@ func (q *Queries) GetAuthorizationCodeByHash(ctx context.Context, codeHash strin
 		&i.ExpiresAt,
 		&i.Used,
 		&i.FamilyID,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const insertAuthorizationCode = `-- name: InsertAuthorizationCode :exec
-INSERT INTO authorization_codes (code, service_id, email, redirect_uri, scope, nonce, code_challenge, code_challenge_method, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO authorization_codes (code, service_id, email, user_id, redirect_uri, scope, nonce, code_challenge, code_challenge_method, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertAuthorizationCodeParams struct {
 	Code                string  `json:"code"`
 	ServiceID           string  `json:"service_id"`
 	Email               string  `json:"email"`
+	UserID              *int64  `json:"user_id"`
 	RedirectUri         string  `json:"redirect_uri"`
 	Scope               *string `json:"scope"`
 	Nonce               *string `json:"nonce"`
@@ -131,6 +134,7 @@ func (q *Queries) InsertAuthorizationCode(ctx context.Context, arg InsertAuthori
 		arg.Code,
 		arg.ServiceID,
 		arg.Email,
+		arg.UserID,
 		arg.RedirectUri,
 		arg.Scope,
 		arg.Nonce,

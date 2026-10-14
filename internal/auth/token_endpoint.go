@@ -74,7 +74,7 @@ func (h *PasswordHandlers) authorizationCodeGrant(w http.ResponseWriter, r *http
 		return
 	}
 
-	user, err := h.queries.GetActiveUserByEmail(r.Context(), row.Email)
+	user, err := h.queries.GetActiveUserByEmail(r.Context(), NormalizeEmail(row.Email))
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			slog.Error("authorization_code: brukeroppslag feilet", "err", err)
@@ -307,7 +307,7 @@ func (h *PasswordHandlers) RefreshToken(w http.ResponseWriter, r *http.Request) 
 	// ellers kan barnet fra rotasjonen overleve.
 	revokeCtx := context.WithoutCancel(r.Context())
 
-	user, err := h.queries.GetActiveUserByEmail(r.Context(), result.Email)
+	user, err := h.queries.GetActiveUserByEmail(r.Context(), NormalizeEmail(result.Email))
 	if err != nil {
 		// Rotasjonen har allerede laget et barn; det må ikke overleve en deaktivert bruker.
 		// Forbigående DB-feil revokerer ikke, så brukeren slipper ny innlogging for SQLITE_BUSY.

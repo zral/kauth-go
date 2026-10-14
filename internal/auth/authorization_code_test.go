@@ -250,3 +250,22 @@ func TestAuthorizationCodeGrant_AccessAudienceIsClient(t *testing.T) {
 	require.Equal(t, []any{"veivakt"}, claims["aud"])
 	require.NotEmpty(t, claims["jti"])
 }
+
+// PD10: kode-raden kan ha e-post i blandet case; innløsning skal likevel finne
+// brukeren (oppslaget er eksakt og må normaliseres).
+func TestAuthorizationCodeGrant_MixedCaseRowEmail(t *testing.T) {
+	h, q, _, _ := setupAuthCodeTest(t)
+	verifier, challenge := pkcePair()
+	insertAuthCode(t, q, "test-code-mixed", " Sjafor@Example.COM", "https://veivakt.app/auth/callback", challenge, "S256", "openid", "")
+
+	form := url.Values{
+		"grant_type": {"authorization_code"}, "code": {"test-code-mixed"},
+		"redirect_uri": {"https://veivakt.app/auth/callback"}, "client_id": {"veivakt"},
+		"code_verifier": {verifier},
+	}
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Token(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}

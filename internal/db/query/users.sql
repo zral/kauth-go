@@ -1,8 +1,14 @@
 -- name: GetUserByEmail :one
-SELECT * FROM users WHERE lower(trim(email)) = lower(trim(sqlc.arg(email))) LIMIT 1;
+SELECT * FROM users WHERE email = ? LIMIT 1;
 
 -- name: GetActiveUserByEmail :one
-SELECT * FROM users WHERE lower(trim(email)) = lower(trim(sqlc.arg(email))) AND deactivated_at IS NULL LIMIT 1;
+SELECT * FROM users WHERE email = ? AND deactivated_at IS NULL LIMIT 1;
+
+-- name: GetUserByID :one
+SELECT * FROM users WHERE id = ?;
+
+-- name: GetActiveUserByID :one
+SELECT * FROM users WHERE id = ? AND deactivated_at IS NULL;
 
 -- name: CreateUser :one
 INSERT INTO users (email, password_hash, name, roles, orgs, created_at)
