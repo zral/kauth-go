@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"net"
 	"net/http"
 	"net/smtp"
 	"strings"
@@ -46,10 +47,7 @@ func (s *Service) SendMagicLink(to, fromName, linkURL, locale, fromAddress strin
 	msg := buildMessage(s.cfg.SMTPFrom, fromName, to, t.MailSubject, body)
 	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
 	auth := smtp.PlainAuth("", s.cfg.SMTPUser, s.cfg.SMTPPassword, s.cfg.SMTPHost)
-	if s.cfg.SMTPStartTLS {
-		return sendSTARTTLS(addr, auth, s.cfg.SMTPHost, s.cfg.SMTPFrom, to, msg)
-	}
-	return smtp.SendMail(addr, auth, s.cfg.SMTPFrom, []string{to}, []byte(msg))
+	return sendSMTP(addr, s.cfg.SMTPHost, auth, s.cfg.SMTPFrom, to, msg, s.cfg.SMTPStartTLS)
 }
 
 // sendBrevo sender via Brevos transaksjons-e-post-API (samme endepunkt og
@@ -98,31 +96,78 @@ func buildMagicBody(t i18n.Strings, linkURL string) string {
 	return strings.ReplaceAll(t.MailBody, "{link}", linkURL)
 }
 
-func sendSTARTTLS(addr string, auth smtp.Auth, host, from, to, msg string) error {
-	conn, err := smtp.Dial(addr)
+// Tidsgrenser for rå SMTP. Pakkevariabler slik at testene kan korte dem ned.
+// Uten dem henger et stille eller tregt relé en innloggingsforespørsel (og
+// goroutinen bak) på ubestemt tid.
+var (
+	dialTimeout    = 10 * time.Second
+	sessionTimeout = 30 * time.Second
+)
+
+// dialSMTP kobler til med tidsgrense og setter en absolutt frist for hele
+// SMTP-samtalen før banneret leses, siden smtp.Dial ikke har noen av delene.
+func dialSMTP(addr, host string) (*smtp.Client, error) {
+	conn, err := (&net.Dialer{Timeout: dialTimeout}).Dial("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("smtp dial: %w", err)
+		return nil, fmt.Errorf("smtp dial: %w", err)
 	}
-	defer conn.Close()
-	if err := conn.StartTLS(&tls.Config{ServerName: host}); err != nil {
-		return fmt.Errorf("starttls: %w", err)
+	if err := conn.SetDeadline(time.Now().Add(sessionTimeout)); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("smtp deadline: %w", err)
 	}
-	if err := conn.Auth(auth); err != nil {
-		return fmt.Errorf("smtp auth: %w", err)
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("smtp banner: %w", err)
 	}
-	if err := conn.Mail(from); err != nil {
-		return err
-	}
-	if err := conn.Rcpt(to); err != nil {
-		return err
-	}
-	wc, err := conn.Data()
+	return c, nil
+}
+
+// sendSMTP er felles sendrutine for begge grenene. requireTLS=true (KAUTH_SMTP_STARTTLS)
+// feiler hvis serveren ikke tilbyr STARTTLS; ellers oppgraderes opportunistisk
+// slik standardbibliotekets SendMail gjorde. PlainAuth nekter selv ukryptert auth mot ikke-localhost.
+func sendSMTP(addr, host string, auth smtp.Auth, from, to, msg string, requireTLS bool) error {
+	c, err := dialSMTP(addr, host)
 	if err != nil {
 		return err
 	}
-	defer wc.Close()
-	_, err = fmt.Fprint(wc, msg)
-	return err
+	defer c.Close()
+	if err := c.Hello("localhost"); err != nil {
+		return fmt.Errorf("smtp hello: %w", err)
+	}
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			return fmt.Errorf("starttls: %w", err)
+		}
+	} else if requireTLS {
+		return fmt.Errorf("starttls: serveren tilbyr ikke STARTTLS")
+	}
+	if auth != nil {
+		if ok, _ := c.Extension("AUTH"); !ok {
+			return fmt.Errorf("smtp: serveren støtter ikke AUTH")
+		}
+		if err := c.Auth(auth); err != nil {
+			return fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+	if err := c.Mail(from); err != nil {
+		return fmt.Errorf("smtp mail: %w", err)
+	}
+	if err := c.Rcpt(to); err != nil {
+		return fmt.Errorf("smtp rcpt: %w", err)
+	}
+	wc, err := c.Data()
+	if err != nil {
+		return fmt.Errorf("smtp data: %w", err)
+	}
+	if _, err := fmt.Fprint(wc, msg); err != nil {
+		wc.Close()
+		return fmt.Errorf("smtp data: %w", err)
+	}
+	if err := wc.Close(); err != nil {
+		return fmt.Errorf("smtp data: %w", err)
+	}
+	return c.Quit()
 }
 
 func buildMessage(from, fromName, to, subject, body string) string {

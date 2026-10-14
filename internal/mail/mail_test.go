@@ -1,8 +1,14 @@
 package mail
 
 import (
+	"bufio"
+	"errors"
+	"fmt"
+	"net"
+	"net/smtp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,4 +60,233 @@ func TestSendMagicLink_MockMode_IgnoresMissingBrevoKeyWhenNoFromAddress(t *testi
 	svc := New(config.Config{SMTPMock: true, BrevoAPIKey: ""})
 	err := svc.SendMagicLink("bruker@example.test", "Klarsyn", "https://x.test/y", "nb", "")
 	require.NoError(t, err)
+}
+
+// kortTidsgrenser gjør timeout-testene raske og gjenoppretter pakkevariablene.
+func kortTidsgrenser(t *testing.T, dial, session time.Duration) {
+	t.Helper()
+	d, s := dialTimeout, sessionTimeout
+	dialTimeout, sessionTimeout = dial, session
+	t.Cleanup(func() { dialTimeout, sessionTimeout = d, s })
+}
+
+// sendMedVakt kjører sendingen i en goroutine slik at en mutant som fjerner
+// tidsgrensen gir rask rød test i stedet for hang.
+func sendMedVakt(t *testing.T, vent time.Duration, f func() error) (error, time.Duration) {
+	t.Helper()
+	start := time.Now()
+	ch := make(chan error, 1)
+	go func() { ch <- f() }()
+	select {
+	case err := <-ch:
+		return err, time.Since(start)
+	case <-time.After(vent):
+		t.Fatal("sendingen hang forbi tidsgrensen")
+		return nil, 0
+	}
+}
+
+func assertTimeout(t *testing.T, err error) {
+	t.Helper()
+	require.Error(t, err)
+	var ne net.Error
+	require.True(t, errors.As(err, &ne), "forventet net.Error, fikk %v", err)
+	assert.True(t, ne.Timeout(), "forventet timeout, fikk %v", err)
+}
+
+type fakeOpts struct {
+	auth     bool   // annonser AUTH PLAIN og svar 235
+	silentAt string // "", "BANNER", "MAIL" eller "DATA": her slutter serveren å svare
+}
+
+type fakeSrv struct {
+	addr string
+	cmds chan string // kommandoer mottatt, i rekkefølge
+	data chan string // meldingsinnhold etter DATA
+}
+
+// startFake starter en minimal SMTP-server for én tilkobling. Den stille
+// varianten holder forbindelsen åpen til testen er ferdig, så klientens
+// tidsgrense er det eneste som kan avslutte sendingen.
+func startFake(t *testing.T, o fakeOpts) *fakeSrv {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	f := &fakeSrv{addr: ln.Addr().String(), cmds: make(chan string, 32), data: make(chan string, 1)}
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done); ln.Close() })
+
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		serve := func() {
+			if o.silentAt == "BANNER" {
+				<-done
+				return
+			}
+			r := bufio.NewReader(c)
+			fmt.Fprint(c, "220 fake ESMTP\r\n")
+			var data strings.Builder
+			inData := false
+			for {
+				line, err := r.ReadString('\n')
+				if err != nil {
+					return
+				}
+				if inData {
+					if line == ".\r\n" {
+						inData = false
+						f.data <- data.String()
+						if o.silentAt == "DATA" {
+							<-done
+							return
+						}
+						fmt.Fprint(c, "250 ok\r\n")
+						continue
+					}
+					data.WriteString(line)
+					continue
+				}
+				cmd := strings.ToUpper(strings.TrimSpace(line))
+				f.cmds <- cmd
+				switch {
+				case strings.HasPrefix(cmd, "EHLO"):
+					if o.auth {
+						fmt.Fprint(c, "250-fake\r\n250 AUTH PLAIN\r\n")
+					} else {
+						fmt.Fprint(c, "250 fake\r\n")
+					}
+				case strings.HasPrefix(cmd, "AUTH PLAIN"):
+					fmt.Fprint(c, "235 ok\r\n")
+				case strings.HasPrefix(cmd, "MAIL"):
+					if o.silentAt == "MAIL" {
+						<-done
+						return
+					}
+					fmt.Fprint(c, "250 ok\r\n")
+				case strings.HasPrefix(cmd, "RCPT"):
+					fmt.Fprint(c, "250 ok\r\n")
+				case cmd == "DATA":
+					inData = true
+					fmt.Fprint(c, "354 go\r\n")
+				case cmd == "QUIT":
+					fmt.Fprint(c, "221 bye\r\n")
+					return
+				default:
+					fmt.Fprint(c, "500 ?\r\n")
+				}
+			}
+		}
+		serve()
+		c.Close()
+	}()
+	return f
+}
+
+func (f *fakeSrv) sett() []string {
+	var out []string
+	for {
+		select {
+		case c := <-f.cmds:
+			out = append(out, c)
+		default:
+			return out
+		}
+	}
+}
+
+func TestSMTP_DialTimeout(t *testing.T) {
+	kortTidsgrenser(t, 300*time.Millisecond, 2*time.Second)
+	err, d := sendMedVakt(t, 3*time.Second, func() error {
+		return sendSMTP("10.255.255.1:25", "localhost", nil, "a@x.test", "b@x.test", "m", false)
+	})
+	require.Error(t, err)
+	var ne net.Error
+	if !errors.As(err, &ne) || !ne.Timeout() {
+		t.Skipf("miljøet gir ikke timeout (%v); testen beviser ingenting her", err)
+	}
+	assert.Contains(t, err.Error(), "smtp dial")
+	assert.Less(t, d, 1300*time.Millisecond)
+}
+
+func TestSMTP_SessionDeadline(t *testing.T) {
+	for _, at := range []string{"BANNER", "MAIL", "DATA"} {
+		for _, requireTLS := range []bool{false, true} {
+			if requireTLS && at != "BANNER" {
+				continue // uten STARTTLS i EHLO stopper requireTLS før MAIL
+			}
+			t.Run(fmt.Sprintf("%s/tls=%v", at, requireTLS), func(t *testing.T) {
+				f := startFake(t, fakeOpts{silentAt: at})
+				kortTidsgrenser(t, time.Second, 300*time.Millisecond)
+				err, d := sendMedVakt(t, 300*time.Millisecond+2*time.Second, func() error {
+					return sendSMTP(f.addr, "localhost", nil, "a@x.test", "b@x.test", "m", requireTLS)
+				})
+				assertTimeout(t, err)
+				assert.Less(t, d, 1300*time.Millisecond)
+			})
+		}
+	}
+}
+
+func TestSMTP_RequireTLS(t *testing.T) {
+	kortTidsgrenser(t, time.Second, 2*time.Second)
+
+	f := startFake(t, fakeOpts{})
+	err, _ := sendMedVakt(t, 4*time.Second, func() error {
+		return sendSMTP(f.addr, "localhost", nil, "a@x.test", "b@x.test", "m", true)
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "starttls")
+	for _, c := range f.sett() {
+		assert.False(t, strings.HasPrefix(c, "MAIL"), "MAIL skal aldri sendes uten TLS")
+	}
+
+	f2 := startFake(t, fakeOpts{})
+	err, _ = sendMedVakt(t, 4*time.Second, func() error {
+		return sendSMTP(f2.addr, "localhost", nil, "a@x.test", "b@x.test", "m", false)
+	})
+	require.NoError(t, err)
+}
+
+func TestSMTP_Auth(t *testing.T) {
+	kortTidsgrenser(t, time.Second, 2*time.Second)
+	auth := smtp.PlainAuth("", "u", "p", "localhost")
+
+	f := startFake(t, fakeOpts{auth: true})
+	err, _ := sendMedVakt(t, 4*time.Second, func() error {
+		return sendSMTP(f.addr, "localhost", auth, "a@x.test", "b@x.test", "m", false)
+	})
+	require.NoError(t, err)
+	var sett []string
+	sett = f.sett()
+	var harAuth bool
+	for _, c := range sett {
+		harAuth = harAuth || strings.HasPrefix(c, "AUTH PLAIN")
+	}
+	assert.True(t, harAuth, "AUTH PLAIN skulle vært sendt: %v", sett)
+
+	f2 := startFake(t, fakeOpts{})
+	err, _ = sendMedVakt(t, 4*time.Second, func() error {
+		return sendSMTP(f2.addr, "localhost", auth, "a@x.test", "b@x.test", "m", false)
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "støtter ikke AUTH")
+}
+
+func TestSMTP_HappyPathPlain(t *testing.T) {
+	f := startFake(t, fakeOpts{})
+	kortTidsgrenser(t, time.Second, 2*time.Second)
+	msg := buildMessage("a@x.test", "A", "b@x.test", "Emne", "Hei")
+	err, _ := sendMedVakt(t, 4*time.Second, func() error {
+		return sendSMTP(f.addr, "localhost", nil, "a@x.test", "b@x.test", msg, false)
+	})
+	require.NoError(t, err)
+	select {
+	case d := <-f.data:
+		assert.Contains(t, d, "Subject: Emne")
+	case <-time.After(time.Second):
+		t.Fatal("serveren fikk aldri meldingen")
+	}
 }
