@@ -209,3 +209,26 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - **Binding i én transaksjon.** `BindAdmin` (betinget på `admin_bound_at IS NULL`) og deretter `SetAdminOK` kjører i samme transaksjon. `SetAdminOK` er betinget på at `admin_bound_at` er verdien denne transaksjonen skrev (`EXISTS … admin_bound_at = bound_at`). Treffer `BindAdmin` ingen rad, er brukeren bundet fra før, og innloggingen avvises med `reason=not_admin_identity`. Treffer `SetAdminOK` ingen rad, rulles bindingen tilbake og innloggingen avvises med `reason=identity_vanished`. Audit `identity_admin_approved` får `bound=1`.
 - **Audit-grunner.** `identity_unlinked` (med `provider`, `issuer`, `admin_ok`, `revoked`), `user_email_changed` (med `old=`, `revoked`, `burned`) og `identity_link_denied reason=identity_vanished`. Begge admin-skrivene får `actor=`. Subject logges ikke.
 - **Transaksjonene starter med en skriving** (`DeleteIdentity` ved frakobling, `RevokeUserRefreshTokens` ved e-postendring), slik at skrivelåsen tas før første lesing. Ellers kan en samtidig skriver gi `SQLITE_BUSY_SNAPSHOT`, og e-postendringen ville svart 500 i stedet for 409.
+
+## ADN 15 — E-postepoke på `/dispatch` nivå 1–5, med fail-open ved DB-feil og ferskhet som audit (2026-10-16)
+
+**Status:** Implementert (2026-10-16, 013)
+→ Analyse: [doc/features/013_AN_DISPATCH_EPOKE.md](features/013_AN_DISPATCH_EPOKE.md)
+
+**Beslutning:**
+1. Før nivå 1–5 ruter, slår `/dispatch` opp den aktive brukeren med e-posten i tokenet. Tokenet sendes bare videre når brukeren finnes, `sub` er brukerens e-post eller `public_id`, og `iat` finnes og ikke er eldre enn brukerens e-postepoke (ADN 14 pkt 4). Ellers går brukeren til `/login` og det logges `dispatch_subject_mismatch` med `level=1-5 reason=…`.
+2. `sub` godtas i begge former, fordi målet på nivå 1–5 ikke alltid er tokenets `aud`, og tjenestens `sub_format` dermed ikke kan avgjøre tolkningen.
+3. En DB-feil i oppslaget stopper ikke innloggingen (fail-open, logget med `slog.Error`). Konstatert avvik avvises.
+4. Et token på nivå 1–5 som er eldre enn 120 s (eller mer enn 30 s fram i tid), logges som `dispatch_token_stale … mode=audit` og videresendes. Håndheving avgjøres senere på grunnlag av auditen.
+
+**Begrunnelse:** Én regel for alle stedene kauth håndterer et access-token som bærer e-post. Eval 012 (T4.2, T4.3, T4.5) viste at nivå 1–5 videresendte tokens utstedt før en e-postendring.
+
+**Konsekvens:**
+- Sjekken er et konsistenslag. Den trekker ikke tilbake tokens. Den som har et gammelt token, kan fortsatt gå rett til tjenestens callback, og klientenes egen validering gjelder (ADN 12). Login-CSRF via `?token=` løses først av en engangs-handoff (BACKLOG).
+- Ett indeksert DB-oppslag per `/dispatch`-kall på nivå 1–5.
+- Et levende token for en deaktivert bruker sendes heller ikke videre på nivå 1–5.
+
+**Presiseringer fra implementeringen:**
+- **Manglende `iat`** avvises med egen grunn `iat_missing`, som ADN 14 krever. kauth utsteder alltid `iat`, så grunnen skiller et slikt token fra en omtildelt adresse.
+- **Fail-open er synlig.** DB-feil gir `slog.Error` og audit `dispatch_subject_check_skipped` (`level=1-5 reason=db_error`, success=1). `context.Canceled` (klienten koblet fra) logges ikke. En epoke som ikke kan tolkes, er fortsatt fail-closed (`email_reassigned`), som på nivå 0.
+- **Ferskhets-auditen** skrives før rutingen. Har nivå 5 ingen default-tjeneste, ender kallet på `/login`, men raden har success=1. Det kan bare skje ved feilkonfigurasjon. Akseptert.

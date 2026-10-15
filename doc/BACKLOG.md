@@ -4,7 +4,7 @@
 
 **Hva dette ikke er:** en beslutningslogg. *Hvorfor* noe er bestemt står i [ARCHITECTURE_DESIGN_NOTES.md](ARCHITECTURE_DESIGN_NOTES.md). Faser, risikoregister og estimater står i [ROADMAP.md](ROADMAP.md). Ved motstrid er ADN-en fasit.
 
-Sist gjennomgått: 2026-10-15
+Sist gjennomgått: 2026-10-16
 
 ---
 
@@ -32,7 +32,7 @@ Sist gjennomgått: 2026-10-15
 | Rotering av per-tjeneste OAuth-credentials | Kan ikke gjøres i admin-UI etter 007 F4 (bevisst). Må gjøres direkte i DB, eller i et eget skjema med secret-felt som bare kan skrives | ROADMAP M12 |
 | Rate limit og dummy-bcrypt på `/do-login`, eller fjern passordkoden helt (B4) | Når `KAUTH_PASSWORD_LOGIN_ENABLED=true` gjelder fortsatt: ingen rate limit og et timing-orakel for brukeroppregning. Bryteren står av i prod (007 F6, security M1) | ROADMAP M10, B4 |
 | Strip standardport og konverter IDN i `KAUTH_CORS_ORIGINS` | `https://a.example:443` og Unicode-verter godtas, men matcher aldri det nettleseren sender (007 F7, code review S-b) | ROADMAP H7 |
-| Begrens audit-rader fra gjentatte `/dispatch`-kall | En autentisert bruker kan generere mange audit-rader via gjentatte `/dispatch`-kall (`redirect_service_mismatch`). Vurder rate limit eller dedup. Gjelder også `dispatch_aud_mismatch` og `dispatch_token_stale` (007 F9, 010 F3 M2) | — |
+| Begrens audit-rader fra gjentatte `/dispatch`-kall | En autentisert bruker kan generere mange audit-rader via gjentatte `/dispatch`-kall (`redirect_service_mismatch`). Vurder rate limit eller dedup. Gjelder også `dispatch_aud_mismatch`, `dispatch_token_stale` og fra 013 `dispatch_subject_mismatch` og `dispatch_subject_check_skipped` på nivå 1–5 (007 F9, 010 F3 M2) | — |
 | Sterkere kilde-autentisering for `CF-Connecting-IP` | Loopback-tillit betyr at lokale prosesser på boksen kan sette klient-IP. Vurder unix-socket eller delt hemmelighet fra cloudflared (007 F10) | — |
 | vinkjeller: del refresh på tvers av faner (Web Locks/single-flight, som klarsyn) | Samtidige refresh fra flere faner gir reuse, og etter 008 logger det ut begge parter (008 F2, ADN 10 pkt 5) | ROADMAP H6 |
 | Overvåk W1-utløseren: reuse med `gap_s ≤ 2`, samme IP og UA | Slår den til, revurder idempotensvindu for samtidig refresh. Ellers ingen tiltak (008, ADN 10 pkt 5) | ROADMAP H6 |
@@ -79,6 +79,6 @@ Sist gjennomgått: 2026-10-15
 | `user_id`-FK uten `ON DELETE`, og trigger mot `UPDATE` av `public_id` | **Utsatt til GDPR-sletting** (ikke 012). Avgjøres når sletting av brukere kommer (011 F1) | ADN 13 |
 | `err.Error()` i admin-feilmeldinger ved opprettelse og lagring av tjeneste (`services.go`) | Fantes fra før. Internfeil kan lekke til admin-siden (011 F4, security) | ROADMAP M7 |
 | Flytt `identityViews` og `shortSubject` fra `users.go` til `users_identity.go` | Hører sammen med frakoblingen. Utsatt for å holde diffen i 012 liten (012 PD13 (1)) | ADN 14 |
-| Trekk ut `dispatchOIDC` fra `/dispatch` | Nivå 0-sjekkene vokser (epoken i 012). Uttrekket gjøres separat, med egne tester (012 PD13 (2)) | ADN 14 |
-| Vurder e-postepoke også på `/dispatch` nivå 1–5 | Nivå 1–5 sender bare innehaverens eget access-token videre til callback, uten ny legitimasjon. Refresh-familien er revokert ved e-postendring, men et gammelt access-token kan fortsatt videresendes innenfor TTL (eval 012 T4.2/T4.3/T4.5). Ekstra forsvarslag, ikke et hull (ADN 12: access-tokens kan ikke trekkes tilbake) | ADN 14 |
+| Trekk ut `dispatchOIDC` fra `/dispatch` | Nivå 0-sjekkene vokser (epoken i 012). Uttrekket gjøres separat, med egne tester (012 PD13 (2)). Brukersjekken på nivå 0 og `forwardRejectReason` på nivå 1–5 (013) bør da deles der det går | ADN 14, ADN 15 |
+| Håndhev ferskhet på `/dispatch` nivå 1–5 | Fra 013 logges tokens eldre enn 120 s som `dispatch_token_stale … mode=audit` uten avvisning. Håndhev når auditen har vært ren i minst en uke i prod. Treff betyr at en klient kaller `/dispatch` med et lagret token, og det må avklares først (013, product-owner betingelse 1) | ADN 15 |
 | Felles sjekk av unik-brudd | `isUniqueViolation` i `internal/auth/uniqueviolation.go`, og samme sjekk (kode 2067/1555) inline i `internal/admin/users.go` og `internal/admin/users_email.go`. Samles i én hjelper (012 F3) | ADN 14 |

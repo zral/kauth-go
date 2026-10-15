@@ -94,11 +94,11 @@ Skjemaet sier at brukeren logges ut av alle tjenester. Det betyr revokerte refre
 
 ### E-postepoken
 
-Et signert token som identifiserer brukeren med e-post, godtas bare når `iat >= coalesce(email_changed_at, created_at)` for brukeren oppslaget fant. Det gjelder access-token på `/dispatch` nivå 0 (for begge `sub_format`) og admin-tokenet. Et token den gamle eieren av en adresse fikk, virker dermed ikke hos den nye eieren.
+Et signert token som identifiserer brukeren med e-post, godtas bare når `iat >= coalesce(email_changed_at, created_at)` for brukeren oppslaget fant. Det gjelder access-token på alle nivåene i `/dispatch` og admin-tokenet. På nivå 1–5 slipper tokenet gjennom ved DB-feil (ADN 15). Et token den gamle eieren av en adresse fikk, virker dermed ikke hos den nye eieren.
 
 - Sammenligningen er på sekundnivå. Et token utstedt i samme sekund som epoken godtas.
 - Epoken tolkes fra `2006-01-02T15:04:05Z` eller SQLite `datetime()`. Alt annet, og manglende `iat`, avvises.
-- `/dispatch` nivå 0 avviser med audit `dispatch_subject_mismatch` (`level=0 reason=email_reassigned`) og sender brukeren til `/login`. Admin avviser med 303 til `/admin/login` (401 med JSON når requesten ber om JSON), og logger bruker-ID-en.
+- `/dispatch` avviser med audit `dispatch_subject_mismatch` (`level=0 reason=email_reassigned` eller `level=1-5 reason=email_reassigned`) og sender brukeren til `/login`. På nivå 1–5 er sjekken et konsistenslag og ingen tilbaketrekking (ADN 15): den som har tokenet, kan fortsatt gå rett til tjenestens callback. Admin avviser med 303 til `/admin/login` (401 med JSON når requesten ber om JSON), og logger bruker-ID-en.
 - Går serverklokka bakover, kan epoken ligge i fremtiden. Brukeren avvises da til klokka har tatt den igjen. Preflight feiler hvis en epoke ligger i fremtiden.
 
 ### Admin-bindingen
@@ -508,7 +508,11 @@ Refresh-token-cookien settes parallelt på auth-domenet med `SameSite=None` slik
 
 **Nivå 0 (OIDC `authorization_code`).** Med `oidc_authz`-cookie lager `/dispatch` en kode bare hvis tokenets `aud` inneholder `client_id` og tokenet er ferskt: `iat` høyst 120 s gammelt, med 30 s slingring for `iat` i framtiden. Manglende `iat` eller `aud` avvises. Ved avvik går brukeren til `/login`, ingen kode lages, og audit logger `dispatch_aud_mismatch` (`level=0`) eller `dispatch_token_stale`. Ferskhetskravet begrenser hva et lekket eller gammelt token kan brukes til via `/dispatch?token=`. Tokenets `sub` må tilhøre brukeren: for `sub_format=id`-tjenester slås brukeren opp på `public_id` og normalisert `email`-claim må stemme, for `email`-tjenester på normalisert e-post. Avvik gir `/login` og audit `dispatch_subject_mismatch`. Koden lagres med `user_id`.
 
-**Nivå 1–5 auditeres, men avvises ikke.** Er målet verken i tokenets `aud` eller deler callback med `aud`-tjenesten (klarsyn og analyse), logges `dispatch_aud_mismatch` med `level=N`, `token_aud` og `target`. Rutingen er uendret. Auditen skal vise om noen klient trenger avvisning før den slås på (se BACKLOG).
+**Nivå 1–5: brukersjekk før rutingen (013).** Før noe nivå velger mål, slår `/dispatch` opp den aktive brukeren med normalisert `email`-claim. Tokenet sendes bare videre når brukeren finnes, `sub` er brukerens e-post eller `public_id`, og `iat` finnes og ikke er eldre enn e-postepoken. Ellers går brukeren til `/login`, og audit logger `dispatch_subject_mismatch` med `level=1-5 reason=no_active_user|sub_mismatch|iat_missing|email_reassigned`. `sub` godtas i begge former fordi målet på nivå 1–5 ikke alltid er tokenets `aud`.
+
+En DB-feil i oppslaget stopper ikke innloggingen: tokenet sendes videre, og audit logger `dispatch_subject_check_skipped` (`level=1-5 reason=db_error`). En klient som har koblet fra, logges ikke. Et token som er eldre enn 120 s, eller mer enn 30 s fram i tid, sendes videre, men logges som `dispatch_token_stale` med `level=1-5 age_s=<n> mode=audit`. Mangler `iat` etter fail-open, står det `iat=missing mode=audit`. Auditen skal vise om ferskhet bør håndheves også her (se BACKLOG).
+
+**`aud` på nivå 1–5 auditeres, men avvises ikke.** Er målet verken i tokenets `aud` eller deler callback med `aud`-tjenesten (klarsyn og analyse), logges `dispatch_aud_mismatch` med `level=N`, `token_aud` og `target`. Rutingen er uendret. Auditen skal vise om noen klient trenger avvisning før den slås på (se BACKLOG).
 
 Nivå 2 er den pålitelige: for Google og Microsoft kommer IDen fra den HMAC-signerte state-parameteren (`SignState`/`VerifyState`), som round-trippes gjennom provideren og ikke kan forfalskes. Magic-link og passord sender den resolvet tjenesten direkte.
 
@@ -523,14 +527,14 @@ Intern-sti-grenen i `/dispatch` er fjernet: på nivå 1 godtas bare en `redirect
 ## Audit-logg
 
 Lagret i `audit_events`-tabellen med felter:
-- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, ...
+- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `dispatch_subject_mismatch`, `dispatch_subject_check_skipped`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, ...
 - `auth_method` — `google`, `microsoft`, `magic_link`, `password`, `refresh`
 - `email`, `service_id`, `ip_address`, `user_agent`
 - `success` — bool, alltid eksplisitt satt av applikasjonen
 - `details` — fritekst, brukes for grunn på feilet login. `refresh_token_reuse` har `gap_s=<n>`, `user_deactivated` har `id=<n> revoked=<antall>` eller `id=<n> revoke_failed` (deaktiveringen står selv om revokeringen feiler; refresh for deaktivert bruker avvises uansett)
 - `created_at` — ISO 8601 UTC
 
-Nye event-typer fra 009: `authorization_code_invalid`, `authorization_code_mismatch`, `authorization_code_reuse`, `authorization_code_exchanged`. Fra 010: `authorization_code_exchanged` har `jti_access`, `jti_id` og `family` i `details`, og `authorization_code_reuse` har `family`. `dispatch_aud_mismatch` har `level=<0-5>`, `token_aud` og `target`, og `dispatch_token_stale` har `age_s=<n>`, eller `iat=missing` når `iat` mangler. Ingen av dem har token eller kode i `details`. Admin-skriv har `actor=<e-post>` i `details`. Skrivingen er asynkron via kø, bortsett fra admin-skriv (se Audit-isolering).
+Nye event-typer fra 009: `authorization_code_invalid`, `authorization_code_mismatch`, `authorization_code_reuse`, `authorization_code_exchanged`. Fra 010: `authorization_code_exchanged` har `jti_access`, `jti_id` og `family` i `details`, og `authorization_code_reuse` har `family`. `dispatch_aud_mismatch` har `level=<0-5>`, `token_aud` og `target`, og `dispatch_token_stale` har `age_s=<n>`, eller `iat=missing` når `iat` mangler. Fra 013 har nivå 1–5 `level=1-5` og `mode=audit` på `dispatch_token_stale` (success=1, tokenet sendes videre), `dispatch_subject_mismatch` har `level=1-5 reason=…`, og `dispatch_subject_check_skipped` (success=1) markerer fail-open ved DB-feil. Ingen av dem har token eller kode i `details`. Admin-skriv har `actor=<e-post>` i `details`. Skrivingen er asynkron via kø, bortsett fra admin-skriv (se Audit-isolering).
 
 90 dagers retensjon (cleanup-jobb sletter eldre). Eksporteres via admin GUI som CSV.
 
