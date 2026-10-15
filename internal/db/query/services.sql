@@ -13,16 +13,18 @@ SELECT * FROM services WHERE active = 1 ORDER BY display_name;
 -- name: ListAllServices :many
 SELECT * FROM services ORDER BY display_name;
 
--- sub_format and auto_link are deliberately not set here: the column defaults
--- ('email', 1) apply until admin gets fields for them (011 F4).
+-- sub_format and auto_link are nullable parameters: NULL gives the column defaults
+-- ('email', 1), so callers that do not care (tests, migration tools) stay unchanged.
 -- name: CreateService :exec
 INSERT INTO services (id, display_name, tagline, domain, auth_host, callback_url,
     logo_html, bg_image, bg_css, theme, accent_color, email_from_name, email_from_address,
     auto_register, default_role, default_org, require_role, enforce_org, is_default,
     auth_google, auth_microsoft, auth_magic_link, auth_password,
     google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret,
-    jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+    jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at,
+    sub_format, auto_link)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+    COALESCE(CAST(sqlc.narg('sub_format') AS TEXT), 'email'), COALESCE(CAST(sqlc.narg('auto_link') AS INTEGER), 1));
 
 -- name: UpdateService :exec
 UPDATE services SET

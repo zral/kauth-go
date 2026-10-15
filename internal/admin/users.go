@@ -239,29 +239,74 @@ func (h *UsersHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ListUsers med høy limit for å finne bruker på ID (ingen GetUserByID-query nødvendig).
-	users, err := h.queries.ListUsers(r.Context(), gen.ListUsersParams{Limit: 10000, Offset: 0})
+	found, err := h.queries.GetUserByID(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
 		http.Error(w, "databasefeil", http.StatusInternalServerError)
 		return
 	}
-	var found *gen.User
-	for i := range users {
-		if users[i].ID == id {
-			found = &users[i]
-			break
-		}
-	}
-	if found == nil {
-		http.NotFound(w, r)
+	idns, err := h.queries.ListIdentitiesByUser(r.Context(), id)
+	if err != nil {
+		http.Error(w, "databasefeil", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = h.editTpl.Execute(w, map[string]interface{}{
-		"IsNew": false,
-		"User":  *found,
+		"IsNew":      false,
+		"User":       found,
+		"Identities": identityViews(idns),
+		// Feilsiden ved lagring har ikke identitetene lastet; da skjules tabellen heller enn å si «ingen».
+		"ShowIdentities": true,
 	})
+}
+
+// identityView er det admin ser om en koblet identitet. Subject avkortes: det er
+// leverandørens stabile id for personen og trengs ikke i fulltekst for å skille kontoer.
+type identityView struct {
+	Provider, Tenant, Subject, Email, Created, LastUsed string
+	AdminOK                                             bool
+}
+
+const msIssuerPrefix = "https://login.microsoftonline.com/"
+
+func identityViews(in []gen.UserIdentity) []identityView {
+	out := make([]identityView, 0, len(in))
+	for _, i := range in {
+		v := identityView{
+			Provider: i.Provider,
+			Tenant:   "—",
+			Subject:  shortSubject(i.Subject),
+			Email:    "—",
+			Created:  i.CreatedAt,
+			LastUsed: "—",
+			AdminOK:  i.AdminOk == 1,
+		}
+		if i.Provider == "microsoft" && strings.HasPrefix(i.Issuer, msIssuerPrefix) {
+			if tid, _, ok := strings.Cut(strings.TrimPrefix(i.Issuer, msIssuerPrefix), "/"); ok && tid != "" {
+				v.Tenant = tid
+			}
+		}
+		if i.Email != nil && *i.Email != "" {
+			v.Email = *i.Email
+		}
+		if i.LastUsedAt != nil && *i.LastUsedAt != "" {
+			v.LastUsed = *i.LastUsedAt
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+func shortSubject(s string) string {
+	r := []rune(s)
+	if len(r) <= 6 {
+		return string(r)
+	}
+	return string(r[:6]) + "…"
 }
 
 // HandleUpdate lagrer endringer på eksisterende bruker.

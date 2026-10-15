@@ -146,10 +146,10 @@ func parseFormValues(t *testing.T, body string) url.Values {
 		case "file", "submit", "button":
 		case "checkbox":
 			if _, ok := a["checked"]; ok {
-				vals.Set(name, a["value"])
+				vals.Add(name, a["value"])
 			}
 		default:
-			vals.Set(name, a["value"])
+			vals.Add(name, a["value"])
 		}
 	}
 	for _, m := range selectRe.FindAllStringSubmatch(body, -1) {

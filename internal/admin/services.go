@@ -86,6 +86,8 @@ func (h *ServicesHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 			Theme:          "light",
 			JwtCookieName:  "auth_token",
 			AccessTokenTtl: "PT15M",
+			SubFormat:      "email",
+			AutoLink:       1,
 		},
 	})
 }
@@ -113,6 +115,11 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateSubFormat(r); err != nil {
+		h.renderServiceError(w, serviceFromForm(r), true, err.Error())
+		return
+	}
+
 	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, svcID)
 	if uploadErr != "" {
 		h.renderServiceError(w, serviceFromForm(r), true, uploadErr)
@@ -131,9 +138,12 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	cacheOK := h.invalidateCache(r, svcID)
 
-	details := "service_created"
+	// Hvert felt for seg: et manglende felt får DB-defaulten, og audit skal vise
+	// det som faktisk ble lagret.
+	details := fmt.Sprintf("service_created sub_format=%s auto_link=%d",
+		valueOr(params.SubFormat, "email"), valueOr(params.AutoLink, int64(1)))
 	if uploaded {
-		details = "service_created bg_image_uploaded=" + uploadedPath
+		details += " bg_image_uploaded=" + uploadedPath
 	}
 	auditOK := logAdminWrite(r.Context(), h.auditor, audit.Event{
 		Type:      "service_created",
@@ -206,6 +216,11 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateSubFormat(r); err != nil {
+		h.renderServiceError(w, overlayForm(*existing, r), false, err.Error())
+		return
+	}
+
 	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, id)
 	if uploadErr != "" {
 		h.renderServiceError(w, overlayForm(*existing, r), false, uploadErr)
@@ -223,9 +238,9 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	cacheOK := h.invalidateCache(r, id)
 
-	details := "service_edited"
+	details := "service_edited" + identityPolicyChanges(*existing, params)
 	if uploaded {
-		details = "service_edited bg_image_uploaded=" + uploadedPath
+		details += " bg_image_uploaded=" + uploadedPath
 	}
 	auditOK := logAdminWrite(r.Context(), h.auditor, audit.Event{
 		Type:      "service_edited",
@@ -326,6 +341,8 @@ func buildCreateParams(r *http.Request, id, now string) gen.CreateServiceParams 
 		RefreshTokenMaxAge: nullableStr(r.PostFormValue("refresh_token_max_age")),
 		Active:             checkboxInt(r, "active"),
 		UpdatedAt:          now,
+		SubFormat:          formSubFormat(r),
+		AutoLink:           formAutoLink(r),
 	}
 }
 
@@ -366,11 +383,70 @@ func buildUpdateParams(r *http.Request, existing gen.Service, now string) gen.Up
 		RefreshTokenMaxAge:    cp.RefreshTokenMaxAge,
 		Active:                cp.Active,
 		UpdatedAt:             now,
-		// Ingen skjemafelt ennå (011 F4): lagring skal aldri nulle verdiene.
-		SubFormat: existing.SubFormat,
-		AutoLink:  existing.AutoLink,
+		// Et skjema uten feltene (eldre side, skript) skal aldri endre dem: lagret verdi beholdes.
+		SubFormat: valueOr(cp.SubFormat, existing.SubFormat),
+		AutoLink:  valueOr(cp.AutoLink, existing.AutoLink),
 		ID:        existing.ID,
 	}
+}
+
+func valueOr[T any](p *T, fallback T) T {
+	if p == nil {
+		return fallback
+	}
+	return *p
+}
+
+// formSubFormat returnerer nil når feltet mangler i skjemaet. Verdien er validert av
+// validateSubFormat før den når hit.
+func formSubFormat(r *http.Request) *string {
+	vals, ok := r.PostForm["sub_format"]
+	if !ok || len(vals) == 0 {
+		return nil
+	}
+	v := vals[len(vals)-1]
+	return &v
+}
+
+// formAutoLink returnerer nil når feltet mangler. Malen sender et skjult 0 foran
+// avkrysningen; nettleseren sender bare 1 i tillegg når boksen er krysset, så siste
+// verdi gjelder. Uten det skjulte feltet kan «av» ikke skilles fra «feltet finnes ikke».
+func formAutoLink(r *http.Request) *int64 {
+	vals, ok := r.PostForm["auto_link"]
+	if !ok || len(vals) == 0 {
+		return nil
+	}
+	var v int64
+	if vals[len(vals)-1] == "1" {
+		v = 1
+	}
+	return &v
+}
+
+// validateSubFormat avviser alt annet enn email og id. Databasen har CHECK, men
+// da ville admin fått en rå databasefeil i stedet for en forklaring.
+func validateSubFormat(r *http.Request) error {
+	v := formSubFormat(r)
+	if v == nil {
+		return nil
+	}
+	if *v != "email" && *v != "id" {
+		return fmt.Errorf("Ugyldig sub-format. Velg email eller id.")
+	}
+	return nil
+}
+
+// identityPolicyChanges gir audit-details for endret sub_format/auto_link, siden begge
+// er kontraktsendringer for klienten og må kunne spores til en actor.
+func identityPolicyChanges(old gen.Service, p gen.UpdateServiceParams) string {
+	var out string
+	if old.SubFormat != p.SubFormat {
+		out += " sub_format=" + old.SubFormat + "->" + p.SubFormat
+	}
+	if old.AutoLink != p.AutoLink {
+		out += fmt.Sprintf(" auto_link=%d->%d", old.AutoLink, p.AutoLink)
+	}
+	return out
 }
 
 // findService henter en tjeneste uavhengig av active-flagget. GetServiceByID filtrerer
@@ -476,6 +552,8 @@ func serviceFromForm(r *http.Request) gen.Service {
 		AuthPassword:       checkboxInt(r, "auth_password"),
 		IsDefault:          checkboxInt(r, "is_default"),
 		AutoRegister:       checkboxInt(r, "auto_register"),
+		SubFormat:          valueOr(formSubFormat(r), "email"),
+		AutoLink:           valueOr(formAutoLink(r), 1),
 	}
 }
 
@@ -500,6 +578,12 @@ func overlayForm(existing gen.Service, r *http.Request) gen.Service {
 	out.DefaultRole, out.DefaultOrg, out.RequireRole, out.EnforceOrg = f.DefaultRole, f.DefaultOrg, f.RequireRole, f.EnforceOrg
 	out.Active, out.AuthGoogle, out.AuthMagicLink, out.AuthMicrosoft = f.Active, f.AuthGoogle, f.AuthMagicLink, f.AuthMicrosoft
 	out.AuthPassword, out.IsDefault, out.AutoRegister = f.AuthPassword, f.IsDefault, f.AutoRegister
+	// Ugyldig verdi vises aldri tilbake: feilsiden viser det som faktisk er lagret.
+	out.SubFormat = existing.SubFormat
+	if v := formSubFormat(r); v != nil && (*v == "email" || *v == "id") {
+		out.SubFormat = *v
+	}
+	out.AutoLink = valueOr(formAutoLink(r), existing.AutoLink)
 	return out
 }
 

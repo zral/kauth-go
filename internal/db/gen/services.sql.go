@@ -15,8 +15,10 @@ INSERT INTO services (id, display_name, tagline, domain, auth_host, callback_url
     auto_register, default_role, default_org, require_role, enforce_org, is_default,
     auth_google, auth_microsoft, auth_magic_link, auth_password,
     google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret,
-    jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at,
+    sub_format, auto_link)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+    COALESCE(CAST(?33 AS TEXT), 'email'), COALESCE(CAST(?34 AS INTEGER), 1))
 `
 
 type CreateServiceParams struct {
@@ -52,10 +54,12 @@ type CreateServiceParams struct {
 	RefreshTokenMaxAge    *string `json:"refresh_token_max_age"`
 	Active                int64   `json:"active"`
 	UpdatedAt             string  `json:"updated_at"`
+	SubFormat             *string `json:"sub_format"`
+	AutoLink              *int64  `json:"auto_link"`
 }
 
-// sub_format and auto_link are deliberately not set here: the column defaults
-// ('email', 1) apply until admin gets fields for them (011 F4).
+// sub_format and auto_link are nullable parameters: NULL gives the column defaults
+// ('email', 1), so callers that do not care (tests, migration tools) stay unchanged.
 func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) error {
 	_, err := q.db.ExecContext(ctx, createService,
 		arg.ID,
@@ -90,6 +94,8 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) er
 		arg.RefreshTokenMaxAge,
 		arg.Active,
 		arg.UpdatedAt,
+		arg.SubFormat,
+		arg.AutoLink,
 	)
 	return err
 }

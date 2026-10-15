@@ -20,7 +20,7 @@
             color: #e2e8f0; font-size: 0.875rem;
         }
         .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-        .checkbox-row input { width: auto; }
+        .checkbox-row input { width: 1.1rem; height: 1.1rem; }
         .hint { font-size: 0.8rem; color: #64748b; margin-top: 0.2rem; }
         .btn { padding: 0.5rem 1rem; border-radius: 5px; border: none; font-size: 0.875rem; cursor: pointer; text-decoration: none; }
         .btn-primary { background: #3b82f6; color: #fff; }
@@ -132,6 +132,22 @@
             <input type="text" name="refresh_token_max_age" value="{{if .Service.RefreshTokenMaxAge}}{{.Service.RefreshTokenMaxAge}}{{end}}" placeholder="P30D">
             <p class="hint">Tomt = ubegrenset sesjonslevetid.</p>
         </div>
+
+        <h2>Brukeridentitet</h2>
+        <div class="form-group">
+            <label for="sub_format">Format på sub</label>
+            <select id="sub_format" name="sub_format">
+                <option value="email" {{if ne .Service.SubFormat "id"}}selected{{end}}>E-postadresse (email)</option>
+                <option value="id" {{if eq .Service.SubFormat "id"}}selected{{end}}>Fast id (id)</option>
+            </select>
+            <p class="hint">Hva <code>sub</code> i tokenet inneholder: e-postadressen eller kauths faste id. Å bytte endrer <code>sub</code> for alle brukere av tjenesten, så klienten må kunne matche brukere på e-post før du bytter.</p>
+        </div>
+        <input type="hidden" name="auto_link" value="0">
+        <div class="checkbox-row">
+            <input type="checkbox" id="auto_link" name="auto_link" value="1" {{if eq .Service.AutoLink 1}}checked{{end}}>
+            <label for="auto_link">Koble nye kontoer automatisk</label>
+        </div>
+        <p class="hint">Kobler en ny Google- eller Microsoft-konto til brukeren med samme bekreftede e-post. Er den av, kobles bare brukerens første konto; nye kontoer avvises. Gjelder bare innlogging via denne tjenesten.</p>
 
         <h2>Avansert</h2>
         <div class="form-group">

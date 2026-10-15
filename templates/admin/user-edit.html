@@ -22,6 +22,13 @@
         .btn { padding: 0.5rem 1rem; border-radius: 5px; border: none; font-size: 0.9rem; cursor: pointer; text-decoration: none; }
         .btn-primary { background: #3b82f6; color: #fff; }
         .btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+        .readonly { margin: 0 0 1.5rem; font-size: 0.8rem; color: #94a3b8; }
+        .readonly code { color: #e2e8f0; }
+        h2 { font-size: 0.95rem; color: #64748b; margin: 2rem 0 0.75rem; border-bottom: 1px solid #1e293b; padding-bottom: 0.25rem; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #1e293b; white-space: nowrap; }
+        th { color: #64748b; font-weight: 600; }
         .actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
         .msg.err { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #7f1d1d; color: #fca5a5; font-size: 0.875rem; }
     </style>
@@ -38,6 +45,7 @@
 <main>
     <h1>{{if .IsNew}}Ny bruker{{else}}Rediger {{.User.Email}}{{end}}</h1>
     {{if .Error}}<div class="msg err">{{.Error}}</div>{{end}}
+    {{if not .IsNew}}<p class="readonly">Offentlig id. Brukes som <code>sub</code> når tjenesten er satt til «id»: <code>{{.User.PublicID}}</code></p>{{end}}
     <form method="POST" action="{{if .IsNew}}/admin/users{{else}}/admin/users/{{.User.ID}}{{end}}">
         {{if .IsNew}}
         <div class="form-group">
@@ -69,6 +77,23 @@
             <a href="/admin/users" class="btn btn-outline">Avbryt</a>
         </div>
     </form>
+    {{if .ShowIdentities}}
+    <h2>Koblede identiteter</h2>
+    {{if .Identities}}
+    <div class="table-wrap">
+    <table>
+        <thead><tr><th>Leverandør</th><th>Tenant</th><th>Subject</th><th>E-post sist sett</th><th>Admin</th><th>Koblet</th><th>Sist brukt</th></tr></thead>
+        <tbody>
+        {{range .Identities}}
+        <tr><td>{{.Provider}}</td><td>{{.Tenant}}</td><td><code>{{.Subject}}</code></td><td>{{.Email}}</td><td>{{if .AdminOK}}ja{{else}}nei{{end}}</td><td>{{.Created}}</td><td>{{.LastUsed}}</td></tr>
+        {{end}}
+        </tbody>
+    </table>
+    </div>
+    {{else}}
+    <p class="hint">Ingen Google- eller Microsoft-konto er koblet ennå. Kobles ved første innlogging.</p>
+    {{end}}
+    {{end}}
 </main>
 </body>
 </html>
