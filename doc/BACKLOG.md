@@ -15,7 +15,7 @@ Sist gjennomgått: 2026-10-15
 | 1 | **007 Akutt sikkerhetsherding** (Fase 0) | Ett-klikks kjede fra lenke til admin-overtakelse i prod (K1+K2). Tilgangskrav nulles stille ved admin-lagring (H1) | ROADMAP §2.1–2.2 |
 | 2 | Beslutning B1–B6 | Blokkerer analyse for Fase 1–2 | ROADMAP §4 |
 | 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | ✔ I prod 2026-10-14. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
-| 4 | 011 Stabil identitet (Fase 2, del 1): ✔ I prod 2026-10-15 (tag `011`). **Neste:** 012 (frakobling og e-postendring i admin, e-postepoke på `/dispatch` nivå 0 og admin, recovery som prosedyre) | Må være på plass før flere leverandører kommer til | ADN 13, ADN 14 |
+| 4 | 011 Stabil identitet og 012 Admin-identitet (Fase 2) | ✔ 011 i prod 2026-10-15 (tag `011`). 012 er bygget (frakobling, e-postendring, e-postepoke, admin-binding, recovery) og venter eval, tag `012` og deploy | ADN 13, ADN 14 |
 
 ## Senere
 
@@ -78,3 +78,6 @@ Sist gjennomgått: 2026-10-15
 | ~~`RevokeUserRefreshTokens`: fjern `OR email`~~ | Tas i 012 (K13). 0 rader uten `user_id` i prod 2026-10-15, ingen backfill | ADN 14 |
 | `user_id`-FK uten `ON DELETE`, og trigger mot `UPDATE` av `public_id` | **Utsatt til GDPR-sletting** (ikke 012). Avgjøres når sletting av brukere kommer (011 F1) | ADN 13 |
 | `err.Error()` i admin-feilmeldinger ved opprettelse og lagring av tjeneste (`services.go`) | Fantes fra før. Internfeil kan lekke til admin-siden (011 F4, security) | ROADMAP M7 |
+| Flytt `identityViews` og `shortSubject` fra `users.go` til `users_identity.go` | Hører sammen med frakoblingen. Utsatt for å holde diffen i 012 liten (012 PD13 (1)) | ADN 14 |
+| Trekk ut `dispatchOIDC` fra `/dispatch` | Nivå 0-sjekkene vokser (epoken i 012). Uttrekket gjøres separat, med egne tester (012 PD13 (2)) | ADN 14 |
+| Felles sjekk av unik-brudd | `isUniqueViolation` i `internal/auth/uniqueviolation.go`, og samme sjekk (kode 2067/1555) inline i `internal/admin/users.go` og `internal/admin/users_email.go`. Samles i én hjelper (012 F3) | ADN 14 |

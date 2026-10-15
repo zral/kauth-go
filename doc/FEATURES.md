@@ -65,13 +65,69 @@ E-post er et attributt på brukeren, ikke identiteten (ADN 13). Identiteten til 
 2. Ellers slås brukeren opp på normalisert, leverandørbekreftet e-post, og identiteten kobles (`identity_linked`, `details` `provider= issuer= transition=`). `transition=1` betyr brukerens første identitet.
 3. Finnes ingen bruker, registreres en ny hvis tjenesten har `auto_register`. Bruker og identitet opprettes i én transaksjon.
 
-**`auto_link` (per tjeneste, default 1):** med 1 kobles en ukjent identitet til brukeren med samme e-post. Med 0 kobles bare brukerens første fødererte identitet (overgangsunntaket fra e-postmodellen), og koblingen er en atomisk betinget `INSERT`. Har brukeren allerede en identitet, avvises en ny konto med `?error=account_not_linked` på innloggingssiden (nb/en/de) og audit `identity_link_denied`. Teksten sier ingenting om hvilken konto som finnes. Koblinger er globale for brukeren, så `auto_link=0` beskytter bare innlogging via den tjenesten. Eksplisitt kobling, frakobling og recovery kommer i 012.
+**`auto_link` (per tjeneste, default 1):** med 1 kobles en ukjent identitet til brukeren med samme e-post. Med 0 kobles bare brukerens første fødererte identitet (overgangsunntaket fra e-postmodellen), og koblingen er en atomisk betinget `INSERT`. Har brukeren allerede en identitet, avvises en ny konto med `?error=account_not_linked` på innloggingssiden (nb/en/de) og audit `identity_link_denied`. Teksten sier ingenting om hvilken konto som finnes. Koblinger er globale for brukeren, så `auto_link=0` beskytter bare innlogging via den tjenesten. Admin kan koble fra identiteter (se under). Eksplisitt kobling og selvbetjening venter til første tjeneste med `auto_link=0`.
 
-**Admin-godkjent identitet:** admin-innlogging med Google registrerer aldri brukere og kobler bare brukerens første identitet (overgangsunntaket, som `auto_link=0`). Den godtar bare en identitet med `user_identities.admin_ok = 1`. Første admin-Google-innlogging etter deploy, etter `konge`-sjekken, godkjenner identiteten (`identity_admin_approved`) hvis brukeren ikke har noen godkjent identitet fra før. Andre kontoer avvises deretter (`identity_link_denied reason=not_admin_identity`), også de som er koblet via en tjeneste med `auto_link=1`. Admin via magic link er uendret.
+**Admin-godkjent identitet:** admin-innlogging med Google registrerer aldri brukere og kobler bare brukerens første identitet (overgangsunntaket, som `auto_link=0`). Den godtar bare en identitet med `user_identities.admin_ok = 1`. Første admin-Google-innlogging, etter `konge`-sjekken, godkjenner identiteten (`identity_admin_approved`, `bound=1`) hvis brukeren ikke er bundet fra før (se «Admin-bindingen»). Andre kontoer avvises deretter (`identity_link_denied reason=not_admin_identity`), også de som er koblet via en tjeneste med `auto_link=1`. Admin via magic link er uendret.
 
 **`sub_format` (per tjeneste, `email` eller `id`):** styrer hva `sub` er i access- og id_token. `email` (default) er som før. `id` gir brukerens `public_id`. `email`-claimet er med i begge tilfeller. Bytte er en kontraktsendring for klienten, som må godta `sub` som UUID og matche eksisterende brukere på `email` første gang. Admin-token og `/api/me` er uendret.
 
 **Sesjoner:** refresh-tokens og autorisasjonskoder har `user_id`. Rotasjon arver det, og innløsning slår opp brukeren på `user_id`. En rad uten `user_id` behandles som inaktiv bruker, uten e-post-fallback: refresh revokerer familien (`user_inactive`), og kodeinnløsning gir `invalid_grant`.
+
+### Frakobling
+
+`POST /admin/users/{id}/identities/{identityID}/unlink` sletter én rad i `user_identities`, betinget på både identitets-ID og bruker-ID (en ID fra en annen bruker gir 404). Samme transaksjon revokerer alle refresh-familiene til brukeren (`identity_unlinked`). Feiler revokeringen, står identiteten. Audit `identity_unlinked` har `provider`, `issuer`, `admin_ok` og `revoked` i `details`, og `actor=` fra admin. Subject logges ikke. Deaktiverte brukere kan kobles fra.
+
+Frakobling er et ryddeverktøy og ingen blokkering. Med `auto_link=1` kobles kontoen igjen ved neste innlogging hvis e-posten stemmer. Er alle identitetene koblet fra, gjelder overgangsunntaket for `auto_link=0` igjen. Mot en kompromittert konto hjelper det ikke å koble fra alene. Deaktiver brukeren.
+
+### E-postendring
+
+`POST /admin/users/{id}/email` setter ny e-post på brukeren. Admin går god for adressen, og det sendes ingen bekreftelseslenke. Skjemaet har en advarsel: tjenester med `sub_format=email` ser brukeren som en ny bruker etter endringen, så den skal avtales med tjenesteeieren. Avkrysningen «Jeg har avtalt endringen med tjenesteeierne» kreves, både i malen og på serveren (mangler den, gis 422 uten skriving). Endrer admin sin egen adresse, logges admin ut.
+
+Adressen normaliseres og valideres. Samme adresse etter normalisering gir 422, en adresse i bruk gir 409, og en samtidig endring gir 409 («prøv igjen»). I én transaksjon skjer dette:
+1. Alle refresh-familiene til brukeren revokeres (`email_changed`).
+2. `users.email` og `email_changed_at` oppdateres, betinget på at gammel e-post er uendret.
+3. Ubrukte magic-tokens for gammel og ny adresse brennes (`used = 1`, så kvoteradene står).
+
+Audit `user_email_changed` har ny adresse i `email` og `id=… old=<gammel> revoked=<n> burned=<m>` i `details`. Identitetene (`issuer`, `subject`) og `user_identities.email` røres ikke. Magic link følger `users.email`.
+
+Skjemaet sier at brukeren logges ut av alle tjenester. Det betyr revokerte refresh-familier og brente magic-tokens. Autorisasjonskoder (TTL 60 s) brennes ikke. En kode utstedt rett før endringen kan derfor løses inn i inntil 60 sekunder etterpå, og gir da en ny sesjon med vanlig levetid for samme bruker. Det samme gjelder frakobling. Deaktivering stopper også kodene, fordi innløsningen krever en aktiv bruker. Access-tokens hos klientene lever ut sin TTL (ADN 12).
+
+### E-postepoken
+
+Et signert token som identifiserer brukeren med e-post, godtas bare når `iat >= coalesce(email_changed_at, created_at)` for brukeren oppslaget fant. Det gjelder access-token på `/dispatch` nivå 0 (for begge `sub_format`) og admin-tokenet. Et token den gamle eieren av en adresse fikk, virker dermed ikke hos den nye eieren.
+
+- Sammenligningen er på sekundnivå. Et token utstedt i samme sekund som epoken godtas.
+- Epoken tolkes fra `2006-01-02T15:04:05Z` eller SQLite `datetime()`. Alt annet, og manglende `iat`, avvises.
+- `/dispatch` nivå 0 avviser med audit `dispatch_subject_mismatch` (`level=0 reason=email_reassigned`) og sender brukeren til `/login`. Admin avviser med 303 til `/admin/login` (401 med JSON når requesten ber om JSON), og logger bruker-ID-en.
+- Går serverklokka bakover, kan epoken ligge i fremtiden. Brukeren avvises da til klokka har tatt den igjen. Preflight feiler hvis en epoke ligger i fremtiden.
+
+### Admin-bindingen
+
+`users.admin_bound_at` settes ved første admin-Google-innlogging etter `konge`-sjekken. En betinget `UPDATE … WHERE admin_bound_at IS NULL` og `SetAdminOK` kjører i samme transaksjon, og identiteten får `admin_ok = 1` bare hvis bindingen traff. Er brukeren bundet fra før, avvises innloggingen (`reason=not_admin_identity`). Forsvant identiteten mellom oppslaget og godkjenningen, rulles bindingen tilbake (`reason=identity_vanished`). Deretter godtar admin-Google bare den godkjente identiteten. Migrasjon 011 bandt brukerne som allerede hadde en `admin_ok`-identitet. Brukersiden i admin viser «Admin-Google er bundet <dato>», og sier fra når ingen identitet lenger er godkjent.
+
+Appen nullstiller aldri `admin_bound_at`, heller ikke ved frakobling eller e-postendring. Mister brukeren den godkjente Google-kontoen, virker admin via magic link som før, men en ny Google-konto krever recovery-prosedyren under. Frakobling og e-postendring setter aldri `admin_ok`.
+
+### Recovery
+
+kauth har ingen egen mekanisme for recovery. En `konge` gjør stegene i admin. Stegene med `sqlite3` krever skall på prod-boksen og kjøres fra `~/kauth-go`. Noter hvert slikt inngrep.
+
+| Situasjon | Prosedyre |
+|---|---|
+| Brukeren har mistet Google- eller Microsoft-kontoen | Admin kobler fra identiteten. Brukeren logger inn med magic link, eller med en ny konto (kobles på e-post med `auto_link=1`, og som første identitet med `auto_link=0` hvis alle gamle er koblet fra) |
+| Kontoen er kompromittert | Deaktiver brukeren. Det revokerer alle familiene og stopper magic link, kodeinnløsning og innlogging. Frakobling alene stopper ikke en angriper som har innboksen. Når saken er avklart: endre e-post hvis innboksen var kompromittert, koble fra identitetene angriperen kan ha, og reaktiver i DB (admin har ingen reaktivering): `sqlite3 data/kauth.db "UPDATE users SET deactivated_at = NULL WHERE id = <id>"` |
+| Brukeren har mistet tilgang til e-postadressen | Admin endrer e-posten. Si fra til tjenesteeierne for `email`-tjenester. Har noen andre fått innboksen, kobler admin også fra identitetene med den gamle adressen. En koblet identitet slås opp på `(issuer, subject)` og virker uansett e-post |
+| En adresse skal gis til en ny person | Endre den gamle brukerens e-post til en adresse som ikke leveres, for eksempel `avsluttet-<id>@kauth.invalid`, og deaktiver brukeren. Bruk ikke en plussadresse på samme postkasse (`navn+avsluttet@domene`): den går til innboksen den nye personen får, og gir magic link til den gamle brukeren. Koble fra identitetene hvis den nye personen skal bruke samme leverandørkonto. Ellers slås kontoen opp til den gamle, deaktiverte brukeren og avvises. Opprett den nye brukeren. Epoken hindrer at tokens fra den gamle eieren virker |
+| En `konge` har mistet sin admin-godkjente konto | Logg inn i admin med magic link og koble fra den gamle identiteten. Den nye Google-kontoen må ha brukerens e-post. Admin-innloggingen kobler den bare som første identitet, så enten logger brukeren inn med den på en tjeneste med `auto_link=1` først, eller så kobles alle identitetene fra. Åpne bindingen: `sqlite3 data/kauth.db "UPDATE users SET admin_bound_at = NULL WHERE id = <id>"`. Logg inn i admin med den nye Google-kontoen **straks**. Til da står bindingen åpen, og enhver konto koblet til brukeren kan bli godkjent, også en som er koblet via en tjeneste med `auto_link=1` |
+
+**Utolkbar epoke.** Får en bruker avvisning i admin eller på `/dispatch` uten at noe er endret, og journald viser «e-postepoke kan ikke tolkes» for bruker-ID-en, er epoken (`email_changed_at`, eller `created_at` når den er NULL) i et format `ParseEpoch` ikke kjenner. Nødprosedyren setter epoken til nå:
+
+```bash
+sqlite3 data/kauth.db "UPDATE users SET email_changed_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = <id>"
+```
+
+Den er alltid trygg. Eldre tokens for brukeren avvises på `/dispatch` og i admin, så brukeren må logge inn der på nytt. `email_changed_at = NULL` lar epoken falle tilbake til `created_at` og gir ingen ny innlogging, men passer bare når feilen sitter i `email_changed_at`, `created_at` er tolkbar, og ingen annen bruker har hatt adressen etter brukerens `created_at`. Ellers kan et token fra en tidligere eier av adressen bli godtatt igjen. Preflight (`scripts/identity-preflight.sh data/kauth.db`) feiler på utolkbare epoker og epoker i fremtiden, og kjøres før deploy.
+
+**Rollback:** rull tilbake binæren. Kjør aldri `goose down` for migrasjon 011 (`011_admin_identity.sql`) etter at frakobling er brukt. En ny `Up` binder bare brukere som fortsatt har en `admin_ok`-identitet. Ved ny deploy etter en rollback kjøres backfill-`UPDATE`-en fra migrasjonen på nytt før restart. Ellers står en `konge` som ble godkjent mens den gamle binæren kjørte, ubundet.
 
 ## Token-håndtering
 
@@ -333,7 +389,9 @@ Skrivehandlingene (`user_created`, `user_edited`, `user_deactivated`, `service_c
 
 - `GET /admin/users` — pagineret liste med søk på e-post og org-filter
 - `GET /admin/users/new` + `POST /admin/users` — opprett bruker (valgfritt bcrypt-passord eller `n/a`)
-- `GET /admin/users/{id}/edit` + `POST /admin/users/{id}` — rediger navn, roller, organisasjoner. Siden viser `public_id` og en skrivebeskyttet tabell over identiteter: leverandør, tenant (Microsoft), avkortet subject, e-post sist sett, koblet, sist brukt og om identiteten er godkjent for admin
+- `GET /admin/users/{id}/edit` + `POST /admin/users/{id}` — rediger navn, roller, organisasjoner. Siden viser `public_id` og en skrivebeskyttet tabell over identiteter: leverandør, tenant (Microsoft), avkortet subject, e-post sist sett, koblet, sist brukt og om identiteten er godkjent for admin. Hver rad har en frakoblingsknapp. Siden viser også når admin-Google ble bundet, og har et eget skjema for e-postendring
+- `POST /admin/users/{id}/identities/{identityID}/unlink` — koble fra en identitet (se «Frakobling»)
+- `POST /admin/users/{id}/email` — endre e-post (se «E-postendring»)
 - `POST /admin/users/{id}/deactivate` — settes `deactivated_at = now()`
 - `GET /admin/users/export` — CSV-eksport (formula-injection-beskyttet)
 
