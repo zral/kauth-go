@@ -28,16 +28,20 @@ const usersPerPage = 25
 // UsersHandler håndterer alle bruker-CRUD-ruter i admin-panelet.
 type UsersHandler struct {
 	queries *gen.Queries
+	// sqlDB trengs for transaksjonene i frakobling og e-postendring; queries
+	// alene kan ikke samle flere skrivinger i én commit.
+	sqlDB   *sql.DB
 	auditor auditLogger
 	listTpl *template.Template
 	editTpl *template.Template
 }
 
-func NewUsersHandler(queries *gen.Queries, auditor auditLogger) *UsersHandler {
+func NewUsersHandler(queries *gen.Queries, sqlDB *sql.DB, auditor auditLogger) *UsersHandler {
 	listTpl := template.Must(template.ParseFiles("templates/admin/users.html"))
 	editTpl := template.Must(template.ParseFiles("templates/admin/user-edit.html"))
 	return &UsersHandler{
 		queries: queries,
+		sqlDB:   sqlDB,
 		auditor: auditor,
 		listTpl: listTpl,
 		editTpl: editTpl,
@@ -248,25 +252,50 @@ func (h *UsersHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "databasefeil", http.StatusInternalServerError)
 		return
 	}
-	idns, err := h.queries.ListIdentitiesByUser(r.Context(), id)
+	data, err := h.editData(r.Context(), found)
 	if err != nil {
 		http.Error(w, "databasefeil", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.editTpl.Execute(w, map[string]interface{}{
-		"IsNew":      false,
-		"User":       found,
-		"Identities": identityViews(idns),
-		// Feilsiden ved lagring har ikke identitetene lastet; da skjules tabellen heller enn å si «ingen».
+	_ = h.editTpl.Execute(w, data)
+}
+
+// editData bygger malen for en eksisterende bruker. Både HandleEdit og
+// feilsidene bruker den, slik at identitetene og bundet-markøren ikke
+// forsvinner når en skjemafeil rendrer siden på nytt.
+func (h *UsersHandler) editData(ctx context.Context, u gen.User) (map[string]interface{}, error) {
+	idns, err := h.queries.ListIdentitiesByUser(ctx, u.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list identiteter: %w", err)
+	}
+	views := identityViews(idns)
+	hasAdminIdentity := false
+	for _, v := range views {
+		if v.AdminOK {
+			hasAdminIdentity = true
+		}
+	}
+	boundAt := ""
+	if u.AdminBoundAt != nil {
+		boundAt = *u.AdminBoundAt
+	}
+	return map[string]interface{}{
+		"IsNew":          false,
+		"User":           u,
+		"Identities":     views,
 		"ShowIdentities": true,
-	})
+		"AdminBoundAt":   boundAt,
+		// Bundet uten noen admin_ok-identitet: ny admin-konto krever driftsprosedyren.
+		"BoundWithoutIdentity": boundAt != "" && !hasAdminIdentity,
+	}, nil
 }
 
 // identityView er det admin ser om en koblet identitet. Subject avkortes: det er
 // leverandørens stabile id for personen og trengs ikke i fulltekst for å skille kontoer.
 type identityView struct {
+	ID                                                  int64
 	Provider, Tenant, Subject, Email, Created, LastUsed string
 	AdminOK                                             bool
 }
@@ -277,6 +306,7 @@ func identityViews(in []gen.UserIdentity) []identityView {
 	out := make([]identityView, 0, len(in))
 	for _, i := range in {
 		v := identityView{
+			ID:       i.ID,
 			Provider: i.Provider,
 			Tenant:   "—",
 			Subject:  shortSubject(i.Subject),

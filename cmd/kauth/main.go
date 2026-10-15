@@ -85,7 +85,7 @@ func main() {
 	// ── 8. Initialiser admin-handlers ────────────────────────────────────────
 	// cfg er allerede *config.Config — ingen & nødvendig
 	adminAuthH := admin.NewAuthHandler(queries, issuer, mailSvc, auditSvc, cfg)
-	adminUsersH := admin.NewUsersHandler(queries, auditSvc)
+	adminUsersH := admin.NewUsersHandler(queries, sqlDB, auditSvc)
 	adminAuditH := admin.NewAuditHandler(sqlDB)
 	adminSvcsH := admin.NewServicesHandler(queries, registry, auditSvc)
 
@@ -179,6 +179,8 @@ func main() {
 			r.Get("/users/{id}/edit", adminUsersH.HandleEdit)
 			r.Post("/users/{id}", adminUsersH.HandleUpdate)
 			r.Post("/users/{id}/deactivate", adminUsersH.HandleDeactivate)
+			r.Post("/users/{id}/email", adminUsersH.HandleEmailChange)
+			r.Post("/users/{id}/identities/{identityID}/unlink", adminUsersH.HandleUnlink)
 			r.Get("/users/export", adminUsersH.HandleExport)
 
 			// Audit-logg

@@ -39,7 +39,7 @@ func TestUserEdit_ShowsPublicIDAndIdentities(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	h := NewUsersHandler(e.q, audit.NewService(e.q))
+	h := NewUsersHandler(e.q, e.sqldb, audit.NewService(e.q))
 	r := chi.NewRouter()
 	r.Get("/admin/users/{id}/edit", h.HandleEdit)
 	w := httptest.NewRecorder()
@@ -70,7 +70,7 @@ func TestUserEdit_RequiresAdmin(t *testing.T) {
 	e := setupDeactEnv(t)
 	u := e.mkUser(t, "ola@example.com")
 	issuer := token.NewIssuerForTest()
-	h := NewUsersHandler(e.q, audit.NewService(e.q))
+	h := NewUsersHandler(e.q, e.sqldb, audit.NewService(e.q))
 	r := chi.NewRouter()
 	r.Use(AdminAuthMiddleware(issuer, adminDB(t, "konge@example.com", "konge")))
 	r.Get("/admin/users/{id}/edit", h.HandleEdit)

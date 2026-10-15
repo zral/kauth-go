@@ -30,6 +30,15 @@
         th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #1e293b; white-space: nowrap; }
         th { color: #64748b; font-weight: 600; }
         .actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .btn-sm { padding: 0.25rem 0.6rem; font-size: 0.8rem; }
+        .warn { background: #422006; color: #fcd34d; border: 1px solid #854d0e; padding: 0.6rem 0.9rem; border-radius: 5px; margin-bottom: 1rem; font-size: 0.875rem; }
+        .warn p { margin: 0 0 0.5rem; }
+        .warn p:last-child { margin: 0; }
+        .checkbox-row { display: flex; gap: 0.5rem; align-items: flex-start; color: #e2e8f0; margin-bottom: 0; }
+        .checkbox-row input { margin-top: 0.2rem; }
+        .bound { font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.75rem; }
+        .bound strong { color: #e2e8f0; }
         .msg.err { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #7f1d1d; color: #fca5a5; font-size: 0.875rem; }
     </style>
 </head>
@@ -44,7 +53,7 @@
 </nav>
 <main>
     <h1>{{if .IsNew}}Ny bruker{{else}}Rediger {{.User.Email}}{{end}}</h1>
-    {{if .Error}}<div class="msg err">{{.Error}}</div>{{end}}
+    {{if .Error}}<div class="msg err" role="alert">{{.Error}}</div>{{end}}
     {{if not .IsNew}}<p class="readonly">Offentlig id. Brukes som <code>sub</code> når tjenesten er satt til «id»: <code>{{.User.PublicID}}</code></p>{{end}}
     <form method="POST" action="{{if .IsNew}}/admin/users{{else}}/admin/users/{{.User.ID}}{{end}}">
         {{if .IsNew}}
@@ -64,8 +73,8 @@
         </div>
         <div class="form-group">
             <label for="roles">Roller</label>
-            <input type="text" id="roles" name="roles" value="{{.User.Roles}}" placeholder="bruker,kong">
-            <p class="hint">Kommaseparerte roller. «kong» gir admin-tilgang.</p>
+            <input type="text" id="roles" name="roles" value="{{.User.Roles}}" placeholder="bruker,konge">
+            <p class="hint">Kommaseparerte roller. <code>konge</code> gir admin-tilgang.</p>
         </div>
         <div class="form-group">
             <label for="orgs">Orgs</label>
@@ -77,19 +86,48 @@
             <a href="/admin/users" class="btn btn-outline">Avbryt</a>
         </div>
     </form>
+    {{if not .IsNew}}
+    <h2>E-postadresse</h2>
+    {{if .EmailError}}<div class="msg err" role="alert">{{.EmailError}}</div>{{end}}
+    <div class="warn">
+        <p>Tjenester som bruker e-post som <code>sub</code> (<code>sub_format=email</code>), ser brukeren som en ny bruker etter endringen. Avtal det med tjenesteeieren først.</p>
+        <p>Brukeren logges ut av alle tjenester, og e-postlenker går til den nye adressen.</p>
+        <p>Endrer du din egen adresse, blir du logget ut av admin.</p>
+    </div>
+    <form method="POST" action="/admin/users/{{.User.ID}}/email">
+        <div class="form-group">
+            <label for="new_email">Ny e-postadresse</label>
+            <input type="email" id="new_email" name="email" required autocomplete="off" value="{{.FormNewEmail}}">
+            <p class="hint">Nåværende adresse: {{.User.Email}}</p>
+        </div>
+        <div class="form-group">
+            <label for="confirm" class="checkbox-row"><input type="checkbox" id="confirm" name="confirm" value="1" required> Jeg har avtalt endringen med tjenesteeierne</label>
+        </div>
+        <div class="actions">
+            <button type="submit" class="btn btn-danger">Endre e-postadresse</button>
+        </div>
+    </form>
+    {{end}}
     {{if .ShowIdentities}}
     <h2>Koblede identiteter</h2>
+    {{if .AdminBoundAt}}
+    <p class="bound">Admin-Google er bundet <strong>{{.AdminBoundAt}}</strong>.{{if .BoundWithoutIdentity}} Ingen identitet er godkjent som admin nå. En ny admin-konto krever driftsprosedyren.{{end}}</p>
+    {{end}}
     {{if .Identities}}
     <div class="table-wrap">
     <table>
-        <thead><tr><th>Leverandør</th><th>Tenant</th><th>Subject</th><th>E-post sist sett</th><th>Admin</th><th>Koblet</th><th>Sist brukt</th></tr></thead>
+        <thead><tr><th>Leverandør</th><th>Tenant</th><th>Subject</th><th>E-post sist sett</th><th>Admin</th><th>Koblet</th><th>Sist brukt</th><th>Koble fra</th></tr></thead>
         <tbody>
         {{range .Identities}}
-        <tr><td>{{.Provider}}</td><td>{{.Tenant}}</td><td><code>{{.Subject}}</code></td><td>{{.Email}}</td><td>{{if .AdminOK}}ja{{else}}nei{{end}}</td><td>{{.Created}}</td><td>{{.LastUsed}}</td></tr>
+        <tr><td>{{.Provider}}</td><td>{{.Tenant}}</td><td><code>{{.Subject}}</code></td><td>{{.Email}}</td><td>{{if .AdminOK}}ja{{else}}nei{{end}}</td><td>{{.Created}}</td><td>{{.LastUsed}}</td><td>
+            <form method="POST" action="/admin/users/{{$.User.ID}}/identities/{{.ID}}/unlink" style="display:inline">
+                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Koble fra denne identiteten? Brukeren logges ut av alle tjenester.')">Koble fra</button>
+            </form></td></tr>
         {{end}}
         </tbody>
     </table>
     </div>
+    <p class="hint">Frakobling sperrer ikke kontoen. Med auto-kobling kobles den til igjen ved neste innlogging. Er kontoen kompromittert, deaktiver brukeren.</p>
     {{else}}
     <p class="hint">Ingen Google- eller Microsoft-konto er koblet ennå. Kobles ved første innlogging.</p>
     {{end}}

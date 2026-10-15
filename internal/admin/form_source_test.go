@@ -27,7 +27,7 @@ import (
 func TestAdminWrite_QueryFieldsIgnored(t *testing.T) {
 	e := setupDeactEnv(t)
 	u := e.mkUser(t, "a@example.com")
-	h := NewUsersHandler(e.q, audit.NewService(e.q))
+	h := NewUsersHandler(e.q, e.sqldb, audit.NewService(e.q))
 	r := chi.NewRouter()
 	r.Post("/admin/users/{id}", h.HandleUpdate)
 
@@ -198,7 +198,7 @@ func TestServiceCreate_BgImageUpload_Persisted(t *testing.T) {
 
 func TestUserCreate_QueryFieldsIgnored(t *testing.T) {
 	e := setupDeactEnv(t)
-	h := NewUsersHandler(e.q, audit.NewService(e.q))
+	h := NewUsersHandler(e.q, e.sqldb, audit.NewService(e.q))
 	r := chi.NewRouter()
 	r.Post("/admin/users", h.HandleCreate)
 

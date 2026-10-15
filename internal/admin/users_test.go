@@ -89,7 +89,7 @@ func setupDeactEnv(t *testing.T) *deactEnv {
 	}
 
 	aud := audit.NewService(q)
-	h := NewUsersHandler(q, aud)
+	h := NewUsersHandler(q, sqldb, aud)
 	r := chi.NewRouter()
 	r.Post("/admin/users/{id}/deactivate", h.HandleDeactivate)
 	r.Post("/admin/users", h.HandleCreate)
@@ -215,7 +215,7 @@ func (d hookDB) ExecContext(ctx context.Context, query string, args ...any) (sql
 
 func (e *deactEnv) deactivateVia(t *testing.T, ctx context.Context, hook func(context.Context) error, id int64) *httptest.ResponseRecorder {
 	t.Helper()
-	h := NewUsersHandler(gen.New(hookDB{DB: e.sqldb, onRevoke: hook}), audit.NewService(e.q))
+	h := NewUsersHandler(gen.New(hookDB{DB: e.sqldb, onRevoke: hook}), e.sqldb, audit.NewService(e.q))
 	r := chi.NewRouter()
 	r.Post("/admin/users/{id}/deactivate", h.HandleDeactivate)
 	req := httptest.NewRequest(http.MethodPost, "/admin/users/"+strconv.FormatInt(id, 10)+"/deactivate", nil).WithContext(ctx)

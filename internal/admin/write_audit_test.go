@@ -49,7 +49,7 @@ func TestAdminWriteAudit_SyncWithActor(t *testing.T) {
 	e := setupDeactEnv(t)
 	svcs := &svcEnv{sqldb: e.sqldb, q: e.q, reg: service.NewRegistry(e.q)}
 	aud := audit.NewService(e.q)
-	uh := NewUsersHandler(e.q, aud)
+	uh := NewUsersHandler(e.q, e.sqldb, aud)
 	sh := NewServicesHandler(e.q, svcs.reg, aud)
 	r := chi.NewRouter()
 	r.Use(withActor)
@@ -114,7 +114,7 @@ func TestAdminWriteAudit_SyncWithActor(t *testing.T) {
 func TestAdminWriteAudit_FailureKeepsChangeAndWarns(t *testing.T) {
 	e := setupDeactEnv(t)
 	reg := service.NewRegistry(e.q)
-	uh := NewUsersHandler(e.q, failingAudit{})
+	uh := NewUsersHandler(e.q, e.sqldb, failingAudit{})
 	sh := NewServicesHandler(e.q, reg, failingAudit{})
 	r := chi.NewRouter()
 	r.Use(withActor)
@@ -169,7 +169,7 @@ func TestAdminWriteAudit_FailureKeepsChangeAndWarns(t *testing.T) {
 
 func TestAdminList_UnknownWarnIgnored(t *testing.T) {
 	e := setupDeactEnv(t)
-	uh := NewUsersHandler(e.q, audit.NewNoop())
+	uh := NewUsersHandler(e.q, e.sqldb, audit.NewNoop())
 	sh := NewServicesHandler(e.q, service.NewRegistry(e.q), audit.NewNoop())
 	r := chi.NewRouter()
 	r.Get("/admin/users", uh.HandleList)
@@ -214,7 +214,7 @@ func TestAdminWriteAudit_SurvivesCancelledRequestContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	spy := &spyAudit{inner: audit.NewService(e.q), cancel: cancel}
-	uh := NewUsersHandler(e.q, spy)
+	uh := NewUsersHandler(e.q, e.sqldb, spy)
 	r := chi.NewRouter()
 	r.Use(withActor)
 	r.Post("/admin/users", uh.HandleCreate)
@@ -247,7 +247,7 @@ func TestAdminWriteAudit_DeactivateRevokeFailed_KeepsActorAndDetail(t *testing.T
 	e := setupDeactEnv(t)
 	u := e.mkUser(t, "ola@example.com")
 	hook := func(context.Context) error { return errors.New("revoke nede") }
-	h := NewUsersHandler(gen.New(hookDB{DB: e.sqldb, onRevoke: hook}), audit.NewService(e.q))
+	h := NewUsersHandler(gen.New(hookDB{DB: e.sqldb, onRevoke: hook}), e.sqldb, audit.NewService(e.q))
 	r := chi.NewRouter()
 	r.Use(withActor)
 	r.Post("/admin/users/{id}/deactivate", h.HandleDeactivate)
