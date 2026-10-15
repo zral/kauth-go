@@ -87,7 +87,8 @@ func newOIDCAudFixture(t *testing.T) *audFixture {
 	}
 	// Nivå 0 slår opp brukeren fra tokenets e-post (011 PD12).
 	_, err := f.q.CreateUser(ctx, gen.CreateUserParams{
-		PublicID: token.MustNewPublicID(), Email: "sjafor@example.com", Roles: "user", Orgs: "x", CreatedAt: now,
+		// Eldre enn alle tokens testene utsteder: nivå 0 avviser tokens fra før e-postepoken.
+		PublicID: token.MustNewPublicID(), Email: "sjafor@example.com", Roles: "user", Orgs: "x", CreatedAt: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
 	})
 	require.NoError(t, err)
 	reg := service.NewRegistry(f.q)

@@ -18,8 +18,10 @@ INSERT INTO users (public_id, email, password_hash, name, roles, orgs, created_a
 VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
+-- Paa id, ikke e-post: en e-postendring mellom oppslag og skriving skal ikke
+-- gjoere innloggingen til en stille no-op. (ASCII only: sqlc offset bug.)
 -- name: UpdateUserLastLogin :exec
-UPDATE users SET last_login = ? WHERE email = ?;
+UPDATE users SET last_login = ? WHERE id = ?;
 
 -- Gammel e-post sjekkes i samme setning (AND email = ?), saa en samtidig endring
 -- gir 0 rader i stedet for aa bli overskrevet. (ASCII only: sqlc offset bug.)

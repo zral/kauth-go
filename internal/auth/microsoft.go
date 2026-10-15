@@ -239,7 +239,7 @@ func (h *MicrosoftHandlers) finishCallback(w http.ResponseWriter, r *http.Reques
 	setRefreshCookie(w, rt)
 	clearCookie(w, "ms_state")
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	if err := h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email}); err != nil {
+	if err := h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, ID: user.ID}); err != nil {
 		slog.Error("microsoft: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
 	}
 	h.aud.Log(ctx, audit.Event{Type: "microsoft_oidc_login", AuthMethod: "microsoft", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})

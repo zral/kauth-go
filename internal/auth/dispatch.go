@@ -198,6 +198,13 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
+		// Epoken gjelder begge sub_format-grener: e-posten kan ha skiftet eier etter
+		// at tokenet ble utstedt, og lik e-post alene beviser ikke samme person.
+		if !token.IssuedAfterEmailEpoch(claims, user) {
+			h.logDispatchAudit(r, "dispatch_subject_mismatch", user.Email, svc.ID, "level=0 reason=email_reassigned")
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 		code, err := GenerateAuthorizationCode()
 		if err != nil {
 			http.Error(w, "intern feil", http.StatusInternalServerError)

@@ -104,15 +104,54 @@ func TestSetAdminOK_RequiresOwner(t *testing.T) {
 	idn, err := q.GetIdentity(ctx, gen.GetIdentityParams{Issuer: "https://accounts.google.com", Subject: "s1"})
 	require.NoError(t, err)
 
-	n, err := q.SetAdminOK(ctx, gen.SetAdminOKParams{ID: idn.ID, UserID: b.ID})
+	bound := "2026-10-15T10:00:00Z"
+	nb, err := q.BindAdmin(ctx, gen.BindAdminParams{AdminBoundAt: &bound, ID: a.ID})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, nb)
+	nb, err = q.BindAdmin(ctx, gen.BindAdminParams{AdminBoundAt: &bound, ID: b.ID})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, nb)
+
+	// Identiteten tilhorer a, ikke b.
+	n, err := q.SetAdminOK(ctx, gen.SetAdminOKParams{ID: idn.ID, UserID: b.ID, BoundAt: &bound})
 	require.NoError(t, err)
 	assert.EqualValues(t, 0, n)
-	n, err = q.SetAdminOK(ctx, gen.SetAdminOKParams{ID: idn.ID, UserID: a.ID})
+	n, err = q.SetAdminOK(ctx, gen.SetAdminOKParams{ID: idn.ID, UserID: a.ID, BoundAt: &bound})
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, n)
 	var ok int
 	require.NoError(t, sqldb.QueryRow(`SELECT admin_ok FROM user_identities WHERE id = ?`, idn.ID).Scan(&ok))
 	assert.Equal(t, 1, ok)
+}
+
+// S1: SetAdminOK er selvhandhevende. Uten en binding som skrev noyaktig dette
+// tidsstempelet kan admin_ok ikke settes, selv for riktig eier.
+func TestSetAdminOK_RequiresMatchingBinding(t *testing.T) {
+	ctx := context.Background()
+	sqldb, q := openTestDB(t)
+	a := mkUser(t, q, "a@x.no")
+	_, err := q.InsertIdentity(ctx, gen.InsertIdentityParams{UserID: a.ID, Provider: "google", Issuer: "https://accounts.google.com", Subject: "s1", CreatedAt: "2026-01-01T00:00:00Z"})
+	require.NoError(t, err)
+	idn, err := q.GetIdentity(ctx, gen.GetIdentityParams{Issuer: "https://accounts.google.com", Subject: "s1"})
+	require.NoError(t, err)
+	mine, other := "2026-10-15T10:00:00Z", "2026-10-15T10:00:01Z"
+
+	// Ubundet bruker.
+	n, err := q.SetAdminOK(ctx, gen.SetAdminOKParams{ID: idn.ID, UserID: a.ID, BoundAt: &mine})
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, n)
+
+	// Bundet med et annet tidsstempel (en annen innlogging vant).
+	nb, err := q.BindAdmin(ctx, gen.BindAdminParams{AdminBoundAt: &other, ID: a.ID})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, nb)
+	n, err = q.SetAdminOK(ctx, gen.SetAdminOKParams{ID: idn.ID, UserID: a.ID, BoundAt: &mine})
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, n)
+
+	var ok int
+	require.NoError(t, sqldb.QueryRow(`SELECT admin_ok FROM user_identities WHERE id = ?`, idn.ID).Scan(&ok))
+	assert.Equal(t, 0, ok)
 }
 
 func TestBurnMagicTokens_KeepsQuotaRows(t *testing.T) {

@@ -388,37 +388,6 @@ func TestAdminGoogle_OnlyApprovedIdentity(t *testing.T) {
 	require.Equal(t, 1, approved)
 }
 
-// Betinget UPDATE: ulike identiteter for samme bruker kan ikke begge bli godkjent.
-func TestApproveAdminIdentity_AtMostOne(t *testing.T) {
-	ctx := context.Background()
-	f := newResolveFx(t)
-	u := f.user(t, "k@x.no")
-	var idns []int64
-	for _, sub := range []string{"a", "b", "c", "d"} {
-		f.identity(t, u.ID, sub)
-	}
-	ids, _ := f.q.ListIdentitiesByUser(ctx, u.ID)
-	for _, i := range ids {
-		idns = append(idns, i.ID)
-	}
-	var wg sync.WaitGroup
-	start := make(chan struct{})
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			<-start
-			_, err := f.q.ApproveAdminIdentity(ctx, gen.ApproveAdminIdentityParams{ID: idns[i%len(idns)], UserID: u.ID, UserID_2: u.ID})
-			require.NoError(t, err)
-		}(i)
-	}
-	close(start)
-	wg.Wait()
-	var n int
-	require.NoError(t, f.db.QueryRow("SELECT COUNT(*) FROM user_identities WHERE admin_ok = 1").Scan(&n))
-	require.Equal(t, 1, n)
-}
-
 // auto_link=0: to ulike kontoer samtidig mot samme bruker, nøyaktig én kobles.
 func TestResolve_ConcurrentLinkDifferentIdentities_AutoLinkOff(t *testing.T) {
 	ctx := context.Background()
@@ -589,4 +558,49 @@ func TestCallback_AccountNotLinked(t *testing.T) {
 	require.Equal(t, "/login?error=account_not_linked&service=klarsyn", w.Header().Get("Location"))
 	require.Empty(t, w.Result().Cookies())
 	require.Len(t, f.auditEvents(t, "identity_link_denied", 1), 1)
+}
+
+// K6: nar alle identiteter er frakoblet, kobles en ny konto som forste (overgang)
+// selv med auto_link=0.
+func TestResolve_AllUnlinked_AutoLinkOffLinksAsFirst(t *testing.T) {
+	ctx := context.Background()
+	f := newResolveFx(t)
+	a := f.user(t, "a@x.no")
+	f.identity(t, a.ID, "gammel")
+	ids, err := f.q.ListIdentitiesByUser(ctx, a.ID)
+	require.NoError(t, err)
+	require.Len(t, ids, 1)
+	_, err = f.q.DeleteIdentity(ctx, gen.DeleteIdentityParams{ID: ids[0].ID, UserID: a.ID})
+	require.NoError(t, err)
+
+	u, out, err := f.r.resolve(ctx, gext("ny", "a@x.no"), linkPolicy{}, resolveMeta{})
+	require.NoError(t, err)
+	require.Equal(t, a.ID, u.ID)
+	require.Equal(t, outcomeLinked, out)
+	ev := f.auditTypes(t, "identity_linked")
+	require.Len(t, ev, 1)
+	require.Contains(t, *ev[0].Details, "transition=1")
+}
+
+// PD13: last_login skrives paa id, saa en e-postendring mellom oppslag og
+// skriving ikke gjor oppdateringen til en stille no-op.
+func TestUpdateUserLastLogin_ByID(t *testing.T) {
+	ctx := context.Background()
+	f := newResolveFx(t)
+	a := f.user(t, "a@x.no")
+	other := f.user(t, "b@x.no")
+	changed := "2026-10-15T10:00:00Z"
+	n, err := f.q.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{NewEmail: "c@x.no", EmailChangedAt: &changed, ID: a.ID, OldEmail: "a@x.no"})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+
+	// a (fra oppslaget for endringen) har fortsatt riktig id.
+	ll := "2026-10-15T11:00:00Z"
+	require.NoError(t, f.q.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &ll, ID: a.ID}))
+	var got, otherLL *string
+	require.NoError(t, f.db.QueryRow(`SELECT last_login FROM users WHERE id = ?`, a.ID).Scan(&got))
+	require.NotNil(t, got)
+	require.Equal(t, ll, *got)
+	require.NoError(t, f.db.QueryRow(`SELECT last_login FROM users WHERE id = ?`, other.ID).Scan(&otherLL))
+	require.Nil(t, otherLL)
 }

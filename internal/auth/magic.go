@@ -420,7 +420,7 @@ func (h *MagicHandlers) Redeem(w http.ResponseWriter, r *http.Request) {
 	setRefreshCookie(w, refreshToken)
 
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	if err := h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email}); err != nil {
+	if err := h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, ID: user.ID}); err != nil {
 		slog.Error("magic-link: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
 	}
 	h.aud.Log(r.Context(), audit.Event{Type: "magic_link_login", AuthMethod: "magic_link", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})

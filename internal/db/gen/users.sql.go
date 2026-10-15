@@ -359,15 +359,17 @@ func (q *Queries) UpdateUserEmail(ctx context.Context, arg UpdateUserEmailParams
 }
 
 const updateUserLastLogin = `-- name: UpdateUserLastLogin :exec
-UPDATE users SET last_login = ? WHERE email = ?
+UPDATE users SET last_login = ? WHERE id = ?
 `
 
 type UpdateUserLastLoginParams struct {
 	LastLogin *string `json:"last_login"`
-	Email     string  `json:"email"`
+	ID        int64   `json:"id"`
 }
 
+// Paa id, ikke e-post: en e-postendring mellom oppslag og skriving skal ikke
+// gjoere innloggingen til en stille no-op. (ASCII only: sqlc offset bug.)
 func (q *Queries) UpdateUserLastLogin(ctx context.Context, arg UpdateUserLastLoginParams) error {
-	_, err := q.db.ExecContext(ctx, updateUserLastLogin, arg.LastLogin, arg.Email)
+	_, err := q.db.ExecContext(ctx, updateUserLastLogin, arg.LastLogin, arg.ID)
 	return err
 }

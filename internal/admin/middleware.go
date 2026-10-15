@@ -69,6 +69,14 @@ func AdminAuthMiddleware(issuer *token.Issuer, users adminUserLookup) func(http.
 				return
 			}
 
+			// Token utstedt før brukeren fikk denne adressen kan tilhøre en tidligere
+			// eier av adressen, selv om e-posten matcher.
+			if !token.IssuedAfterEmailEpoch(claims, user) {
+				slog.Info("admin-token eldre enn e-postepoken", "user_id", user.ID)
+				respondUnauthorized(w, r, "unauthorized")
+				return
+			}
+
 			ctx := context.WithValue(r.Context(), actorCtxKey{}, user.Email)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

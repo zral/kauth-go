@@ -34,6 +34,7 @@ type AdminSessionStarter interface {
 
 type GoogleHandlers struct {
 	cfg           config.Config
+	sqlDB         *sql.DB
 	queries       *gen.Queries
 	issuer        *token.Issuer
 	refresh       *token.RefreshService
@@ -46,7 +47,7 @@ type GoogleHandlers struct {
 }
 
 func NewGoogleHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service, adminSessions AdminSessionStarter) *GoogleHandlers {
-	return &GoogleHandlers{cfg: cfg, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, adminSessions: adminSessions, resolver: newIdentityResolver(sqlDB, aud)}
+	return &GoogleHandlers{cfg: cfg, sqlDB: sqlDB, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, adminSessions: adminSessions, resolver: newIdentityResolver(sqlDB, aud)}
 }
 
 // InitiateLogin — GET /oidc-login eller /social-login
@@ -312,7 +313,7 @@ func (h *GoogleHandlers) finishCallback(w http.ResponseWriter, r *http.Request, 
 	setRefreshCookie(w, rt)
 	clearCookie(w, "oidc_state")
 	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	if err := h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, Email: user.Email}); err != nil {
+	if err := h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, ID: user.ID}); err != nil {
 		slog.Error("google: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
 	}
 	h.aud.Log(ctx, audit.Event{Type: "google_oidc_login", AuthMethod: "google", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
@@ -323,6 +324,9 @@ func (h *GoogleHandlers) finishCallback(w http.ResponseWriter, r *http.Request, 
 func (h *GoogleHandlers) auditAdminFailure(r *http.Request, svc *gen.Service, email, details string) {
 	h.aud.Log(r.Context(), audit.Event{Type: "admin_google_login", AuthMethod: "google", Email: email, ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: false, Details: details})
 }
+
+// errAdminBindRollback ruller tilbake binding når identiteten ikke lot seg godkjenne.
+var errAdminBindRollback = errors.New("admin-binding rullet tilbake")
 
 // completeAdminLogin avslutter en OIDC-flyt med admin-formål. Den slår bare opp
 // en eksisterende aktiv bruker: ingen auto-registrering og ingen tjenestepolicy
@@ -365,21 +369,28 @@ func (h *GoogleHandlers) completeAdminLogin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	// Koblinger er globale: en identitet koblet via en vanlig tjeneste er ikke
-	// dermed godkjent for admin. Første admin-innlogging godkjenner identiteten,
-	// men bare hvis brukeren ikke har en godkjent fra før (betinget UPDATE).
+	// dermed godkjent for admin. Første admin-innlogging for en ubundet bruker
+	// binder brukeren (BindAdmin, bare én gang) og godkjenner identiteten i samme
+	// transaksjon. En bundet bruker uten godkjent identitet avvises: en frakoblet
+	// admin-identitet skal ikke kunne erstattes av en ny ved neste innlogging.
 	if idn.AdminOk != 1 {
-		n, err := h.queries.ApproveAdminIdentity(ctx, gen.ApproveAdminIdentityParams{ID: idn.ID, UserID: user.ID, UserID_2: user.ID})
+		boundAt := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		res, err := bindAdminIdentity(ctx, h.sqlDB, user.ID, idn.ID, boundAt)
 		if err != nil {
-			slog.Error("google: kunne ikke godkjenne admin-identitet", "error", err)
+			slog.Error("google: kunne ikke binde admin-identitet", "error", err)
 			reject(email, "intern feil")
 			return
 		}
-		if n == 0 {
-			h.aud.Log(context.WithoutCancel(ctx), audit.Event{Type: "identity_link_denied", AuthMethod: "google", Email: user.Email, ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: false, Details: "reason=not_admin_identity"})
+		if res != adminBound {
+			reason := "not_admin_identity"
+			if res == adminIdentityVanished {
+				reason = "identity_vanished"
+			}
+			h.aud.Log(context.WithoutCancel(ctx), audit.Event{Type: "identity_link_denied", AuthMethod: "google", Email: user.Email, ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: false, Details: "reason=" + reason})
 			reject(email, "identitet ikke godkjent for admin")
 			return
 		}
-		h.aud.Log(context.WithoutCancel(ctx), audit.Event{Type: "identity_admin_approved", AuthMethod: "google", Email: user.Email, ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: true, Details: "provider=" + ext.Provider + " issuer=" + ext.Issuer})
+		h.aud.Log(context.WithoutCancel(ctx), audit.Event{Type: "identity_admin_approved", AuthMethod: "google", Email: user.Email, ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: true, Details: "provider=" + ext.Provider + " issuer=" + ext.Issuer + " bound=1"})
 	}
 	if h.adminSessions == nil {
 		slog.Error("google: admin-flyt uten AdminSessionStarter")
@@ -404,4 +415,41 @@ func googleCreds(cfg config.Config, svc *gen.Service) (id, secret string) {
 		secret = *svc.GoogleClientSecret
 	}
 	return
+}
+
+type adminBindResult int
+
+const (
+	adminBound            adminBindResult = iota
+	adminAlreadyBound                     // brukeren er bundet fra før: ny identitet godkjennes ikke
+	adminIdentityVanished                 // identiteten forsvant mellom oppslag og godkjenning
+)
+
+// bindAdminIdentity binder brukeren og godkjenner identiteten i én transaksjon.
+// Mislykkes godkjenningen, rulles bindingen tilbake så brukeren ikke står bundet
+// uten en godkjent identitet.
+func bindAdminIdentity(ctx context.Context, sqlDB *sql.DB, userID, identityID int64, boundAt string) (adminBindResult, error) {
+	res := adminAlreadyBound
+	err := token.RunInTx(ctx, sqlDB, func(q *gen.Queries) error {
+		n, err := q.BindAdmin(ctx, gen.BindAdminParams{AdminBoundAt: &boundAt, ID: userID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return nil
+		}
+		n, err = q.SetAdminOK(ctx, gen.SetAdminOKParams{ID: identityID, UserID: userID, BoundAt: &boundAt})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errAdminBindRollback
+		}
+		res = adminBound
+		return nil
+	})
+	if errors.Is(err, errAdminBindRollback) {
+		return adminIdentityVanished, nil
+	}
+	return res, err
 }

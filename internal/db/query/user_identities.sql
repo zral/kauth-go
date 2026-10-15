@@ -33,11 +33,10 @@ ON CONFLICT (issuer, subject) DO NOTHING;
 DELETE FROM user_identities WHERE id = ? AND user_id = ?
 RETURNING provider, issuer, admin_ok;
 
+-- Krever at brukerens admin_bound_at er akkurat tidsstempelet BindAdmin skrev i
+-- samme transaksjon, saa admin_ok aldri kan settes uten en vellykket binding.
+-- (ASCII only: sqlc offset bug.)
 -- name: SetAdminOK :execrows
-UPDATE user_identities SET admin_ok = 1 WHERE id = ? AND user_id = ?;
-
--- Godkjenner identiteten for admin bare hvis brukeren ikke har en godkjent fra for.
--- name: ApproveAdminIdentity :execrows
 UPDATE user_identities SET admin_ok = 1
-WHERE user_identities.id = ? AND user_identities.user_id = ?
-  AND NOT EXISTS (SELECT 1 FROM user_identities ex WHERE ex.user_id = ? AND ex.admin_ok = 1);
+WHERE user_identities.id = sqlc.arg(id) AND user_identities.user_id = sqlc.arg(user_id)
+  AND EXISTS (SELECT 1 FROM users u WHERE u.id = user_identities.user_id AND u.admin_bound_at = sqlc.arg(bound_at));

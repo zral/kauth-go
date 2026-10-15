@@ -233,3 +233,87 @@ func TestAdminAuthMiddleware_ActorInContext(t *testing.T) {
 	assert.Equal(t, "konge@example.com", actor)
 	assert.Equal(t, "", ActorFromContext(context.Background()))
 }
+
+// adminTokenAt signerer et admin-token med gitt iat, slik at testen kan plassere
+// tokenet foran eller bak e-postepoken.
+func adminTokenAt(iss *token.Issuer, email string, iat time.Time) string {
+	return iss.SignForTest(token.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer: "https://test.example.com", Subject: email,
+			Audience:  jwt.ClaimStrings{token.AdminAudience},
+			IssuedAt:  jwt.NewNumericDate(iat),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+		Email: email, Groups: []string{"konge"}, TokenUse: "admin",
+	})
+}
+
+func serveWith(t *testing.T, iss *token.Issuer, q *gen.Queries, cookie string) (int, string, bool) {
+	t.Helper()
+	called := false
+	h := AdminAuthMiddleware(iss, q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
+	req.Header.Set("Accept", "text/html")
+	req.AddCookie(&http.Cookie{Name: "admin_token", Value: cookie})
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	return rr.Code, rr.Header().Get("Location"), called
+}
+
+// K12: X (konge, a@) far en cookie, X far ny e-post og Y (konge) far a@. X sin
+// gamle cookie skal ikke gi Y sin admin-tilgang, men Y sin egen cookie virker.
+func TestAdminMiddleware_EmailReassignedBetweenKonge(t *testing.T) {
+	ctx := context.Background()
+	sqldb, q, err := db.OpenMemory()
+	require.NoError(t, err)
+	sqldb.SetMaxOpenConns(1)
+	t.Cleanup(func() { sqldb.Close() })
+	ts := func(d time.Duration) string { return time.Now().UTC().Add(d).Format("2006-01-02T15:04:05Z") }
+
+	x, err := q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@example.com", Roles: "konge", CreatedAt: ts(-time.Hour)})
+	require.NoError(t, err)
+	iss := token.NewIssuerForTest()
+	xCookie := adminTokenAt(iss, "a@example.com", time.Now().Add(-30*time.Minute))
+	code, _, called := serveWith(t, iss, q, xCookie)
+	require.Equal(t, http.StatusOK, code)
+	require.True(t, called)
+
+	changed := ts(-10 * time.Minute)
+	n, err := q.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{NewEmail: "b@example.com", EmailChangedAt: &changed, ID: x.ID, OldEmail: "a@example.com"})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@example.com", Roles: "konge", CreatedAt: ts(-10 * time.Minute)})
+	require.NoError(t, err)
+
+	code, loc, called := serveWith(t, iss, q, xCookie)
+	assert.Equal(t, http.StatusSeeOther, code)
+	assert.Equal(t, "/admin/login", loc)
+	assert.False(t, called)
+
+	yCookie := adminTokenAt(iss, "a@example.com", time.Now())
+	code, _, called = serveWith(t, iss, q, yCookie)
+	assert.Equal(t, http.StatusOK, code)
+	assert.True(t, called)
+}
+
+func TestAdminMiddleware_TokenAfterEmailChange_OK(t *testing.T) {
+	ctx := context.Background()
+	sqldb, q, err := db.OpenMemory()
+	require.NoError(t, err)
+	sqldb.SetMaxOpenConns(1)
+	t.Cleanup(func() { sqldb.Close() })
+	x, err := q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "a@example.com", Roles: "konge", CreatedAt: "2026-01-01T00:00:00Z"})
+	require.NoError(t, err)
+	changed := time.Now().UTC().Add(-time.Minute).Format("2006-01-02T15:04:05Z")
+	_, err = q.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{NewEmail: "b@example.com", EmailChangedAt: &changed, ID: x.ID, OldEmail: "a@example.com"})
+	require.NoError(t, err)
+
+	iss := token.NewIssuerForTest()
+	code, _, called := serveWith(t, iss, q, adminTokenAt(iss, "b@example.com", time.Now()))
+	assert.Equal(t, http.StatusOK, code)
+	assert.True(t, called)
+	// Token fra for endringen avvises, selv med den nye adressen i claims.
+	code, _, called = serveWith(t, iss, q, adminTokenAt(iss, "b@example.com", time.Now().Add(-time.Hour)))
+	assert.Equal(t, http.StatusSeeOther, code)
+	assert.False(t, called)
+}

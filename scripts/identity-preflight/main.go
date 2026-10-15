@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/zral/kauth-go/internal/db"
+	"github.com/zral/kauth-go/internal/token"
 	_ "modernc.org/sqlite"
 )
 
@@ -111,8 +112,9 @@ func run(path string) int {
 	fmt.Printf("admin_bound_at: %d bruker(e) bundet, %d bruker(e) med admin_ok-identitet, %d med admin_ok uten binding\n", boundUsers, adminOKUsers, adminOKUnbound)
 	fmt.Printf("konge uten admin_bound_at: %d\n", kongeUnbound)
 
-	badEpoch, err := unparseableEpochs(sqldb)
+	badEpoch, futureEpoch, err := unparseableEpochs(sqldb)
 	must(err)
+	fmt.Printf("epoker i fremtiden: %d\n", futureEpoch)
 	fmt.Printf("users.created_at/email_changed_at som ikke kan tolkes som epoke: %d\n", badEpoch)
 
 	var fkViol int
@@ -134,7 +136,7 @@ func run(path string) int {
 	}
 	// En aktiv rad uten user_id revokeres ikke lenger på e-post (D8a). Kjør
 	// backfill-UPDATE-en fra migrasjon 010 på nytt før deploy hvis tallet er over 0.
-	if boundUsers != adminOKUsers || adminOKUnbound > 0 || badEpoch > 0 || rtActiveNull > 0 {
+	if boundUsers != adminOKUsers || adminOKUnbound > 0 || badEpoch > 0 || futureEpoch > 0 || rtActiveNull > 0 {
 		fmt.Println("RESULTAT: FEIL (admin-binding, epoke eller refresh uten user_id avviker fra forventet)")
 		return 1
 	}
@@ -164,27 +166,29 @@ func guardViolations(d *sql.DB) ([]string, error) {
 	return ids, rows.Err()
 }
 
-// unparseableEpochs teller epoker som token.EmailEpoch ville avvist. Formatene
-// speiler parseren: RFC 3339 med Z og SQLite datetime() (tolket som UTC).
-func unparseableEpochs(d *sql.DB) (int, error) {
+// unparseableEpochs teller epoker som token.EmailEpoch ville avvist, og epoker i fremtiden. Formatene
+// bruker selve runtime-parseren (token.ParseEpoch), så de ikke kan gli fra hverandre.
+func unparseableEpochs(d *sql.DB) (bad, future int, err error) {
 	rows, err := d.Query(`SELECT coalesce(email_changed_at, created_at) FROM users`)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer rows.Close()
-	bad := 0
+	now := time.Now().UTC()
 	for rows.Next() {
 		var v string
 		if err := rows.Scan(&v); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
-		_, e1 := time.Parse("2006-01-02T15:04:05Z", v)
-		_, e2 := time.Parse("2006-01-02 15:04:05", v)
-		if e1 != nil && e2 != nil {
+		t, perr := token.ParseEpoch(v)
+		if perr != nil {
 			bad++
+		} else if t.After(now) {
+			// En epoke i fremtiden avviser alle tokens til tiden er inne.
+			future++
 		}
 	}
-	return bad, rows.Err()
+	return bad, future, rows.Err()
 }
 
 func must(err error) {

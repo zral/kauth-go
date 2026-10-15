@@ -9,27 +9,6 @@ import (
 	"context"
 )
 
-const approveAdminIdentity = `-- name: ApproveAdminIdentity :execrows
-UPDATE user_identities SET admin_ok = 1
-WHERE user_identities.id = ? AND user_identities.user_id = ?
-  AND NOT EXISTS (SELECT 1 FROM user_identities ex WHERE ex.user_id = ? AND ex.admin_ok = 1)
-`
-
-type ApproveAdminIdentityParams struct {
-	ID       int64 `json:"id"`
-	UserID   int64 `json:"user_id"`
-	UserID_2 int64 `json:"user_id_2"`
-}
-
-// Godkjenner identiteten for admin bare hvis brukeren ikke har en godkjent fra for.
-func (q *Queries) ApproveAdminIdentity(ctx context.Context, arg ApproveAdminIdentityParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, approveAdminIdentity, arg.ID, arg.UserID, arg.UserID_2)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const deleteIdentity = `-- name: DeleteIdentity :one
 DELETE FROM user_identities WHERE id = ? AND user_id = ?
 RETURNING provider, issuer, admin_ok
@@ -203,16 +182,22 @@ func (q *Queries) ListIdentitiesByUser(ctx context.Context, userID int64) ([]Use
 }
 
 const setAdminOK = `-- name: SetAdminOK :execrows
-UPDATE user_identities SET admin_ok = 1 WHERE id = ? AND user_id = ?
+UPDATE user_identities SET admin_ok = 1
+WHERE user_identities.id = ?1 AND user_identities.user_id = ?2
+  AND EXISTS (SELECT 1 FROM users u WHERE u.id = user_identities.user_id AND u.admin_bound_at = ?3)
 `
 
 type SetAdminOKParams struct {
-	ID     int64 `json:"id"`
-	UserID int64 `json:"user_id"`
+	ID      int64   `json:"id"`
+	UserID  int64   `json:"user_id"`
+	BoundAt *string `json:"bound_at"`
 }
 
+// Krever at brukerens admin_bound_at er akkurat tidsstempelet BindAdmin skrev i
+// samme transaksjon, saa admin_ok aldri kan settes uten en vellykket binding.
+// (ASCII only: sqlc offset bug.)
 func (q *Queries) SetAdminOK(ctx context.Context, arg SetAdminOKParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, setAdminOK, arg.ID, arg.UserID)
+	result, err := q.db.ExecContext(ctx, setAdminOK, arg.ID, arg.UserID, arg.BoundAt)
 	if err != nil {
 		return 0, err
 	}
