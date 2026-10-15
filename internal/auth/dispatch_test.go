@@ -36,12 +36,41 @@ func dispatchFixture() []gen.Service {
 	}
 }
 
+// seedUsers oppretter aktive brukere med created_at 1 t tilbake: nivå 1-5
+// slår opp brukeren og avviser tokens utstedt før e-postepoken (013 PD7).
+func seedUsers(t *testing.T, q *gen.Queries, emails ...string) {
+	t.Helper()
+	created := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	for _, e := range emails {
+		if _, err := q.CreateUser(context.Background(), gen.CreateUserParams{
+			PublicID: token.MustNewPublicID(), Email: e, Roles: "user", Orgs: "x", CreatedAt: created,
+		}); err != nil {
+			t.Fatalf("seed %s: %v", e, err)
+		}
+	}
+}
+
+// newDispatchQueries gir en in-memory database med brukerne dispatch-testene bruker.
+func newDispatchQueries(t *testing.T, emails ...string) *gen.Queries {
+	t.Helper()
+	sqldb, q, err := db.OpenMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sqldb.Close() })
+	// :memory: gir en egen tom database per tilkobling, og audit skriver fra en goroutine.
+	sqldb.SetMaxOpenConns(1)
+	seedUsers(t, q, emails...)
+	return q
+}
+
 func newDispatchHandler(t *testing.T) (*auth.DispatchHandler, *token.Issuer) {
 	t.Helper()
 	iss := token.NewIssuerForTest()
 	return &auth.DispatchHandler{
 		Registry:     service.NewRegistryForTest(dispatchFixture()),
 		Issuer:       iss,
+		Queries:      newDispatchQueries(t, "bruker@example.com", "konge@example.com", "k@example.com"),
 		DefaultSvcID: "klarsyn",
 	}, iss
 }
@@ -283,7 +312,7 @@ func TestDispatch_NoCookieLevelsUnchanged(t *testing.T) {
 // gjør at rutingen ender i /login uten at nivå 2-5 setter noe.
 func TestDispatch_RejectedCookieClearedWithEmptyRegistry(t *testing.T) {
 	_, iss := newDispatchHandler(t)
-	h := &auth.DispatchHandler{Registry: service.NewRegistryForTest(nil), Issuer: iss, DefaultSvcID: "klarsyn"}
+	h := &auth.DispatchHandler{Registry: service.NewRegistryForTest(nil), Issuer: iss, Queries: newDispatchQueries(t, "k@example.com"), DefaultSvcID: "klarsyn"}
 	at, err := iss.IssueAccess(gen.User{Email: "k@example.com", Orgs: "lars", Roles: "konge"}, dispatchFixture()[1])
 	if err != nil {
 		t.Fatal(err)
@@ -345,6 +374,7 @@ func newMismatchFixture(t *testing.T) *mismatchFixture {
 	t.Cleanup(func() { sqldb.Close() })
 	// :memory: gir en egen tom database per tilkobling, og audit skriver fra en goroutine.
 	sqldb.SetMaxOpenConns(1)
+	seedUsers(t, q, "konge@example.com")
 
 	svcs := dispatchFixture()
 	// Delt callback: klarsyn og analyse peker begge til samme URL.
@@ -365,7 +395,7 @@ func newMismatchFixture(t *testing.T) *mismatchFixture {
 
 	return &mismatchFixture{
 		h: &auth.DispatchHandler{
-			Registry: service.NewRegistryForTest(svcs), Issuer: iss,
+			Registry: service.NewRegistryForTest(svcs), Issuer: iss, Queries: q,
 			Audit: audit.NewService(q), DefaultSvcID: "klarsyn",
 		},
 		q: q, tok: tok, logs: logs,

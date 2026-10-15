@@ -238,6 +238,25 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Nivå 1-5 utsteder ingen ny legitimasjon, men sender et token videre til en
+	// tjeneste. Samme epoke- og brukerkrav som på nivå 0 gjelder derfor før noe
+	// nivå velger mål, ellers kan et token for en omtildelt adresse leve ut TTL-en.
+	if reason := h.forwardRejectReason(r, claims); reason != "" {
+		h.logDispatchAudit(r, "dispatch_subject_mismatch", claims.Email, "", "level=1-5 reason="+reason)
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	// Ferskhet håndheves ikke her: audit først, så kan håndheving vurderes når
+	// dataene viser at rutingen er ren (013 K7). iat mangler bare når sjekken
+	// over var fail-open.
+	if age, ok := tokenAge(claims, time.Now()); !ok {
+		detail := "iat=missing mode=audit"
+		if claims.IssuedAt != nil {
+			detail = fmt.Sprintf("age_s=%d mode=audit", int64(age.Seconds()))
+		}
+		h.logDispatchAuditResult(r, "dispatch_token_stale", claims.Email, "", "level=1-5 "+detail, true)
+	}
+
 	// Nivå 1: eksplisitt redirect_uri fra cookie. Cookien er usignert og kan
 	// plantes av hvem som helst via ?redirect_uri=, så bare en verdi som er
 	// eksakt lik en registrert callback_url godtas. Ingen intern-sti-gren:
@@ -335,6 +354,41 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
+// forwardRejectReason gir tom streng når tokenet kan sendes videre på nivå 1-5,
+// ellers avvisningsgrunnen. Rekkefølgen er bruker, sub, epoke (som nivå 0).
+// Oppslagsfeil som ikke er "ingen rad" gir fail-open: en DB-feil skal ikke
+// låse ute alle innloggede, og tokenet er allerede signaturverifisert.
+func (h *DispatchHandler) forwardRejectReason(r *http.Request, claims *token.Claims) string {
+	user, err := h.Queries.GetActiveUserByEmail(r.Context(), NormalizeEmail(claims.Email))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "no_active_user"
+		}
+		// Klienten koblet fra og avbrøt r.Context(). Det er ingen DB-feil, og
+		// svaret når ingen, så det skal verken logges som feil eller auditeres.
+		if errors.Is(err, context.Canceled) {
+			return ""
+		}
+		// Verken e-post eller token i loggen. Audit gjør fail-open synlig og
+		// tellbar ved siden av avvisningene.
+		slog.Error("dispatch: brukeroppslag feilet på nivå 1-5", "error", err)
+		h.logDispatchAuditResult(r, "dispatch_subject_check_skipped", claims.Email, "", "level=1-5 reason=db_error", true)
+		return ""
+	}
+	if claims.Subject != user.Email && claims.Subject != user.PublicID {
+		return "sub_mismatch"
+	}
+	// Uten iat kan epoken ikke bevises (ADN 14). kauth utsteder alltid iat, så
+	// egen grunn gjør et slikt token lett å skille fra en omtildelt adresse.
+	if claims.IssuedAt == nil {
+		return "iat_missing"
+	}
+	if !token.IssuedAfterEmailEpoch(claims, user) {
+		return "email_reassigned"
+	}
+	return ""
+}
+
 // tokenAge gir tokenets alder og om den er innenfor ferskhetskravet på nivå 0.
 // Manglende iat regnes som for gammelt: et token uten tidsstempel kan ikke
 // bevises ferskt.
@@ -383,6 +437,12 @@ func (h *DispatchHandler) auditAudMismatch(r *http.Request, claims *token.Claims
 // logDispatchAudit skriver audit uavhengig av at klienten kobler fra.
 // Verken token, rt eller cookie-verdi skal inn i details.
 func (h *DispatchHandler) logDispatchAudit(r *http.Request, typ, email, svcID, details string) {
+	h.logDispatchAuditResult(r, typ, email, svcID, details, false)
+}
+
+// logDispatchAuditResult er som logDispatchAudit, men med eksplisitt Success
+// for hendelser der tokenet likevel sendes videre (ferskhet og fail-open).
+func (h *DispatchHandler) logDispatchAuditResult(r *http.Request, typ, email, svcID, details string, success bool) {
 	if h.Audit == nil {
 		return
 	}
@@ -392,7 +452,7 @@ func (h *DispatchHandler) logDispatchAudit(r *http.Request, typ, email, svcID, d
 		ServiceID: svcID,
 		IP:        ClientIP(r),
 		UA:        r.Header.Get("User-Agent"),
-		Success:   false,
+		Success:   success,
 		Details:   details,
 	})
 }

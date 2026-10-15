@@ -60,6 +60,7 @@ func newAudFixture(t *testing.T, svcs []gen.Service) *audFixture {
 	// :memory: gir en egen tom database per tilkobling, og audit skriver fra en goroutine.
 	sqldb.SetMaxOpenConns(1)
 	iss := token.NewIssuerForTest()
+	seedUsers(t, q, "sjafor@example.com")
 	return &audFixture{
 		h: &auth.DispatchHandler{
 			Registry: service.NewRegistryForTest(svcs), Issuer: iss, Queries: q,
@@ -85,12 +86,6 @@ func newOIDCAudFixture(t *testing.T) *audFixture {
 			Active: 1, UpdatedAt: now,
 		}))
 	}
-	// Nivå 0 slår opp brukeren fra tokenets e-post (011 PD12).
-	_, err := f.q.CreateUser(ctx, gen.CreateUserParams{
-		// Eldre enn alle tokens testene utsteder: nivå 0 avviser tokens fra før e-postepoken.
-		PublicID: token.MustNewPublicID(), Email: "sjafor@example.com", Roles: "user", Orgs: "x", CreatedAt: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
-	})
-	require.NoError(t, err)
 	reg := service.NewRegistry(f.q)
 	require.NoError(t, reg.Warmup(ctx))
 	f.h.Registry = reg
