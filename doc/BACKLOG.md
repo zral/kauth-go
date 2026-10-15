@@ -15,7 +15,7 @@ Sist gjennomgått: 2026-10-15
 | 1 | **007 Akutt sikkerhetsherding** (Fase 0) | Ett-klikks kjede fra lenke til admin-overtakelse i prod (K1+K2). Tilgangskrav nulles stille ved admin-lagring (H1) | ROADMAP §2.1–2.2 |
 | 2 | Beslutning B1–B6 | Blokkerer analyse for Fase 1–2 | ROADMAP §4 |
 | 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | ✔ I prod 2026-10-14. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
-| 4 | 011 Stabil identitet (Fase 2, del 1): ✔ I prod 2026-10-15 (tag `011`). **Neste:** 012 (kobling, frakobling, recovery, e-postendring) | Må være på plass før flere leverandører kommer til | ADN 13 |
+| 4 | 011 Stabil identitet (Fase 2, del 1): ✔ I prod 2026-10-15 (tag `011`). **Neste:** 012 (frakobling og e-postendring i admin, e-postepoke på `/dispatch` nivå 0 og admin, recovery som prosedyre) | Må være på plass før flere leverandører kommer til | ADN 13, ADN 14 |
 
 ## Senere
 
@@ -69,9 +69,12 @@ Sist gjennomgått: 2026-10-15
 | klarsyn-web: godta `sub` som UUID, match på `email` første gang | Som over. analyse.klarsyn.net logger inn som `klarsyn` | ADN 13 |
 | univers/authgate: godta `sub` som UUID, match på `email` første gang | Som over | ADN 13 |
 | wspekto: godta `sub` som UUID, match på `email` første gang | Repoet avklares først. Som over | ADN 13 |
-| 012: eksplisitt kobling og frakobling, recovery, e-postendring | Uten dette avvises en bruker med `auto_link=0` som bytter leverandørkonto. Ved e-postendring må `/dispatch` nivå 0 også sjekke mot e-postomtildeling for `email`-tjenester | ROADMAP Fase 2, ADN 13 |
-| 012: stram inn overgangsunntaket for `auto_link=0` | I dag kobles brukerens første identitet på e-post. Vurder f.eks. fersk magic link som krav | ADN 13 |
-| Admin-vinduet: `konge`-brukere som ikke har logget inn i admin med Google etter deploy | Godkjenn (én innlogging) eller fjern `konge`. Til da kan en kobling via en tjeneste med `auto_link=1` bli første admin-identitet (011 F3, PD8b) | ADN 13 |
-| `RevokeUserRefreshTokens`: fjern `OR email` | Sikkerhetsnett til alle aktive rader har `user_id` (011 F2, security S1) | ADN 13 |
-| `user_id`-FK uten `ON DELETE`, og trigger mot `UPDATE` av `public_id` | Avgjøres når GDPR-sletting kommer (011 F1) | ADN 13 |
+| Eksplisitt kobling av en ny leverandørkonto etter fersk innlogging med en eksisterende identitet | **Utsatt til første tjeneste med `auto_link=0` / Fase 5** (012-analysen). Uten den avvises en bruker med `auto_link=0` som bytter konto (`account_not_linked`). Til da kobler admin fra den gamle identiteten (012), og neste konto kobles som første | ROADMAP Fase 2/5, ADN 13, ADN 14 |
+| Selvbetjening: kontoside der brukeren selv ser, kobler og kobler fra identiteter | **Utsatt til første tjeneste med `auto_link=0` / Fase 5.** kauth har ingen brukerrettet kontoside. 012 gjør dette admin-styrt | ROADMAP Fase 5, ADN 14 |
+| Varsel til gammel adresse ved e-postendring i admin | Admin går god for ny adresse (012 PB1). Et varsel, ikke en bekreftelse, ville gjort en kontoovertakelse via admin synlig for brukeren. Krever e-posttjenesten i admin og treffes av Brevo-allowlisten | ADN 14 |
+| Knapp for en annen `konge` til å åpne admin-bindingen (`admin_bound_at`) | 012 bruker en driftsprosedyre (`sqlite3`). Kommer hvis prosedyren brukes mer enn sjelden (012 D3d) | ADN 14 |
+| Stram inn overgangsunntaket for `auto_link=0` | **Utsatt til første tjeneste med `auto_link=0` / Fase 5** (012-analysen). I dag kobles brukerens første identitet på e-post. Vurder f.eks. fersk magic link som krav. Merk at frakobling av alle identitetene (012) åpner unntaket igjen for brukeren | ADN 13, ADN 14 |
+| Admin-vinduet: `konge`-brukere som ikke har logget inn i admin med Google etter deploy | Godkjenn (én innlogging) eller fjern `konge`. Til da kan en kobling via en tjeneste med `auto_link=1` bli første admin-identitet (011 F3, PD8b). 012 endrer ikke dette (PB2), men etter første godkjenning lukkes vinduet for godt (`admin_bound_at`) | ADN 13, ADN 14 |
+| ~~`RevokeUserRefreshTokens`: fjern `OR email`~~ | Tas i 012 (K13). 0 rader uten `user_id` i prod 2026-10-15, ingen backfill | ADN 14 |
+| `user_id`-FK uten `ON DELETE`, og trigger mot `UPDATE` av `public_id` | **Utsatt til GDPR-sletting** (ikke 012). Avgjøres når sletting av brukere kommer (011 F1) | ADN 13 |
 | `err.Error()` i admin-feilmeldinger ved opprettelse og lagring av tjeneste (`services.go`) | Fantes fra før. Internfeil kan lekke til admin-siden (011 F4, security) | ROADMAP M7 |

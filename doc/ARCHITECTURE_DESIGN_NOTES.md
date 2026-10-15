@@ -173,3 +173,29 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - Ingen identiteter kan fylles inn ved migrering, siden kauth aldri har lagret `sub`/`oid`. De oppstår ved første innlogging etter deploy.
 - Rollback til tag `010` er mulig uten `Down`, siden alle nye kolonner har default eller er nullable (verifiseres i røyktesten). Den gamle binæren lager refresh-rader og koder uten `user_id`. Disse avvises ved ny deploy av 011, med mindre backfill-`UPDATE`-ene fra migrasjonen kjøres på nytt først.
 - `user_id` har ingen `ON DELETE`, og det finnes ingen trigger mot `UPDATE` av `public_id`. Begge avgjøres når GDPR-sletting kommer (BACKLOG).
+
+---
+
+## ADN 14 — Admin kan koble fra identiteter og endre e-post. Admin-bindingen nullstilles aldri av appen, og tokens som bærer e-post, godtas bare etter brukerens e-postepoke (2026-10-15)
+
+**Status:** Foreslått (2026-10-15)
+→ Analyse: [doc/features/012_AN_ADMIN_IDENTITET.md](features/012_AN_ADMIN_IDENTITET.md)
+
+**Beslutning:**
+1. **Frakobling er sletting** av én rad i `user_identities`, betinget på både identitets-ID og bruker-ID. Det er et ryddeverktøy og ingen blokkering: med `auto_link=1` kobles kontoen igjen ved neste innlogging hvis e-posten stemmer. En kompromittert konto håndteres ved å deaktivere brukeren. Frakobling revokerer alle refresh-familiene til brukeren i samme transaksjon. Når alle identitetene er koblet fra, gjelder overgangsunntaket for `auto_link=0` igjen. Det er bevisst.
+2. **Admin-bindingen lukkes én gang for alle.** `users.admin_bound_at` settes ved første admin-godkjenning, med en betinget `UPDATE … WHERE admin_bound_at IS NULL`, og `admin_ok` settes bare når den traff. Appen nullstiller aldri feltet, heller ikke ved frakobling. En ny admin-identitet etter tap av den gamle krever en driftsprosedyre (`sqlite3`, logget). Erstatter `NOT EXISTS`-regelen fra ADN 13 pkt 3, som ville åpnet vinduet igjen da den godkjente raden forsvant.
+3. **Admin endrer e-post og går god for adressen.** Det sendes ingen bekreftelseslenke. Endringen, `email_changed_at`, revokering av alle familiene til brukeren og brenning av ubrukte magic-tokens for gammel og ny adresse skjer i én transaksjon. Unikheten håndheves av indeksen i selve `UPDATE`-en. Identitetene (`issuer`, `subject`) og `user_identities.email` (sist sett hos leverandøren) røres ikke. Magic link følger `users.email` (ADN 13 pkt 4).
+4. **E-postepoke.** Et signert token som identifiserer brukeren med e-post (access-token for `email`-tjenester på `/dispatch` nivå 0, og admin-tokenet), godtas bare når `iat ≥ coalesce(email_changed_at, created_at)` for brukeren oppslaget fant. En adresse som gis videre, gir dermed aldri den nye eieren den gamle eierens token. Ingen fallback. Tokenformatet er uendret.
+5. **`RevokeUserRefreshTokens` revokerer bare på `user_id`.** E-postgrenen ville truffet familiene til en tidligere eier av adressen etter en e-postendring. Rader uten `user_id` er døde fra før (ADN 13 pkt 6). Prod har 0 slike.
+6. **Recovery er en dokumentert prosedyre** i `doc/FEATURES.md`, uten egen mekanisme. Selvbetjening og eksplisitt kobling venter til en tjeneste trenger `auto_link=0` (Fase 5).
+
+**Begrunnelse:** 011 gjorde e-post til et attributt, men ga ingen måte å endre det på, og ingen måte å fjerne en kobling på, uten å gå i DB-en. Begge er nødvendige når en ansatt slutter og adressen gis videre. Lærdommen fra 011 er at globale koblinger må tenkes gjennom mot admin fra start. Derfor bindes admin-tilgangen til en tilstand på brukeren som bare kan lukkes, og ikke til om en bestemt rad finnes. E-postepoken lukker 011 F2 security M1 med én regel for begge stedene der kauth stoler på en e-post i et signert token, uten å endre claims for klientene (011 P3).
+
+**Konsekvens:**
+- E-postendring er en kontraktsendring per bruker for alle `email`-tjenester (i dag alle 7). Klienten ser en ny `sub`. Admin-skjemaet advarer, og endringen skal avtales med tjenesteeieren. Varig løsning er `sub_format=id` per klient (ADN 13).
+- Access-tokens med gammel `sub` lever ut TTL hos klientene (ADN 12 pkt 4).
+- Akseptert: en `konge` kan ta over en annen konto ved å endre e-posten til en adresse hen kontrollerer. Det følger av at admin går god for adressen. Audit med `actor=`, gammel og ny adresse. Varsel til den gamle adressen er utsatt (BACKLOG).
+- En `konge` som endrer sin egen e-post, logges ut av admin. En `konge` som mister sin godkjente Google-konto, beholder admin via magic link.
+- 012 endrer ikke admin-vinduet for `konge`-brukere uten godkjent identitet (3 i prod). De bindes ved første admin-Google-innlogging som før.
+- Én additiv migrasjon (goose 11, to nullable kolonner). Rollback til tag `011` går, men da gjelder `NOT EXISTS`-regelen igjen.
+- Restvindu på ett sekund i epokesammenligningen (`≥` på sekundnivå), fordi auto-registrering og innlogging skjer i samme sekund.
