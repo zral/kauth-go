@@ -72,7 +72,6 @@ Sist gjennomgått: 2026-10-15
 | 012: eksplisitt kobling og frakobling, recovery, e-postendring | Uten dette avvises en bruker med `auto_link=0` som bytter leverandørkonto. Ved e-postendring må `/dispatch` nivå 0 også sjekke mot e-postomtildeling for `email`-tjenester | ROADMAP Fase 2, ADN 13 |
 | 012: stram inn overgangsunntaket for `auto_link=0` | I dag kobles brukerens første identitet på e-post. Vurder f.eks. fersk magic link som krav | ADN 13 |
 | Admin-vinduet: `konge`-brukere som ikke har logget inn i admin med Google etter deploy | Godkjenn (én innlogging) eller fjern `konge`. Til da kan en kobling via en tjeneste med `auto_link=1` bli første admin-identitet (011 F3, PD8b) | ADN 13 |
-| Verifiser at MSA-`oid` er lik i de to Entra-appene (`bcc08970-…`, `6e5fb3bf-…`) | Er den ulik, får samme person to identiteter. Sjekkes med samme MS-konto på klarsyn og spekto etter deploy | ADN 13 |
 | `RevokeUserRefreshTokens`: fjern `OR email` | Sikkerhetsnett til alle aktive rader har `user_id` (011 F2, security S1) | ADN 13 |
 | `user_id`-FK uten `ON DELETE`, og trigger mot `UPDATE` av `public_id` | Avgjøres når GDPR-sletting kommer (011 F1) | ADN 13 |
 | `err.Error()` i admin-feilmeldinger ved opprettelse og lagring av tjeneste (`services.go`) | Fantes fra før. Internfeil kan lekke til admin-siden (011 F4, security) | ROADMAP M7 |
