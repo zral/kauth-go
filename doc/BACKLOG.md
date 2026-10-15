@@ -4,7 +4,7 @@
 
 **Hva dette ikke er:** en beslutningslogg. *Hvorfor* noe er bestemt står i [ARCHITECTURE_DESIGN_NOTES.md](ARCHITECTURE_DESIGN_NOTES.md). Faser, risikoregister og estimater står i [ROADMAP.md](ROADMAP.md). Ved motstrid er ADN-en fasit.
 
-Sist gjennomgått: 2026-10-14
+Sist gjennomgått: 2026-10-15
 
 ---
 
@@ -15,7 +15,7 @@ Sist gjennomgått: 2026-10-14
 | 1 | **007 Akutt sikkerhetsherding** (Fase 0) | Ett-klikks kjede fra lenke til admin-overtakelse i prod (K1+K2). Tilgangskrav nulles stille ved admin-lagring (H1) | ROADMAP §2.1–2.2 |
 | 2 | Beslutning B1–B6 | Blokkerer analyse for Fase 1–2 | ROADMAP §4 |
 | 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | ✔ I prod 2026-10-14. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
-| 4 | **Neste:** 011–012 Stabil identitet (Fase 2) | Må være på plass før flere leverandører kommer til | ADN 7 |
+| 4 | 011 Stabil identitet (Fase 2, del 1): levert i branch `feature/011-stabil-identitet`, venter eval og deploy. **Neste:** 012 (kobling, frakobling, recovery, e-postendring) | Må være på plass før flere leverandører kommer til | ADN 13 |
 
 ## Senere
 
@@ -64,4 +64,15 @@ Sist gjennomgått: 2026-10-14
 | `DoLogin` 403/401 avslører om passord er på per tjeneste | Tjeneste-ID-er er ikke hemmelige, så lav alvorlighet. Tas sammen med B4 (010 F2, security S1) | ROADMAP B4 |
 | Den ubrukte `analyse`-raden i `services` | analyse.klarsyn.net logger inn som `klarsyn`, så raden brukes ikke. Fjern eller dokumenter (010) | ADN 12 |
 | Kvote-DoS på magic link | 3 bestillinger per 15 min blokkerer offerets magic link. Akseptert risiko, som før 009 (009 F3 S3s) | ADN 11 |
-| Unicode-bretting for eldre ikke-ASCII-rader | Go `ToLower` bretter Unicode, SQLite `lower()` bare ASCII. En eldre rad som `Ø@x.no` finnes ikke med `ø@x.no` og gir duplikatkonto. 0 slike rader i prod. Løses med varig identitet i Fase 2 (009 F9 S1) | ROADMAP M11, ADN 7 |
+| vinkjeller: godta `sub` som UUID, match eksisterende brukere på `email` første gang | Kontrakten for `sub_format=id`. Når klienten er klar, bytter kauth `sub_format` for tjenesten. Ingenting skjer før | ADN 13 |
+| pov (spekto, spekto-dev): godta `sub` som UUID, match på `email` første gang | Som over. Begge tjeneste-ID-ene | ADN 13 |
+| klarsyn-web: godta `sub` som UUID, match på `email` første gang | Som over. analyse.klarsyn.net logger inn som `klarsyn` | ADN 13 |
+| univers/authgate: godta `sub` som UUID, match på `email` første gang | Som over | ADN 13 |
+| wspekto: godta `sub` som UUID, match på `email` første gang | Repoet avklares først. Som over | ADN 13 |
+| 012: eksplisitt kobling og frakobling, recovery, e-postendring | Uten dette avvises en bruker med `auto_link=0` som bytter leverandørkonto. Ved e-postendring må `/dispatch` nivå 0 også sjekke mot e-postomtildeling for `email`-tjenester | ROADMAP Fase 2, ADN 13 |
+| 012: stram inn overgangsunntaket for `auto_link=0` | I dag kobles brukerens første identitet på e-post. Vurder f.eks. fersk magic link som krav | ADN 13 |
+| Admin-vinduet: `konge`-brukere som ikke har logget inn i admin med Google etter deploy | Godkjenn (én innlogging) eller fjern `konge`. Til da kan en kobling via en tjeneste med `auto_link=1` bli første admin-identitet (011 F3, PD8b) | ADN 13 |
+| Verifiser at MSA-`oid` er lik i de to Entra-appene (`bcc08970-…`, `6e5fb3bf-…`) | Er den ulik, får samme person to identiteter. Sjekkes med samme MS-konto på klarsyn og spekto etter deploy | ADN 13 |
+| `RevokeUserRefreshTokens`: fjern `OR email` | Sikkerhetsnett til alle aktive rader har `user_id` (011 F2, security S1) | ADN 13 |
+| `user_id`-FK uten `ON DELETE`, og trigger mot `UPDATE` av `public_id` | Avgjøres når GDPR-sletting kommer (011 F1) | ADN 13 |
+| `err.Error()` i admin-feilmeldinger ved opprettelse og lagring av tjeneste (`services.go`) | Fantes fra før. Internfeil kan lekke til admin-siden (011 F4, security) | ROADMAP M7 |

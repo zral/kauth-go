@@ -5,6 +5,7 @@ En komplett oversikt over hva kauth gjør og hvordan. README-en gir overordnet m
 ## Innholdsfortegnelse
 
 - [Innloggingsmetoder](#innloggingsmetoder)
+- [Identitetsmodell](#identitetsmodell)
 - [Token-håndtering](#token-håndtering)
 - [OIDC authorization_code + PKCE](#oidc-authorization_code--pkce)
 - [Multi-tenant arkitektur](#multi-tenant-arkitektur)
@@ -50,12 +51,34 @@ Bruker `/common/oauth2/v2.0`-endepunktet for å akseptere både personlige Micro
 
 Deaktivert som standard. bcrypt-hashet, lagres i `password_hash`. OIDC-only-brukere får sentinel-verdien `"n/a"` i feltet. Se argumentet for passordfri-default i hoved-README.
 
+## Identitetsmodell
+
+E-post er et attributt på brukeren, ikke identiteten (ADN 13). Identiteten til en føderert innlogging er `(issuer, subject)` i tabellen `user_identities`, unik og knyttet til én bruker.
+
+- **Google:** issuer er alltid `https://accounts.google.com` (også når `iss` kommer uten `https://`), subject er `sub`.
+- **Microsoft:** issuer er `https://login.microsoftonline.com/{tid}/v2.0` med `tid` i små bokstaver, subject er `oid` i små bokstaver. `oid` er påkrevd og må være en GUID, ellers avvises innloggingen (`microsoft_oidc_rejected reason=missing_oid`). `sub` brukes ikke, fordi den er parvis per Entra-app.
+- **Magic link og passord** lagrer ingen identitet. De bruker `users.email`.
+- **`public_id`:** hver bruker har en UUID v4 (`users.public_id`, `crypto/rand`) som aldri endres.
+
+**Oppslag ved innlogging:**
+1. Er identiteten kjent, brukes brukeren den er koblet til, også når e-posten i claimet er en annen. Er brukeren deaktivert, avvises innloggingen. Endret e-post hos leverandøren endrer ikke `users.email`, men gir audit `identity_email_mismatch`.
+2. Ellers slås brukeren opp på normalisert, leverandørbekreftet e-post, og identiteten kobles (`identity_linked`, `details` `provider= issuer= transition=`). `transition=1` betyr brukerens første identitet.
+3. Finnes ingen bruker, registreres en ny hvis tjenesten har `auto_register`. Bruker og identitet opprettes i én transaksjon.
+
+**`auto_link` (per tjeneste, default 1):** med 1 kobles en ukjent identitet til brukeren med samme e-post. Med 0 kobles bare brukerens første fødererte identitet (overgangsunntaket fra e-postmodellen), og koblingen er en atomisk betinget `INSERT`. Har brukeren allerede en identitet, avvises en ny konto med `?error=account_not_linked` på innloggingssiden (nb/en/de) og audit `identity_link_denied`. Teksten sier ingenting om hvilken konto som finnes. Koblinger er globale for brukeren, så `auto_link=0` beskytter bare innlogging via den tjenesten. Eksplisitt kobling, frakobling og recovery kommer i 012.
+
+**Admin-godkjent identitet:** admin-innlogging med Google registrerer aldri brukere og kobler bare brukerens første identitet (overgangsunntaket, som `auto_link=0`). Den godtar bare en identitet med `user_identities.admin_ok = 1`. Første admin-Google-innlogging etter deploy, etter `konge`-sjekken, godkjenner identiteten (`identity_admin_approved`) hvis brukeren ikke har noen godkjent identitet fra før. Andre kontoer avvises deretter (`identity_link_denied reason=not_admin_identity`), også de som er koblet via en tjeneste med `auto_link=1`. Admin via magic link er uendret.
+
+**`sub_format` (per tjeneste, `email` eller `id`):** styrer hva `sub` er i access- og id_token. `email` (default) er som før. `id` gir brukerens `public_id`. `email`-claimet er med i begge tilfeller. Bytte er en kontraktsendring for klienten, som må godta `sub` som UUID og matche eksisterende brukere på `email` første gang. Admin-token og `/api/me` er uendret.
+
+**Sesjoner:** refresh-tokens og autorisasjonskoder har `user_id`. Rotasjon arver det, og innløsning slår opp brukeren på `user_id`. En rad uten `user_id` behandles som inaktiv bruker, uten e-post-fallback: refresh revokerer familien (`user_inactive`), og kodeinnløsning gir `invalid_grant`.
+
 ## Token-håndtering
 
 ### JWT (access token)
 
 RS256-signerte. Claims:
-- `sub` — brukerens e-post
+- `sub` — brukerens e-post (`sub_format=email`, default) eller brukerens `public_id` (`sub_format=id`), se Identitetsmodell
 - `email`
 - `org` — array av tenant-slugs fra `users.orgs` (CSV-felt i DB, splittes ved utstedelse)
 - `groups` — array fra `users.roles`
@@ -271,6 +294,8 @@ Cache invalideres ved Create/Update i admin-panelet.
 
 `auth_google`, `auth_microsoft`, `auth_magic_link`, `auth_password`, `auto_register`, `enforce_org`, `is_default`, `active`. Login-templaten viser kun knapper for aktive metoder.
 
+I tillegg `sub_format` (`email`/`id`) og `auto_link` (0/1), se Identitetsmodell. Skjemaet i admin tar vare på lagret verdi når feltet mangler i innsendingen, og avviser ukjent `sub_format`.
+
 ### Default-org og krav-rolle
 
 - `default_org` — CSV-streng som blir `users.orgs` for auto-registrerte brukere
@@ -278,7 +303,7 @@ Cache invalideres ved Create/Update i admin-panelet.
 - `require_role` — tjenesten krever at brukeren har denne rollen i `roles` for å logge inn
 - `enforce_org` — krever at brukeren har `default_org` i `orgs`
 
-Håndheves av `checkPolicy` (`internal/auth/google.go`), kalt fra alle fire
+Håndheves av `checkPolicy` (`internal/auth/identity.go`), kalt fra alle fire
 login-veiene (Google, Microsoft, magic-link, passord) samt fra
 `authorization_code`-grant i `/token`. Matcher CSV-feltet nøyaktig per felt
 (splittet på komma, ikke substring) — `require_role="admin"` godtar ikke en
@@ -299,7 +324,7 @@ Skrivehandlingene (`user_created`, `user_edited`, `user_deactivated`, `service_c
 
 - `GET /admin/login` — viking-door bakgrunn, primær Google-knapp + sekundær e-postlenke
 - `GET /admin/google-init` — starter vanlig Google-flyt mot samme `/callback` (samme URL som er hvitlistet hos Google), men med admin-formål i den HMAC-signerte state-parameteren. Formålet hentes aldri fra query, cookie eller `redirect_uri`, og flyten går ikke innom `/dispatch`
-- `GET /admin/google-callback` — utgått inngang som ikke setter cookie og bare redirecter til `/admin/login`. Admin-sesjonen settes i OIDC-callbacken (`/callback`) når signert state har admin-formål: aktiv bruker, eksakt rolle `konge` og e-post bekreftet av Google
+- `GET /admin/google-callback` — utgått inngang som ikke setter cookie og bare redirecter til `/admin/login`. Admin-sesjonen settes i OIDC-callbacken (`/callback`) når signert state har admin-formål: aktiv bruker, eksakt rolle `konge`, e-post bekreftet av Google og en admin-godkjent identitet (se Identitetsmodell)
 - `POST /admin/login` — magic-link-flyt for admin (samme origin kreves, anti-enumeration, 200ms floor, samme kvote som tjenestene: 3 per 15 min, formål `admin`)
 - `GET /admin/verify?token=<X>` — viser bekreftelsesside (norsk, ingen e-post, ingen JavaScript). Endrer ikke tokenet
 - `POST /admin/verify` — samme origin kreves. Konsumerer magic-token, sjekker konge-rolle og setter `admin_token`
@@ -308,7 +333,7 @@ Skrivehandlingene (`user_created`, `user_edited`, `user_deactivated`, `service_c
 
 - `GET /admin/users` — pagineret liste med søk på e-post og org-filter
 - `GET /admin/users/new` + `POST /admin/users` — opprett bruker (valgfritt bcrypt-passord eller `n/a`)
-- `GET /admin/users/{id}/edit` + `POST /admin/users/{id}` — rediger navn, roller, organisasjoner
+- `GET /admin/users/{id}/edit` + `POST /admin/users/{id}` — rediger navn, roller, organisasjoner. Siden viser `public_id` og en skrivebeskyttet tabell over identiteter: leverandør, tenant (Microsoft), avkortet subject, e-post sist sett, koblet, sist brukt og om identiteten er godkjent for admin
 - `POST /admin/users/{id}/deactivate` — settes `deactivated_at = now()`
 - `GET /admin/users/export` — CSV-eksport (formula-injection-beskyttet)
 
@@ -321,7 +346,7 @@ Skrivehandlingene (`user_created`, `user_edited`, `user_deactivated`, `service_c
 
 - `GET /admin/services` — liste alle tjenester
 - `GET /admin/services/new` + `POST /admin/services` — opprett ny
-- `GET /admin/services/{id}/edit` + `POST /admin/services/{id}` — full redigering inkludert fil-upload for bakgrunnsbilde
+- `GET /admin/services/{id}/edit` + `POST /admin/services/{id}` — full redigering inkludert fil-upload for bakgrunnsbilde, `sub_format` og `auto_link`. `sub_format` og `auto_link` auditeres i `service_created`/`service_edited`
 - Cache-invalidering trigger automatisk etter mutasjon
 
 ### Bakgrunnsbilde-upload
@@ -373,9 +398,9 @@ En skjult `<img>` eller `<iframe>` på en cross-site side kan altså ikke logge 
 
 ### E-postnormalisering
 
-E-post normaliseres (`NormalizeEmail`: trim + små bokstaver) ved bestilling av magic link og i Google- og Microsoft-flyten, og nye brukere lagres normalisert. Oppslag på brukere sammenligner `lower(trim(email))` på begge sider, og en unik indeks (`idx_users_email_norm`) hindrer duplikater som bare skiller seg i store/små bokstaver. Kolliderer en auto-registrering med en eksisterende (f.eks. deaktivert) bruker, avvises innloggingen med `reason=user_conflict`, uten ny rad.
+E-post normaliseres (`NormalizeEmail`: trim + små bokstaver, Unicode-bretting i Go) ved bestilling av magic link og i Google-, Microsoft-, passord- og admin-flyten, og nye brukere lagres normalisert. Oppslag på brukere er eksakt (`email = ?`) mot den normaliserte verdien, og en unik indeks (`idx_users_email_norm`) hindrer duplikater. `Ø@x.no` og `ø@x.no` finner dermed samme bruker. Kolliderer en auto-registrering med en eksisterende (f.eks. deaktivert) bruker, avvises innloggingen med `reason=user_conflict`, uten ny rad.
 
-**Merknad:** Go `ToLower` bretter Unicode, mens SQLite `lower()` bare bretter ASCII. En eldre rad med ikke-ASCII store bokstaver (f.eks. `Ø@x.no`) finnes derfor ikke ved oppslag med `ø@x.no`, og gir en duplikatkonto (ikke kontoovertakelse). Prod har ingen slike rader. Løses med varig identitet (Fase 2).
+Migrasjon 010 har en vakt som stopper oppstart (og ruller tilbake) hvis noen `users.email` ikke er normalisert eller inneholder ikke-ASCII-tegn, i stedet for å slå sammen brukere. E-post er ikke identiteten (se Identitetsmodell).
 
 ### Audit-isolering
 
@@ -423,7 +448,7 @@ Refresh-token-cookien settes parallelt på auth-domenet med `SameSite=None` slik
 | 4 | `org`-claim mot `services.default_org` | Bakoverkompatibilitet |
 | 5 | Default-tjenestens `callback_url` | Siste utvei |
 
-**Nivå 0 (OIDC `authorization_code`).** Med `oidc_authz`-cookie lager `/dispatch` en kode bare hvis tokenets `aud` inneholder `client_id` og tokenet er ferskt: `iat` høyst 120 s gammelt, med 30 s slingring for `iat` i framtiden. Manglende `iat` eller `aud` avvises. Ved avvik går brukeren til `/login`, ingen kode lages, og audit logger `dispatch_aud_mismatch` (`level=0`) eller `dispatch_token_stale`. Ferskhetskravet begrenser hva et lekket eller gammelt token kan brukes til via `/dispatch?token=`.
+**Nivå 0 (OIDC `authorization_code`).** Med `oidc_authz`-cookie lager `/dispatch` en kode bare hvis tokenets `aud` inneholder `client_id` og tokenet er ferskt: `iat` høyst 120 s gammelt, med 30 s slingring for `iat` i framtiden. Manglende `iat` eller `aud` avvises. Ved avvik går brukeren til `/login`, ingen kode lages, og audit logger `dispatch_aud_mismatch` (`level=0`) eller `dispatch_token_stale`. Ferskhetskravet begrenser hva et lekket eller gammelt token kan brukes til via `/dispatch?token=`. Tokenets `sub` må tilhøre brukeren: for `sub_format=id`-tjenester slås brukeren opp på `public_id` og normalisert `email`-claim må stemme, for `email`-tjenester på normalisert e-post. Avvik gir `/login` og audit `dispatch_subject_mismatch`. Koden lagres med `user_id`.
 
 **Nivå 1–5 auditeres, men avvises ikke.** Er målet verken i tokenets `aud` eller deler callback med `aud`-tjenesten (klarsyn og analyse), logges `dispatch_aud_mismatch` med `level=N`, `token_aud` og `target`. Rutingen er uendret. Auditen skal vise om noen klient trenger avvisning før den slås på (se BACKLOG).
 
@@ -506,15 +531,19 @@ Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
 
 ## Datamodell
 
-Seks SQLite-tabeller med WAL og foreign keys på:
+Syv SQLite-tabeller med WAL og foreign keys på:
 
 ### `services`
 
-Tjeneste-konfigurasjon. 30+ kolonner inkludert id, display_name, domain, auth_host, callback_url, branding (theme, accent_color, logo_html, bg_image, bg_css), auth-flagg (auth_google/microsoft/magic_link/password), OAuth-creds (per-service), TTL-er, default_role/org, is_default, active, updated_at. `id` er også `client_id` for en tjeneste som bruker OIDC `authorization_code`-flyten — ingen egen klient-tabell.
+Tjeneste-konfigurasjon. 30+ kolonner inkludert id, sub_format, auto_link, display_name, domain, auth_host, callback_url, branding (theme, accent_color, logo_html, bg_image, bg_css), auth-flagg (auth_google/microsoft/magic_link/password), OAuth-creds (per-service), TTL-er, default_role/org, is_default, active, updated_at. `id` er også `client_id` for en tjeneste som bruker OIDC `authorization_code`-flyten — ingen egen klient-tabell.
 
 ### `users`
 
-Brukerkontoer: id, email (unik på `lower(trim(email))`), password_hash, name, roles (CSV), orgs (CSV), created_at, last_login, deactivated_at.
+Brukerkontoer: id, public_id (UUID v4, unik, uforanderlig), email (unik på `lower(trim(email))`), password_hash, name, roles (CSV), orgs (CSV), created_at, last_login, deactivated_at.
+
+### `user_identities`
+
+Eksterne identiteter: id, user_id (FK til `users`, `ON DELETE CASCADE`), provider (`google`/`microsoft`), issuer, subject, email (sist sett), admin_ok, created_at, last_used_at. Unik på `(issuer, subject)`.
 
 ### `magic_tokens`
 
@@ -522,7 +551,7 @@ Engangs-innloggingstokens: id, token (SHA-256-hex), email (normalisert), service
 
 ### `refresh_tokens`
 
-Opake refresh-tokens med family-tracking: id, token_hash (sha256 hex, CHECK length=64), email, service_id, family_id, parent_id, created_at, expires_at, family_expires_at, used, revoked, revoked_reason, ip_address, user_agent.
+Opake refresh-tokens med family-tracking: id, token_hash (sha256 hex, CHECK length=64), email, user_id (nullable, FK til `users`), service_id, family_id, parent_id, created_at, expires_at, family_expires_at, used, revoked, revoked_reason, ip_address, user_agent.
 
 ### `audit_events`
 
@@ -530,7 +559,7 @@ Hendelseslogg: id, event_type, auth_method, email, service_id, ip_address, user_
 
 ### `authorization_codes`
 
-Engangs-autorisasjonskoder for OIDC `authorization_code`-flyten: id, code (SHA-256-hex), family_id (settes ved innløsning), service_id, email, redirect_uri, scope, nonce, code_challenge, code_challenge_method, created_at, expires_at, used.
+Engangs-autorisasjonskoder for OIDC `authorization_code`-flyten: id, code (SHA-256-hex), family_id (settes ved innløsning), service_id, email, user_id (nullable, FK til `users`), redirect_uri, scope, nonce, code_challenge, code_challenge_method, created_at, expires_at, used.
 
 ## Drift og kjøremiljø
 

@@ -60,8 +60,9 @@ CREATE TABLE user_identities (
 );
 CREATE INDEX idx_user_identities_user ON user_identities(user_id);
 
--- Nullable: rader uten e-postmatch (slettede brukere) beholder user_id NULL
--- og faller tilbake til e-post i token-laget.
+-- Nullable: rader uten e-postmatch (slettede brukere) beholder user_id NULL.
+-- Token-laget avviser dem i stedet for å slå opp på e-post, ellers kunne en
+-- gammel familie blitt bundet til en senere konto med samme adresse.
 ALTER TABLE refresh_tokens ADD COLUMN user_id INTEGER REFERENCES users(id);
 ALTER TABLE authorization_codes ADD COLUMN user_id INTEGER REFERENCES users(id);
 
