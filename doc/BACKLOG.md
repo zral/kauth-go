@@ -80,4 +80,5 @@ Sist gjennomgått: 2026-10-15
 | `err.Error()` i admin-feilmeldinger ved opprettelse og lagring av tjeneste (`services.go`) | Fantes fra før. Internfeil kan lekke til admin-siden (011 F4, security) | ROADMAP M7 |
 | Flytt `identityViews` og `shortSubject` fra `users.go` til `users_identity.go` | Hører sammen med frakoblingen. Utsatt for å holde diffen i 012 liten (012 PD13 (1)) | ADN 14 |
 | Trekk ut `dispatchOIDC` fra `/dispatch` | Nivå 0-sjekkene vokser (epoken i 012). Uttrekket gjøres separat, med egne tester (012 PD13 (2)) | ADN 14 |
+| Vurder e-postepoke også på `/dispatch` nivå 1–5 | Nivå 1–5 sender bare innehaverens eget access-token videre til callback, uten ny legitimasjon. Refresh-familien er revokert ved e-postendring, men et gammelt access-token kan fortsatt videresendes innenfor TTL (eval 012 T4.2/T4.3/T4.5). Ekstra forsvarslag, ikke et hull (ADN 12: access-tokens kan ikke trekkes tilbake) | ADN 14 |
 | Felles sjekk av unik-brudd | `isUniqueViolation` i `internal/auth/uniqueviolation.go`, og samme sjekk (kode 2067/1555) inline i `internal/admin/users.go` og `internal/admin/users_email.go`. Samles i én hjelper (012 F3) | ADN 14 |
