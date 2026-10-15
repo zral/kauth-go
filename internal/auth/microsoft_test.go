@@ -25,6 +25,7 @@ import (
 const (
 	msOrgTid  = "11111111-2222-3333-4444-555555555555"
 	msTestNon = "nonce-abc"
+	msTestOID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 )
 
 func msIss(tid string) string { return "https://login.microsoftonline.com/" + tid + "/v2.0" }
@@ -32,7 +33,7 @@ func msIss(tid string) string { return "https://login.microsoftonline.com/" + ti
 func msBool(b bool) *bool { return &b }
 
 func msValid(tid string, edov *bool) msClaims {
-	return msClaims{Email: "a@example.com", Tid: tid, Iss: msIss(tid), Nonce: msTestNon, XmsEdov: edov}
+	return msClaims{Email: "a@example.com", Oid: msTestOID, Tid: tid, Iss: msIss(tid), Nonce: msTestNon, XmsEdov: edov}
 }
 
 func TestValidateMSClaims(t *testing.T) {
@@ -142,7 +143,7 @@ func newMSFixture(t *testing.T, autoRegister int64, requireRole *string) (*msFix
 		AuthMicrosoft: 1, AutoRegister: autoRegister, RequireRole: requireRole, Active: 1}
 	cfg := config.Config{OIDCStateSecret: []byte("test-secret-32bytes-padded-here!")}
 	aud := audit.NewService(q)
-	h := NewMicrosoftHandlers(cfg, q, token.NewIssuerForTest(), token.NewRefreshService(sqldb, aud), service.NewRegistryForTest([]gen.Service{svc}), aud)
+	h := NewMicrosoftHandlers(cfg, sqldb, q, token.NewIssuerForTest(), token.NewRefreshService(sqldb, aud), service.NewRegistryForTest([]gen.Service{svc}), aud)
 	return &msFixture{h: h, q: q}, &svc
 }
 
@@ -382,23 +383,4 @@ func TestMSFinish_CreateConflict_LoginFailedAudited(t *testing.T) {
 	ev := msAuditEvents(t, f, "microsoft_oidc_rejected", 1)
 	require.NotNil(t, ev[0].Details)
 	assert.Equal(t, "reason=user_conflict", *ev[0].Details)
-}
-
-func TestMSFindOrCreate_OnlyUniqueViolationIsConflict(t *testing.T) {
-	f, svc := newMSFixture(t, 1, nil)
-	u, err := f.q.CreateUser(context.Background(), gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: "x@case.no", Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
-	require.NoError(t, err)
-	now := "2026-01-02T00:00:00Z"
-	_, err = f.q.DeactivateUser(context.Background(), gen.DeactivateUserParams{DeactivatedAt: &now, ID: u.ID})
-	require.NoError(t, err)
-
-	_, err = f.h.findOrCreate(context.Background(), "x@case.no", "X", svc)
-	require.ErrorIs(t, err, errUserConflict)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = f.h.findOrCreate(ctx, "ny@case.no", "N", svc)
-	require.Error(t, err)
-	require.NotErrorIs(t, err, errUserConflict)
-	require.NotErrorIs(t, err, errNoAccount)
 }

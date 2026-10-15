@@ -53,6 +53,9 @@ CREATE TABLE user_identities (
     email        TEXT,
     created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     last_used_at TEXT,
+    -- Admin-godkjent identitet: koblinger er globale, så bare en eksplisitt
+    -- godkjent identitet gir admin-innlogging (maks én per bruker).
+    admin_ok     INTEGER NOT NULL DEFAULT 0 CHECK (admin_ok IN (0,1)),
     UNIQUE (issuer, subject)
 );
 CREATE INDEX idx_user_identities_user ON user_identities(user_id);

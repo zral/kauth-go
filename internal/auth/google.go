@@ -3,8 +3,8 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -40,12 +40,13 @@ type GoogleHandlers struct {
 	reg           *service.Registry
 	aud           *audit.Service
 	adminSessions AdminSessionStarter
+	resolver      *identityResolver
 	// endpoint overstyres bare i tester, så kodeutveksling ikke treffer Google.
 	endpoint *oauth2.Endpoint
 }
 
-func NewGoogleHandlers(cfg config.Config, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service, adminSessions AdminSessionStarter) *GoogleHandlers {
-	return &GoogleHandlers{cfg: cfg, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, adminSessions: adminSessions}
+func NewGoogleHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service, adminSessions AdminSessionStarter) *GoogleHandlers {
+	return &GoogleHandlers{cfg: cfg, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, adminSessions: adminSessions, resolver: newIdentityResolver(sqlDB, aud)}
 }
 
 // InitiateLogin — GET /oidc-login eller /social-login
@@ -213,9 +214,27 @@ func (h *GoogleHandlers) tokenEndpoint() oauth2.Endpoint {
 
 // googleClaims er det vi trenger fra Googles id_token.
 type googleClaims struct {
+	Sub           string `json:"sub"`
+	Iss           string `json:"iss"`
 	Email         string `json:"email"`
 	Name          string `json:"name"`
 	EmailVerified bool   `json:"email_verified"`
+}
+
+// googleIssuer er den kanoniske issuer-verdien lagret på identiteter (PD6).
+const googleIssuer = "https://accounts.google.com"
+
+// googleIdentity bygger identiteten fra verifiserte claims. Google sender iss
+// både med og uten https://; begge normaliseres, så samme person aldri får to
+// identiteter. ok=false betyr manglende sub eller fremmed issuer.
+func googleIdentity(cl googleClaims, email string) (externalIdentity, bool) {
+	if cl.Iss != googleIssuer && cl.Iss != "accounts.google.com" {
+		return externalIdentity{}, false
+	}
+	if strings.TrimSpace(cl.Sub) == "" {
+		return externalIdentity{}, false
+	}
+	return externalIdentity{Provider: "google", Issuer: googleIssuer, Subject: cl.Sub, Email: email, Name: cl.Name}, true
 }
 
 // finishCallback er alt som skjer etter at id_token er verifisert og claims er
@@ -244,20 +263,35 @@ func (h *GoogleHandlers) finishCallback(w http.ResponseWriter, r *http.Request, 
 		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
 		return
 	}
-	user, err := h.findOrCreate(ctx, email, cl.Name, svc)
+	if email == "" {
+		h.auditRejected(r, svc, email, "reason=email_missing")
+		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		return
+	}
+	ext, ok := googleIdentity(cl, email)
+	if !ok {
+		h.auditRejected(r, svc, email, "reason=missing_sub")
+		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		return
+	}
+	user, _, err := h.resolver.resolve(ctx, ext, policyFor(svc), resolveMeta{ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent")})
 	if err != nil {
-		if errors.Is(err, errNoAccount) {
+		switch {
+		case errors.Is(err, errNoAccount):
 			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-			return
-		}
-		if errors.Is(err, errUserConflict) {
+		case errors.Is(err, errUserInactive):
+			h.auditRejected(r, svc, email, "reason=user_inactive")
+			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
+		case errors.Is(err, errLinkDenied):
+			redirectLoginError(w, r, svc.ID, errCodeAccountNotLinked)
+		case errors.Is(err, errUserConflict):
 			slog.Warn("google: auto-registrering kolliderte med eksisterende rad", "service", svc.ID, "error", err)
 			h.auditRejected(r, svc, email, "reason=user_conflict")
 			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-			return
+		default:
+			slog.Error("google: kunne ikke finne eller opprette bruker", "error", err)
+			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
 		}
-		slog.Error("google: kunne ikke opprette bruker", "error", err)
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
 		return
 	}
 	if err := checkPolicy(user, svc); err != nil {
@@ -311,10 +345,41 @@ func (h *GoogleHandlers) completeAdminLogin(w http.ResponseWriter, r *http.Reque
 		reject(email, "e-post ikke verifisert av Google")
 		return
 	}
-	user, err := h.queries.GetActiveUserByEmail(ctx, email)
-	if err != nil || !csvHasExact(user.Roles, "konge") {
-		reject(email, "ukjent, deaktivert eller mangler konge-rolle")
+	ext, ok := googleIdentity(cl, email)
+	if !ok {
+		reject(email, "mangler sub eller ugyldig issuer i id_token")
 		return
+	}
+	// Ingen auto-kobling utover overgangen og ingen auto-registrering (PD8):
+	// admin-tilgang skal ikke følge av at noen kontrollerer en adresse hos Google.
+	user, idn, _, err := h.resolver.resolveIdentity(ctx, ext, linkPolicy{}, resolveMeta{ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent")})
+	if err != nil {
+		if !errors.Is(err, errNoAccount) && !errors.Is(err, errUserInactive) && !errors.Is(err, errLinkDenied) {
+			slog.Error("google: admin-oppslag feilet", "error", err)
+		}
+		reject(email, "ukjent, deaktivert eller ikke koblet")
+		return
+	}
+	if !csvHasExact(user.Roles, "konge") {
+		reject(email, "mangler konge-rolle")
+		return
+	}
+	// Koblinger er globale: en identitet koblet via en vanlig tjeneste er ikke
+	// dermed godkjent for admin. Første admin-innlogging godkjenner identiteten,
+	// men bare hvis brukeren ikke har en godkjent fra før (betinget UPDATE).
+	if idn.AdminOk != 1 {
+		n, err := h.queries.ApproveAdminIdentity(ctx, gen.ApproveAdminIdentityParams{ID: idn.ID, UserID: user.ID, UserID_2: user.ID})
+		if err != nil {
+			slog.Error("google: kunne ikke godkjenne admin-identitet", "error", err)
+			reject(email, "intern feil")
+			return
+		}
+		if n == 0 {
+			h.aud.Log(context.WithoutCancel(ctx), audit.Event{Type: "identity_link_denied", AuthMethod: "google", Email: user.Email, ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: false, Details: "reason=not_admin_identity"})
+			reject(email, "identitet ikke godkjent for admin")
+			return
+		}
+		h.aud.Log(context.WithoutCancel(ctx), audit.Event{Type: "identity_admin_approved", AuthMethod: "google", Email: user.Email, ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: true, Details: "provider=" + ext.Provider + " issuer=" + ext.Issuer})
 	}
 	if h.adminSessions == nil {
 		slog.Error("google: admin-flyt uten AdminSessionStarter")
@@ -327,76 +392,6 @@ func (h *GoogleHandlers) completeAdminLogin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
-}
-
-// errNoAccount skiller «ingen konto» fra tekniske feil i findOrCreate.
-var errNoAccount = errors.New("ingen konto")
-
-// errUserConflict betyr at CreateUser feilet ved auto-registrering.
-var errUserConflict = errors.New("bruker kunne ikke opprettes")
-
-func (h *GoogleHandlers) findOrCreate(ctx context.Context, email, name string, svc *gen.Service) (gen.User, error) {
-	u, err := h.queries.GetActiveUserByEmail(ctx, email)
-	if err == nil {
-		return u, nil
-	}
-	if svc.AutoRegister != 1 {
-		return gen.User{}, errNoAccount
-	}
-	role := "user"
-	if svc.DefaultRole != nil && *svc.DefaultRole != "" {
-		role = *svc.DefaultRole
-	}
-	org := ""
-	if svc.DefaultOrg != nil {
-		org = *svc.DefaultOrg
-	}
-	// Feil her avbryter før noen rad skrives: en bruker uten ekte public_id
-	// skal aldri opprettes.
-	publicID, err := token.NewPublicID()
-	if err != nil {
-		return gen.User{}, fmt.Errorf("auto-registrering: %w", err)
-	}
-	u, err = h.queries.CreateUser(ctx, gen.CreateUserParams{
-		PublicID:  publicID,
-		Email:     email,
-		Name:      &name,
-		Roles:     role,
-		Orgs:      org,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	})
-	if err != nil {
-		if !isUniqueViolation(err) {
-			return gen.User{}, err
-		}
-		// Typisk en deaktivert konto med samme normaliserte e-post (unik
-		// indeks). Det er et avslag, og kontoen skal ikke gjenopplives ved ny innlogging.
-		return gen.User{}, fmt.Errorf("%w: %v", errUserConflict, err)
-	}
-	return u, nil
-}
-
-// csvHasExact sjekker om en kommaseparert streng inneholder value som et
-// eget felt — ikke som substring. "sysadmin" eller "admin-readonly" skal
-// IKKE matche kravet "admin"; kun et felt der hele trimmede verdien er
-// nøyaktig "admin" teller.
-func csvHasExact(csv, value string) bool {
-	for _, part := range strings.Split(csv, ",") {
-		if strings.TrimSpace(part) == value {
-			return true
-		}
-	}
-	return false
-}
-
-func checkPolicy(user gen.User, svc *gen.Service) error {
-	if svc.RequireRole != nil && *svc.RequireRole != "" && !csvHasExact(user.Roles, *svc.RequireRole) {
-		return fmt.Errorf("mangler rolle")
-	}
-	if svc.EnforceOrg == 1 && svc.DefaultOrg != nil && !csvHasExact(user.Orgs, *svc.DefaultOrg) {
-		return fmt.Errorf("ikke autorisert")
-	}
-	return nil
 }
 
 func googleCreds(cfg config.Config, svc *gen.Service) (id, secret string) {

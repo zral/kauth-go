@@ -16,6 +16,9 @@ const (
 	// errCodeAccessDenied brukes både for «ingen konto» og policybrudd, så de
 	// ikke kan skilles fra hverandre utenfra.
 	errCodeAccessDenied loginErrorCode = "access_denied"
+	// errCodeAccountNotLinked: e-posten tilhører en bruker som allerede er koblet
+	// til en annen leverandørkonto, og tjenesten har auto_link av (011).
+	errCodeAccountNotLinked loginErrorCode = "account_not_linked"
 )
 
 // redirectLoginError sender brukeren tilbake til /login med en kjent feilkode.

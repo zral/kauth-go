@@ -16,3 +16,18 @@ SELECT EXISTS (SELECT 1 FROM user_identities WHERE user_id = ?);
 
 -- name: ListIdentitiesByUser :many
 SELECT * FROM user_identities WHERE user_id = ? ORDER BY created_at, id;
+
+-- Betinget kobling for auto_link=0: INSERT og vilkaret (brukeren har ingen
+-- identitet) er ett atomisk utsagn, ellers kan to ulike kontoer koble seg
+-- samtidig. (ASCII only: sqlc offset bug.)
+-- name: LinkIdentityIfFirst :execrows
+INSERT INTO user_identities (user_id, provider, issuer, subject, email, created_at, last_used_at)
+SELECT ?, ?, ?, ?, ?, ?, ?
+WHERE NOT EXISTS (SELECT 1 FROM user_identities ex WHERE ex.user_id = ?)
+ON CONFLICT (issuer, subject) DO NOTHING;
+
+-- Godkjenner identiteten for admin bare hvis brukeren ikke har en godkjent fra for.
+-- name: ApproveAdminIdentity :execrows
+UPDATE user_identities SET admin_ok = 1
+WHERE user_identities.id = ? AND user_identities.user_id = ?
+  AND NOT EXISTS (SELECT 1 FROM user_identities ex WHERE ex.user_id = ? AND ex.admin_ok = 1);

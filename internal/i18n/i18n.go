@@ -58,6 +58,11 @@ type Strings struct {
 	ErrExpiredLink     string
 	ErrTooManyRequests string
 	ErrNoAccount       string
+	// ErrAccountNotLinked: Google- eller Microsoft-kontoen er ikke koblet til
+	// brukeren. Sier ikke hvilken konto som finnes.
+	ErrAccountNotLinked string
+	// ErrAccountNotLinkedMagic er samme tekst for tjenester der e-postlenke er en mulig vei videre.
+	ErrAccountNotLinkedMagic string
 	// ErrLoginFailed vises for login_failed og for alle ukjente ?error=-verdier.
 	ErrLoginFailed string
 	// ErrInternal vises ved serverfeil. Bevisst generisk — den spesifikke

@@ -68,7 +68,7 @@ func TestCallback_InvalidOrExpiredState_GenericRedirect(t *testing.T) {
 		})
 
 		t.Run("microsoft "+name, func(t *testing.T) {
-			ms := NewMicrosoftHandlers(f.cfg, f.q, f.issuer, nil, service.NewRegistryForTest(f.svcs), nil)
+			ms := NewMicrosoftHandlers(f.cfg, nil, f.q, f.issuer, nil, service.NewRegistryForTest(f.svcs), nil)
 			req := httptest.NewRequest(http.MethodGet, "/ms-callback?state="+st+"&code=x", nil)
 			req.AddCookie(&http.Cookie{Name: "ms_state", Value: st})
 			rr := httptest.NewRecorder()

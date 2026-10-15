@@ -68,6 +68,12 @@ func SQLCodeTxRunner(sqlDB *sql.DB) CodeTxRunner {
 	}
 }
 
+// RunInTx lar andre pakker (identitetsresolveren) bruke samme transaksjonsmønster
+// som refresh-rotasjonen, i stedet for en kopi som kan drive fra.
+func RunInTx(ctx context.Context, sqlDB *sql.DB, fn func(q *gen.Queries) error) error {
+	return inTx(ctx, sqlDB, fn)
+}
+
 func inTx(ctx context.Context, sqlDB *sql.DB, fn func(q *gen.Queries) error) (err error) {
 	tx, err := sqlDB.BeginTx(ctx, nil)
 	if err != nil {

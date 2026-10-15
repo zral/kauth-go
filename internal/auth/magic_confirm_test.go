@@ -268,3 +268,45 @@ func TestMagicConfirmPost_CrossOrigin_403_NotConsumed(t *testing.T) {
 		require.Equal(t, 0, f.used(t, "tok1"), name)
 	}
 }
+
+// T2 (011 F2): magic-auto-registrering setter public_id og lagrer ingen identitet.
+func TestMagicRedeem_AutoRegister_SetsPublicIDNoIdentity(t *testing.T) {
+	f := newConfirmFixture(t)
+	now := time.Now().UTC()
+	svc := "svcauto"
+	require.NoError(t, seedMagic(context.Background(), f.q, gen.InsertMagicTokenLimitedParams{
+		TokenHash: token.HashOpaque("tokny"), Purpose: token.MagicPurposeService, Email: "helt-ny@example.com",
+		ServiceID: &svc, CreatedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(time.Minute).Format(time.RFC3339),
+	}))
+	w := f.do(http.MethodPost, "/magic-login/tokny", sameOrigin)
+	require.Equal(t, http.StatusFound, w.Code)
+	u, err := f.q.GetUserByEmail(context.Background(), "helt-ny@example.com")
+	require.NoError(t, err)
+	require.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`, u.PublicID)
+	ids, err := f.q.ListIdentitiesByUser(context.Background(), u.ID)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+}
+
+// K12/T3: Ø i token-e-posten finner brukeren lagret med ø.
+func TestMagicRedeem_NonASCIIEmailFindsUser(t *testing.T) {
+	f := newConfirmFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	u, err := f.q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: auth.NormalizeEmail("ø@x.no"), Roles: "user", CreatedAt: now.Format(time.RFC3339)})
+	require.NoError(t, err)
+	svc := "svca"
+	require.NoError(t, seedMagic(ctx, f.q, gen.InsertMagicTokenLimitedParams{
+		TokenHash: token.HashOpaque("tokø"), Purpose: token.MagicPurposeService, Email: "Ø@X.NO",
+		ServiceID: &svc, CreatedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(time.Minute).Format(time.RFC3339),
+	}))
+	before, _ := f.q.CountUsers(ctx)
+	w := f.do(http.MethodPost, "/magic-login/tokø", sameOrigin)
+	require.Equal(t, http.StatusFound, w.Code)
+	require.Contains(t, w.Header().Get("Location"), "/dispatch?")
+	after, _ := f.q.CountUsers(ctx)
+	require.Equal(t, before, after)
+	got, err := f.q.GetUserByEmail(ctx, auth.NormalizeEmail("ø@x.no"))
+	require.NoError(t, err)
+	require.Equal(t, u.ID, got.ID)
+}

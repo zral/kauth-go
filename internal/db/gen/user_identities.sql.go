@@ -9,8 +9,29 @@ import (
 	"context"
 )
 
+const approveAdminIdentity = `-- name: ApproveAdminIdentity :execrows
+UPDATE user_identities SET admin_ok = 1
+WHERE user_identities.id = ? AND user_identities.user_id = ?
+  AND NOT EXISTS (SELECT 1 FROM user_identities ex WHERE ex.user_id = ? AND ex.admin_ok = 1)
+`
+
+type ApproveAdminIdentityParams struct {
+	ID       int64 `json:"id"`
+	UserID   int64 `json:"user_id"`
+	UserID_2 int64 `json:"user_id_2"`
+}
+
+// Godkjenner identiteten for admin bare hvis brukeren ikke har en godkjent fra for.
+func (q *Queries) ApproveAdminIdentity(ctx context.Context, arg ApproveAdminIdentityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, approveAdminIdentity, arg.ID, arg.UserID, arg.UserID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getIdentity = `-- name: GetIdentity :one
-SELECT id, user_id, provider, issuer, subject, email, created_at, last_used_at FROM user_identities WHERE issuer = ? AND subject = ?
+SELECT id, user_id, provider, issuer, subject, email, created_at, last_used_at, admin_ok FROM user_identities WHERE issuer = ? AND subject = ?
 `
 
 type GetIdentityParams struct {
@@ -30,6 +51,7 @@ func (q *Queries) GetIdentity(ctx context.Context, arg GetIdentityParams) (UserI
 		&i.Email,
 		&i.CreatedAt,
 		&i.LastUsedAt,
+		&i.AdminOk,
 	)
 	return i, err
 }
@@ -79,8 +101,46 @@ func (q *Queries) InsertIdentity(ctx context.Context, arg InsertIdentityParams) 
 	return result.RowsAffected()
 }
 
+const linkIdentityIfFirst = `-- name: LinkIdentityIfFirst :execrows
+INSERT INTO user_identities (user_id, provider, issuer, subject, email, created_at, last_used_at)
+SELECT ?, ?, ?, ?, ?, ?, ?
+WHERE NOT EXISTS (SELECT 1 FROM user_identities ex WHERE ex.user_id = ?)
+ON CONFLICT (issuer, subject) DO NOTHING
+`
+
+type LinkIdentityIfFirstParams struct {
+	UserID     int64   `json:"user_id"`
+	Provider   string  `json:"provider"`
+	Issuer     string  `json:"issuer"`
+	Subject    string  `json:"subject"`
+	Email      *string `json:"email"`
+	CreatedAt  string  `json:"created_at"`
+	LastUsedAt *string `json:"last_used_at"`
+	UserID_2   int64   `json:"user_id_2"`
+}
+
+// Betinget kobling for auto_link=0: INSERT og vilkaret (brukeren har ingen
+// identitet) er ett atomisk utsagn, ellers kan to ulike kontoer koble seg
+// samtidig. (ASCII only: sqlc offset bug.)
+func (q *Queries) LinkIdentityIfFirst(ctx context.Context, arg LinkIdentityIfFirstParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, linkIdentityIfFirst,
+		arg.UserID,
+		arg.Provider,
+		arg.Issuer,
+		arg.Subject,
+		arg.Email,
+		arg.CreatedAt,
+		arg.LastUsedAt,
+		arg.UserID_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const listIdentitiesByUser = `-- name: ListIdentitiesByUser :many
-SELECT id, user_id, provider, issuer, subject, email, created_at, last_used_at FROM user_identities WHERE user_id = ? ORDER BY created_at, id
+SELECT id, user_id, provider, issuer, subject, email, created_at, last_used_at, admin_ok FROM user_identities WHERE user_id = ? ORDER BY created_at, id
 `
 
 func (q *Queries) ListIdentitiesByUser(ctx context.Context, userID int64) ([]UserIdentity, error) {
@@ -101,6 +161,7 @@ func (q *Queries) ListIdentitiesByUser(ctx context.Context, userID int64) ([]Use
 			&i.Email,
 			&i.CreatedAt,
 			&i.LastUsedAt,
+			&i.AdminOk,
 		); err != nil {
 			return nil, err
 		}

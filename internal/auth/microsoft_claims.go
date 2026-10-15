@@ -22,6 +22,7 @@ const (
 	msReasonEdov         = "edov"
 	msReasonEmailMissing = "email_missing"
 	msReasonClaimsDecode = "claims_decode"
+	msReasonMissingOID   = "missing_oid"
 )
 
 // msClaims er det vi leser fra et signaturverifisert MS-id_token.
@@ -31,6 +32,7 @@ type msClaims struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
 	Tid   string `json:"tid"`
+	Oid   string `json:"oid"`
 	Iss   string `json:"iss"`
 	Nonce string `json:"nonce"`
 	// XmsEdov settes fra XmsEdovRaw etter dekoding (parseEdov). Microsoft

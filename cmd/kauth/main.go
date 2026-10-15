@@ -76,8 +76,8 @@ func main() {
 	loginH := &auth.LoginHandler{Registry: registry, Templates: tmpl, PasswordLoginEnabled: cfg.PasswordLoginEnabled}
 	magicH := auth.NewMagicHandlers(*cfg, queries, mailSvc, issuer, refreshSvc, registry, auditSvc, tmpl)
 	adminSessions := admin.NewSessionStarter(issuer, auditSvc, cfg.AdminTokenTTL)
-	googleH := auth.NewGoogleHandlers(*cfg, queries, issuer, refreshSvc, registry, auditSvc, adminSessions)
-	msH := auth.NewMicrosoftHandlers(*cfg, queries, issuer, refreshSvc, registry, auditSvc)
+	googleH := auth.NewGoogleHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc, adminSessions)
+	msH := auth.NewMicrosoftHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc)
 	passwordH := auth.NewPasswordHandlers(queries, issuer, refreshSvc, registry, auditSvc, cfg.PasswordLoginEnabled).WithCORSOrigins(cfg.CORSOrigins)
 	dispatchH := &auth.DispatchHandler{Registry: registry, Issuer: issuer, Queries: queries, Audit: auditSvc, Refresh: refreshSvc, DefaultSvcID: ""}
 	meH := &auth.MeHandler{Issuer: issuer, CookieName: "auth_token"}

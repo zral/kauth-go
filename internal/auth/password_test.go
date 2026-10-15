@@ -174,3 +174,33 @@ func TestPasswordLogin_ResolvesLikeSocial(t *testing.T) {
 	require.Equal(t, "forelder", servedAs("finnes-ikke"))
 	require.Equal(t, "forelder", servedAs(""))
 }
+
+// K12/T3: Ø i skjemaet finner brukeren lagret med ø.
+func TestPasswordLogin_NonASCIIEmailFindsUser(t *testing.T) {
+	ctx := context.Background()
+	sqldb, q, err := db.OpenMemory()
+	require.NoError(t, err)
+	t.Cleanup(func() { sqldb.Close() })
+	now := time.Now().UTC().Format(time.RFC3339)
+	require.NoError(t, q.CreateService(ctx, gen.CreateServiceParams{
+		ID: "svc", DisplayName: "svc", Domain: "svc.test", CallbackUrl: "https://svc.test/cb", Theme: "light",
+		AccentColor: "#000", EmailFromName: "svc", AuthPassword: 1, IsDefault: 1,
+		JwtCookieName: "auth_token", AccessTokenTtl: "PT15M", Active: 1, UpdatedAt: now,
+	}))
+	hb, err := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.MinCost)
+	require.NoError(t, err)
+	hash := string(hb)
+	_, err = q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: auth.NormalizeEmail("ø@x.no"), PasswordHash: &hash, Roles: "user", CreatedAt: now})
+	require.NoError(t, err)
+	aud := audit.NewNoop()
+	reg := service.NewRegistry(q)
+	require.NoError(t, reg.Warmup(ctx))
+	h := auth.NewPasswordHandlers(q, token.NewIssuerForTest(), token.NewRefreshService(sqldb, aud), reg, aud, true)
+
+	form := url.Values{"email": {"Ø@X.NO"}, "password": {"hunter2"}, "service_id": {"svc"}}
+	req := httptest.NewRequest(http.MethodPost, "/do-login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.DoLogin(w, req)
+	require.Equal(t, http.StatusFound, w.Code)
+}

@@ -2,12 +2,14 @@ package auth
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -27,18 +29,19 @@ import (
 const msAuthBase = "https://login.microsoftonline.com/common/oauth2/v2.0"
 
 type MicrosoftHandlers struct {
-	cfg     config.Config
-	queries *gen.Queries
-	issuer  *token.Issuer
-	refresh *token.RefreshService
-	reg     *service.Registry
-	aud     *audit.Service
+	cfg      config.Config
+	queries  *gen.Queries
+	issuer   *token.Issuer
+	refresh  *token.RefreshService
+	reg      *service.Registry
+	aud      *audit.Service
+	resolver *identityResolver
 	// fetchClaims er en testsøm; nil betyr ekte kodeutveksling og verifisering.
 	fetchClaims func(ctx context.Context, cfg *oauth2.Config, code string) (msClaims, error)
 }
 
-func NewMicrosoftHandlers(cfg config.Config, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service) *MicrosoftHandlers {
-	return &MicrosoftHandlers{cfg: cfg, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud}
+func NewMicrosoftHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service) *MicrosoftHandlers {
+	return &MicrosoftHandlers{cfg: cfg, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, resolver: newIdentityResolver(sqlDB, aud)}
 }
 
 // InitiateLogin — GET /ms-oidc-login
@@ -189,20 +192,32 @@ func (h *MicrosoftHandlers) finishCallback(w http.ResponseWriter, r *http.Reques
 		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
 		return
 	}
-	user, err := h.findOrCreate(ctx, email, cl.Name, svc)
+	// oid er subject (PD6). Uten gyldig oid finnes ingen stabil nøkkel, og
+	// da faller vi ikke tilbake til e-post.
+	if !msGUIDPattern.MatchString(cl.Oid) {
+		h.auditRejected(r, svc, cl.Tid, msReasonMissingOID)
+		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		return
+	}
+	ext := externalIdentity{Provider: "microsoft", Issuer: "https://login.microsoftonline.com/" + strings.ToLower(cl.Tid) + "/v2.0", Subject: strings.ToLower(cl.Oid), Email: email, Name: cl.Name}
+	user, _, err := h.resolver.resolve(ctx, ext, policyFor(svc), resolveMeta{ServiceID: svc.ID, IP: ip, UA: ua})
 	if err != nil {
-		if errors.Is(err, errNoAccount) {
+		switch {
+		case errors.Is(err, errNoAccount):
 			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-			return
-		}
-		if errors.Is(err, errUserConflict) {
+		case errors.Is(err, errUserInactive):
+			h.auditRejectedUser(r, svc, email, "user_inactive")
+			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
+		case errors.Is(err, errLinkDenied):
+			redirectLoginError(w, r, svc.ID, errCodeAccountNotLinked)
+		case errors.Is(err, errUserConflict):
 			slog.Warn("microsoft: auto-registrering kolliderte med eksisterende rad", "service", svc.ID, "error", err)
 			h.auditRejectedUser(r, svc, email, "user_conflict")
 			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-			return
+		default:
+			slog.Error("microsoft: kunne ikke finne eller opprette bruker", "error", err)
+			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
 		}
-		slog.Error("microsoft: kunne ikke opprette bruker", "error", err)
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
 		return
 	}
 	if err := checkPolicy(user, svc); err != nil {
@@ -229,46 +244,6 @@ func (h *MicrosoftHandlers) finishCallback(w http.ResponseWriter, r *http.Reques
 	}
 	h.aud.Log(ctx, audit.Event{Type: "microsoft_oidc_login", AuthMethod: "microsoft", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
 	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt)+"&service="+url.QueryEscape(svc.ID), http.StatusFound)
-}
-
-func (h *MicrosoftHandlers) findOrCreate(ctx context.Context, email, name string, svc *gen.Service) (gen.User, error) {
-	u, err := h.queries.GetActiveUserByEmail(ctx, email)
-	if err == nil {
-		return u, nil
-	}
-	if svc.AutoRegister != 1 {
-		return gen.User{}, errNoAccount
-	}
-	role := "user"
-	if svc.DefaultRole != nil && *svc.DefaultRole != "" {
-		role = *svc.DefaultRole
-	}
-	org := ""
-	if svc.DefaultOrg != nil {
-		org = *svc.DefaultOrg
-	}
-	// Feil her avbryter før noen rad skrives: en bruker uten ekte public_id
-	// skal aldri opprettes.
-	publicID, err := token.NewPublicID()
-	if err != nil {
-		return gen.User{}, fmt.Errorf("auto-registrering: %w", err)
-	}
-	u, err = h.queries.CreateUser(ctx, gen.CreateUserParams{
-		PublicID:  publicID,
-		Email:     email,
-		Name:      &name,
-		Roles:     role,
-		Orgs:      org,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	})
-	if err != nil {
-		if !isUniqueViolation(err) {
-			return gen.User{}, err
-		}
-		// Typisk en deaktivert konto med samme normaliserte e-post (unik indeks).
-		return gen.User{}, fmt.Errorf("%w: %v", errUserConflict, err)
-	}
-	return u, nil
 }
 
 func msCreds(cfg config.Config, svc *gen.Service) (id, secret string) {

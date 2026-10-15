@@ -123,4 +123,5 @@ type UserIdentity struct {
 	Email      *string `json:"email"`
 	CreatedAt  string  `json:"created_at"`
 	LastUsedAt *string `json:"last_used_at"`
+	AdminOk    int64   `json:"admin_ok"`
 }
