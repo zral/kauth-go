@@ -149,7 +149,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 13 — Identitet er en kobling `(issuer, subject)` til en intern bruker med opak `public_id`. E-post er et attributt (2026-10-14)
 
-**Status:** Analysert og bygget i `feature/011-stabil-identitet`. Venter deploy (tag `011`)
+**Status:** Implementert (2026-10-15). I prod som tag `011`
 → Analyse: [doc/features/011_AN_STABIL_IDENTITET.md](features/011_AN_STABIL_IDENTITET.md) · Plan: [doc/features/011_PL_STABIL_IDENTITET.md](features/011_PL_STABIL_IDENTITET.md)
 
 **Beslutning:**

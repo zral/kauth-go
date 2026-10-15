@@ -15,7 +15,7 @@ Sist gjennomgått: 2026-10-15
 | 1 | **007 Akutt sikkerhetsherding** (Fase 0) | Ett-klikks kjede fra lenke til admin-overtakelse i prod (K1+K2). Tilgangskrav nulles stille ved admin-lagring (H1) | ROADMAP §2.1–2.2 |
 | 2 | Beslutning B1–B6 | Blokkerer analyse for Fase 1–2 | ROADMAP §4 |
 | 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | ✔ I prod 2026-10-14. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
-| 4 | 011 Stabil identitet (Fase 2, del 1): levert i branch `feature/011-stabil-identitet`, venter eval og deploy. **Neste:** 012 (kobling, frakobling, recovery, e-postendring) | Må være på plass før flere leverandører kommer til | ADN 13 |
+| 4 | 011 Stabil identitet (Fase 2, del 1): ✔ I prod 2026-10-15 (tag `011`). **Neste:** 012 (kobling, frakobling, recovery, e-postendring) | Må være på plass før flere leverandører kommer til | ADN 13 |
 
 ## Senere
 
