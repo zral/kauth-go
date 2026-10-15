@@ -178,7 +178,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 14 — Admin kan koble fra identiteter og endre e-post. Admin-bindingen nullstilles aldri av appen, og tokens som bærer e-post, godtas bare etter brukerens e-postepoke (2026-10-15)
 
-**Status:** Analysert og bygget i `feature/012-admin-identitet` (2026-10-15). Venter eval og deploy (tag `012`)
+**Status:** Implementert, i prod 2026-10-15 (tag `012`)
 → Analyse: [doc/features/012_AN_ADMIN_IDENTITET.md](features/012_AN_ADMIN_IDENTITET.md)
 
 **Beslutning:**
