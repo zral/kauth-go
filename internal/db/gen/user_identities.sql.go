@@ -30,6 +30,32 @@ func (q *Queries) ApproveAdminIdentity(ctx context.Context, arg ApproveAdminIden
 	return result.RowsAffected()
 }
 
+const deleteIdentity = `-- name: DeleteIdentity :one
+DELETE FROM user_identities WHERE id = ? AND user_id = ?
+RETURNING provider, issuer, admin_ok
+`
+
+type DeleteIdentityParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+type DeleteIdentityRow struct {
+	Provider string `json:"provider"`
+	Issuer   string `json:"issuer"`
+	AdminOk  int64  `json:"admin_ok"`
+}
+
+// AND user_id = ? hindrer at en admin sletter en annen brukers identitet.
+// RETURNING gir audit-feltene fra raden som faktisk ble slettet.
+// (ASCII only: sqlc offset bug.)
+func (q *Queries) DeleteIdentity(ctx context.Context, arg DeleteIdentityParams) (DeleteIdentityRow, error) {
+	row := q.db.QueryRowContext(ctx, deleteIdentity, arg.ID, arg.UserID)
+	var i DeleteIdentityRow
+	err := row.Scan(&i.Provider, &i.Issuer, &i.AdminOk)
+	return i, err
+}
+
 const getIdentity = `-- name: GetIdentity :one
 SELECT id, user_id, provider, issuer, subject, email, created_at, last_used_at, admin_ok FROM user_identities WHERE issuer = ? AND subject = ?
 `
@@ -174,6 +200,23 @@ func (q *Queries) ListIdentitiesByUser(ctx context.Context, userID int64) ([]Use
 		return nil, err
 	}
 	return items, nil
+}
+
+const setAdminOK = `-- name: SetAdminOK :execrows
+UPDATE user_identities SET admin_ok = 1 WHERE id = ? AND user_id = ?
+`
+
+type SetAdminOKParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+func (q *Queries) SetAdminOK(ctx context.Context, arg SetAdminOKParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setAdminOK, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateIdentitySeen = `-- name: UpdateIdentitySeen :exec

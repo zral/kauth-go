@@ -102,16 +102,18 @@ type Service struct {
 }
 
 type User struct {
-	ID            int64   `json:"id"`
-	Email         string  `json:"email"`
-	PasswordHash  *string `json:"password_hash"`
-	Name          *string `json:"name"`
-	Roles         string  `json:"roles"`
-	Orgs          string  `json:"orgs"`
-	CreatedAt     string  `json:"created_at"`
-	LastLogin     *string `json:"last_login"`
-	DeactivatedAt *string `json:"deactivated_at"`
-	PublicID      string  `json:"public_id"`
+	ID             int64   `json:"id"`
+	Email          string  `json:"email"`
+	PasswordHash   *string `json:"password_hash"`
+	Name           *string `json:"name"`
+	Roles          string  `json:"roles"`
+	Orgs           string  `json:"orgs"`
+	CreatedAt      string  `json:"created_at"`
+	LastLogin      *string `json:"last_login"`
+	DeactivatedAt  *string `json:"deactivated_at"`
+	PublicID       string  `json:"public_id"`
+	EmailChangedAt *string `json:"email_changed_at"`
+	AdminBoundAt   *string `json:"admin_bound_at"`
 }
 
 type UserIdentity struct {

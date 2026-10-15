@@ -18,7 +18,7 @@ WHERE family_id = ? AND revoked = 0;
 -- name: RevokeUserRefreshTokens :execrows
 UPDATE refresh_tokens
 SET revoked = 1, revoked_reason = ?
-WHERE (user_id = sqlc.arg(user_id) OR lower(trim(email)) = lower(trim(sqlc.arg(email)))) AND revoked = 0;
+WHERE user_id = ? AND revoked = 0;
 
 -- name: GetRefreshChild :one
 SELECT created_at FROM refresh_tokens

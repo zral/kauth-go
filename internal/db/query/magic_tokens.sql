@@ -16,6 +16,12 @@ SET used = 1
 WHERE token = sqlc.arg(token_hash) AND purpose = sqlc.arg(purpose) AND used = 0 AND expires_at > sqlc.arg(now)
 RETURNING *;
 
+-- UPDATE, ikke DELETE: kvoteradene (created_at) maa staa, ellers faller rate-limiten.
+-- (ASCII only: sqlc offset bug.)
+-- name: BurnMagicTokensForEmails :execrows
+UPDATE magic_tokens SET used = 1
+WHERE email IN (sqlc.arg(old_email), sqlc.arg(new_email)) AND used = 0 AND expires_at > sqlc.arg(now);
+
 -- name: DeleteExpiredMagicTokens :exec
 DELETE FROM magic_tokens
 WHERE (used = 1 AND expires_at < ?)

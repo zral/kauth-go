@@ -26,6 +26,16 @@ SELECT ?, ?, ?, ?, ?, ?, ?
 WHERE NOT EXISTS (SELECT 1 FROM user_identities ex WHERE ex.user_id = ?)
 ON CONFLICT (issuer, subject) DO NOTHING;
 
+-- AND user_id = ? hindrer at en admin sletter en annen brukers identitet.
+-- RETURNING gir audit-feltene fra raden som faktisk ble slettet.
+-- (ASCII only: sqlc offset bug.)
+-- name: DeleteIdentity :one
+DELETE FROM user_identities WHERE id = ? AND user_id = ?
+RETURNING provider, issuer, admin_ok;
+
+-- name: SetAdminOK :execrows
+UPDATE user_identities SET admin_ok = 1 WHERE id = ? AND user_id = ?;
+
 -- Godkjenner identiteten for admin bare hvis brukeren ikke har en godkjent fra for.
 -- name: ApproveAdminIdentity :execrows
 UPDATE user_identities SET admin_ok = 1

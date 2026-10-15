@@ -1,5 +1,5 @@
-// identity-preflight kjører migrasjon 010 (stabil identitet) mot en KOPI av
-// produksjonsdatabasen og skriver en rapport uten e-postadresser.
+// identity-preflight kjører migrasjonene (010 stabil identitet, 011 admin-identitet)
+// mot en KOPI av produksjonsdatabasen og skriver en rapport uten e-postadresser.
 // Bruk via scripts/identity-preflight.sh, som lager kopien med sqlite3 .backup.
 // Kjøres aldri mot en live-database: db.Open migrerer.
 package main
@@ -43,7 +43,7 @@ func run(path string) int {
 		return 2
 	}
 
-	fmt.Println("== identity-preflight (migrasjon 010) ==")
+	fmt.Println("== identity-preflight (migrasjon 010 og 011) ==")
 	if len(bad) > 0 {
 		fmt.Printf("vakt: FEIL, %d bruker(e) med ikke-normalisert eller ikke-ASCII e-post\n", len(bad))
 		fmt.Printf("  bruker-ID-er: %s\n", strings.Join(bad, ", "))
@@ -98,6 +98,23 @@ func run(path string) int {
 	must(sqldb.QueryRow(`SELECT count(*) FROM services WHERE sub_format <> 'email' OR auto_link <> 1`).Scan(&badSvc))
 	fmt.Printf("services med annet enn sub_format=email/auto_link=1: %d\n", badSvc)
 
+	// 012: admin-bindingen skal følge admin_ok-identitetene, og epoken
+	// (coalesce(email_changed_at, created_at)) må kunne tolkes av
+	// token.EmailEpoch, ellers låses brukeren ute (fail-closed).
+	var boundUsers, adminOKUsers, adminOKUnbound, kongeUnbound int
+	must(sqldb.QueryRow(`SELECT count(*) FROM users WHERE admin_bound_at IS NOT NULL`).Scan(&boundUsers))
+	must(sqldb.QueryRow(`SELECT count(DISTINCT user_id) FROM user_identities WHERE admin_ok = 1`).Scan(&adminOKUsers))
+	must(sqldb.QueryRow(`SELECT count(*) FROM users WHERE admin_bound_at IS NULL
+		AND id IN (SELECT user_id FROM user_identities WHERE admin_ok = 1)`).Scan(&adminOKUnbound))
+	must(sqldb.QueryRow(`SELECT count(*) FROM users WHERE admin_bound_at IS NULL
+		AND ',' || replace(roles, ' ', '') || ',' LIKE '%,konge,%'`).Scan(&kongeUnbound))
+	fmt.Printf("admin_bound_at: %d bruker(e) bundet, %d bruker(e) med admin_ok-identitet, %d med admin_ok uten binding\n", boundUsers, adminOKUsers, adminOKUnbound)
+	fmt.Printf("konge uten admin_bound_at: %d\n", kongeUnbound)
+
+	badEpoch, err := unparseableEpochs(sqldb)
+	must(err)
+	fmt.Printf("users.created_at/email_changed_at som ikke kan tolkes som epoke: %d\n", badEpoch)
+
 	var fkViol int
 	rows, err := sqldb.Query(`PRAGMA foreign_key_check`)
 	must(err)
@@ -113,6 +130,12 @@ func run(path string) int {
 
 	if pubIDs != users || distinctPub != users || validPub != users || fkViol > 0 || integrity != "ok" {
 		fmt.Println("RESULTAT: FEIL")
+		return 1
+	}
+	// En aktiv rad uten user_id revokeres ikke lenger på e-post (D8a). Kjør
+	// backfill-UPDATE-en fra migrasjon 010 på nytt før deploy hvis tallet er over 0.
+	if boundUsers != adminOKUsers || adminOKUnbound > 0 || badEpoch > 0 || rtActiveNull > 0 {
+		fmt.Println("RESULTAT: FEIL (admin-binding, epoke eller refresh uten user_id avviker fra forventet)")
 		return 1
 	}
 	if rtMixed > 0 || acMixed > 0 {
@@ -139,6 +162,29 @@ func guardViolations(d *sql.DB) ([]string, error) {
 		ids = append(ids, fmt.Sprint(id))
 	}
 	return ids, rows.Err()
+}
+
+// unparseableEpochs teller epoker som token.EmailEpoch ville avvist. Formatene
+// speiler parseren: RFC 3339 med Z og SQLite datetime() (tolket som UTC).
+func unparseableEpochs(d *sql.DB) (int, error) {
+	rows, err := d.Query(`SELECT coalesce(email_changed_at, created_at) FROM users`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	bad := 0
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return 0, err
+		}
+		_, e1 := time.Parse("2006-01-02T15:04:05Z", v)
+		_, e2 := time.Parse("2006-01-02 15:04:05", v)
+		if e1 != nil && e2 != nil {
+			bad++
+		}
+	}
+	return bad, rows.Err()
 }
 
 func must(err error) {

@@ -21,6 +21,17 @@ RETURNING *;
 -- name: UpdateUserLastLogin :exec
 UPDATE users SET last_login = ? WHERE email = ?;
 
+-- Gammel e-post sjekkes i samme setning (AND email = ?), saa en samtidig endring
+-- gir 0 rader i stedet for aa bli overskrevet. (ASCII only: sqlc offset bug.)
+-- name: UpdateUserEmail :execrows
+UPDATE users SET email = sqlc.arg(new_email), email_changed_at = sqlc.arg(email_changed_at)
+WHERE id = sqlc.arg(id) AND email = sqlc.arg(old_email);
+
+-- Binder admin-Google til brukeren bare en gang: 0 rader betyr at den allerede
+-- er bundet. (ASCII only: sqlc offset bug.)
+-- name: BindAdmin :execrows
+UPDATE users SET admin_bound_at = ? WHERE id = ? AND admin_bound_at IS NULL;
+
 -- name: UpdateUser :exec
 UPDATE users SET name = ?, roles = ?, orgs = ? WHERE id = ?;
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kjører migrasjon 010 mot en kopi av en kauth-database og skriver en rapport
+# Kjører migrasjonene (010 og 011) mot en kopi av en kauth-database og skriver en rapport
 # uten e-postadresser. Kilden åpnes bare lesende (sqlite3 -readonly .backup).
 #
 # Bruk: scripts/identity-preflight.sh <kilde.db> [scratch-katalog]

@@ -122,8 +122,8 @@ func (e *deactEnv) rtState(t *testing.T, plain string) (revoked int64, reason sq
 	return
 }
 
-// Brukeren er lagret med blandet case; refresh_tokens.email har samme case og
-// matches eksakt, så e-posten må komme fra brukerraden.
+// Brukeren er lagret med blandet case; auditraden skal bruke e-posten fra
+// brukerraden. Revokeringen går på user_id.
 func TestDeactivate_RevokesAllUserRefreshTokens(t *testing.T) {
 	e := setupDeactEnv(t)
 	ctx := context.Background()
@@ -266,9 +266,11 @@ func TestDeactivate_RevokeFails_StillSucceedsWithAudit(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 }
 
-// K11/PD14: rader knyttet via user_id revokeres selv om e-posten på raden er
-// endret, og rader uten user_id fanges på e-post uansett store og små bokstaver.
-func TestDeactivate_RevokesByUserIDAndMixedCaseEmail(t *testing.T) {
+// K11/PD14, D8a (012): rader knyttet via user_id revokeres selv om e-posten på
+// raden er endret. Rader uten user_id fanges ikke lenger på e-post: migrasjon 010
+// backfylte user_id, og e-postmatching kunne revokert en annen brukers rader
+// etter en e-postendring.
+func TestDeactivate_RevokesByUserIDOnly(t *testing.T) {
 	e := setupDeactEnv(t)
 	ctx := context.Background()
 	user := e.mkUser(t, "ola@example.com")
@@ -290,12 +292,12 @@ func TestDeactivate_RevokesByUserIDAndMixedCaseEmail(t *testing.T) {
 	w := e.deactivate(strconv.FormatInt(user.ID, 10))
 	require.Equal(t, http.StatusSeeOther, w.Code, w.Body.String())
 
-	for name, p := range map[string]string{"user_id": byID, "e-post": legacy} {
-		rv, reason := e.rtState(t, p)
-		assert.EqualValues(t, 1, rv, name)
-		assert.Equal(t, "user_deactivated", reason.String, name)
-	}
-	rv, _ := e.rtState(t, otherTok)
+	rv, reason := e.rtState(t, byID)
+	assert.EqualValues(t, 1, rv, "user_id")
+	assert.Equal(t, "user_deactivated", reason.String)
+	rv, _ = e.rtState(t, legacy)
+	assert.EqualValues(t, 0, rv, "rad uten user_id matches ikke på e-post (D8a)")
+	rv, _ = e.rtState(t, otherTok)
 	assert.EqualValues(t, 0, rv)
 }
 

@@ -9,6 +9,25 @@ import (
 	"context"
 )
 
+const bindAdmin = `-- name: BindAdmin :execrows
+UPDATE users SET admin_bound_at = ? WHERE id = ? AND admin_bound_at IS NULL
+`
+
+type BindAdminParams struct {
+	AdminBoundAt *string `json:"admin_bound_at"`
+	ID           int64   `json:"id"`
+}
+
+// Binder admin-Google til brukeren bare en gang: 0 rader betyr at den allerede
+// er bundet. (ASCII only: sqlc offset bug.)
+func (q *Queries) BindAdmin(ctx context.Context, arg BindAdminParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, bindAdmin, arg.AdminBoundAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users
 `
@@ -23,7 +42,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (public_id, email, password_hash, name, roles, orgs, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id
+RETURNING id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id, email_changed_at, admin_bound_at
 `
 
 type CreateUserParams struct {
@@ -58,6 +77,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.LastLogin,
 		&i.DeactivatedAt,
 		&i.PublicID,
+		&i.EmailChangedAt,
+		&i.AdminBoundAt,
 	)
 	return i, err
 }
@@ -79,7 +100,7 @@ func (q *Queries) DeactivateUser(ctx context.Context, arg DeactivateUserParams) 
 }
 
 const getActiveUserByEmail = `-- name: GetActiveUserByEmail :one
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE email = ? AND deactivated_at IS NULL LIMIT 1
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id, email_changed_at, admin_bound_at FROM users WHERE email = ? AND deactivated_at IS NULL LIMIT 1
 `
 
 func (q *Queries) GetActiveUserByEmail(ctx context.Context, email string) (User, error) {
@@ -96,12 +117,14 @@ func (q *Queries) GetActiveUserByEmail(ctx context.Context, email string) (User,
 		&i.LastLogin,
 		&i.DeactivatedAt,
 		&i.PublicID,
+		&i.EmailChangedAt,
+		&i.AdminBoundAt,
 	)
 	return i, err
 }
 
 const getActiveUserByID = `-- name: GetActiveUserByID :one
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE id = ? AND deactivated_at IS NULL
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id, email_changed_at, admin_bound_at FROM users WHERE id = ? AND deactivated_at IS NULL
 `
 
 func (q *Queries) GetActiveUserByID(ctx context.Context, id int64) (User, error) {
@@ -118,12 +141,14 @@ func (q *Queries) GetActiveUserByID(ctx context.Context, id int64) (User, error)
 		&i.LastLogin,
 		&i.DeactivatedAt,
 		&i.PublicID,
+		&i.EmailChangedAt,
+		&i.AdminBoundAt,
 	)
 	return i, err
 }
 
 const getActiveUserByPublicID = `-- name: GetActiveUserByPublicID :one
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE public_id = ? AND deactivated_at IS NULL
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id, email_changed_at, admin_bound_at FROM users WHERE public_id = ? AND deactivated_at IS NULL
 `
 
 func (q *Queries) GetActiveUserByPublicID(ctx context.Context, publicID string) (User, error) {
@@ -140,12 +165,14 @@ func (q *Queries) GetActiveUserByPublicID(ctx context.Context, publicID string) 
 		&i.LastLogin,
 		&i.DeactivatedAt,
 		&i.PublicID,
+		&i.EmailChangedAt,
+		&i.AdminBoundAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE email = ? LIMIT 1
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id, email_changed_at, admin_bound_at FROM users WHERE email = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -162,12 +189,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.LastLogin,
 		&i.DeactivatedAt,
 		&i.PublicID,
+		&i.EmailChangedAt,
+		&i.AdminBoundAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE id = ?
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id, email_changed_at, admin_bound_at FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -184,12 +213,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.LastLogin,
 		&i.DeactivatedAt,
 		&i.PublicID,
+		&i.EmailChangedAt,
+		&i.AdminBoundAt,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users ORDER BY email LIMIT ? OFFSET ?
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id, email_changed_at, admin_bound_at FROM users ORDER BY email LIMIT ? OFFSET ?
 `
 
 type ListUsersParams struct {
@@ -217,6 +248,8 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.LastLogin,
 			&i.DeactivatedAt,
 			&i.PublicID,
+			&i.EmailChangedAt,
+			&i.AdminBoundAt,
 		); err != nil {
 			return nil, err
 		}
@@ -232,7 +265,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 }
 
 const listUsersByOrg = `-- name: ListUsersByOrg :many
-SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id FROM users WHERE orgs LIKE ? ORDER BY email LIMIT ? OFFSET ?
+SELECT id, email, password_hash, name, roles, orgs, created_at, last_login, deactivated_at, public_id, email_changed_at, admin_bound_at FROM users WHERE orgs LIKE ? ORDER BY email LIMIT ? OFFSET ?
 `
 
 type ListUsersByOrgParams struct {
@@ -261,6 +294,8 @@ func (q *Queries) ListUsersByOrg(ctx context.Context, arg ListUsersByOrgParams) 
 			&i.LastLogin,
 			&i.DeactivatedAt,
 			&i.PublicID,
+			&i.EmailChangedAt,
+			&i.AdminBoundAt,
 		); err != nil {
 			return nil, err
 		}
@@ -294,6 +329,33 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 		arg.ID,
 	)
 	return err
+}
+
+const updateUserEmail = `-- name: UpdateUserEmail :execrows
+UPDATE users SET email = ?1, email_changed_at = ?2
+WHERE id = ?3 AND email = ?4
+`
+
+type UpdateUserEmailParams struct {
+	NewEmail       string  `json:"new_email"`
+	EmailChangedAt *string `json:"email_changed_at"`
+	ID             int64   `json:"id"`
+	OldEmail       string  `json:"old_email"`
+}
+
+// Gammel e-post sjekkes i samme setning (AND email = ?), saa en samtidig endring
+// gir 0 rader i stedet for aa bli overskrevet. (ASCII only: sqlc offset bug.)
+func (q *Queries) UpdateUserEmail(ctx context.Context, arg UpdateUserEmailParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateUserEmail,
+		arg.NewEmail,
+		arg.EmailChangedAt,
+		arg.ID,
+		arg.OldEmail,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateUserLastLogin = `-- name: UpdateUserLastLogin :exec

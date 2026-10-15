@@ -73,30 +73,45 @@ func TestRevokeFamilyTokens_KeepsFirstReason(t *testing.T) {
 	assert.Equal(t, "reuse", rtState(t, sqldb, "new").reason.String)
 }
 
-func TestRevokeUserRefreshTokens_OnlyThatUser(t *testing.T) {
+// K13/D8a: revokeringen går bare på user_id. En rad med samme e-post og annen
+// user_id (adressen er flyttet til en annen bruker), og en rad uten user_id,
+// skal stå urørt.
+func TestRevokeUserRefreshTokens_OnlyUserID(t *testing.T) {
 	ctx := context.Background()
 	sqldb, q := openTestDB(t)
+	mk := func(email string) gen.User {
+		u, err := q.CreateUser(ctx, gen.CreateUserParams{PublicID: token.MustNewPublicID(), Email: email, Roles: "user", CreatedAt: "2026-01-01T00:00:00Z"})
+		require.NoError(t, err)
+		return u
+	}
+	a, b := mk("a@x.no"), mk("b@x.no")
 
 	insertRT(t, q, "a1", "a@x.no", "fam-1", nil)
 	insertRT(t, q, "a2", "a@x.no", "fam-2", nil)
 	insertRT(t, q, "a3", "a@x.no", "fam-3", nil)
-	insertRT(t, q, "b1", "b@x.no", "fam-4", nil)
-	insertRT(t, q, "upper", "A@x.no", "fam-5", nil)
-	_, err := sqldb.Exec("UPDATE refresh_tokens SET revoked = 1, revoked_reason = 'user_logout' WHERE token_hash = ?", hash64("a3"))
+	insertRT(t, q, "b-same-email", "a@x.no", "fam-4", nil)
+	insertRT(t, q, "legacy", "a@x.no", "fam-5", nil)
+	for _, s := range []string{"a1", "a2", "a3"} {
+		_, err := sqldb.Exec("UPDATE refresh_tokens SET user_id = ? WHERE token_hash = ?", a.ID, hash64(s))
+		require.NoError(t, err)
+	}
+	_, err := sqldb.Exec("UPDATE refresh_tokens SET user_id = ? WHERE token_hash = ?", b.ID, hash64("b-same-email"))
+	require.NoError(t, err)
+	_, err = sqldb.Exec("UPDATE refresh_tokens SET revoked = 1, revoked_reason = 'user_logout' WHERE token_hash = ?", hash64("a3"))
 	require.NoError(t, err)
 
 	reason := "user_deactivated"
 	n, err := q.RevokeUserRefreshTokens(ctx, gen.RevokeUserRefreshTokensParams{
-		RevokedReason: &reason, Email: "a@x.no",
+		RevokedReason: &reason, UserID: &a.ID,
 	})
 	require.NoError(t, err)
-	assert.EqualValues(t, 3, n, "bare ikke-revokerte rader telles")
+	assert.EqualValues(t, 2, n, "bare ikke-revokerte rader for brukeren telles")
 
 	assert.Equal(t, "user_deactivated", rtState(t, sqldb, "a1").reason.String)
 	assert.Equal(t, "user_deactivated", rtState(t, sqldb, "a2").reason.String)
 	assert.Equal(t, "user_logout", rtState(t, sqldb, "a3").reason.String)
-	assert.EqualValues(t, 0, rtState(t, sqldb, "b1").revoked)
-	assert.EqualValues(t, 1, rtState(t, sqldb, "upper").revoked, "e-post matches uavhengig av case (PD14)")
+	assert.EqualValues(t, 0, rtState(t, sqldb, "b-same-email").revoked, "annen user_id, samme e-post")
+	assert.EqualValues(t, 0, rtState(t, sqldb, "legacy").revoked, "uten user_id")
 }
 
 func TestGetRefreshChild(t *testing.T) {
@@ -132,7 +147,7 @@ func TestRevokeUserRefreshTokens_ByUserIDWhenEmailDiffers(t *testing.T) {
 
 	reason := "user_deactivated"
 	n, err := q.RevokeUserRefreshTokens(ctx, gen.RevokeUserRefreshTokensParams{
-		RevokedReason: &reason, UserID: &u.ID, Email: "a@x.no",
+		RevokedReason: &reason, UserID: &u.ID,
 	})
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, n)

@@ -173,17 +173,16 @@ func (q *Queries) RevokeFamilyTokens(ctx context.Context, arg RevokeFamilyTokens
 const revokeUserRefreshTokens = `-- name: RevokeUserRefreshTokens :execrows
 UPDATE refresh_tokens
 SET revoked = 1, revoked_reason = ?
-WHERE (user_id = ?2 OR lower(trim(email)) = lower(trim(?3))) AND revoked = 0
+WHERE user_id = ? AND revoked = 0
 `
 
 type RevokeUserRefreshTokensParams struct {
 	RevokedReason *string `json:"revoked_reason"`
 	UserID        *int64  `json:"user_id"`
-	Email         string  `json:"email"`
 }
 
 func (q *Queries) RevokeUserRefreshTokens(ctx context.Context, arg RevokeUserRefreshTokensParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, revokeUserRefreshTokens, arg.RevokedReason, arg.UserID, arg.Email)
+	result, err := q.db.ExecContext(ctx, revokeUserRefreshTokens, arg.RevokedReason, arg.UserID)
 	if err != nil {
 		return 0, err
 	}

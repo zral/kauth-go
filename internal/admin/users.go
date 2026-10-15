@@ -359,8 +359,8 @@ func (h *UsersHandler) HandleDeactivate(w http.ResponseWriter, r *http.Request) 
 	}
 
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	// E-posten kommer fra brukerraden (RETURNING), ikke fra URL/skjema:
-	// refresh_tokens.email matches eksakt og må ha samme case som lagret.
+	// E-posten kommer fra brukerraden (RETURNING), ikke fra URL/skjema, og
+	// brukes bare i auditraden. Revokeringen går på user_id (D8a).
 	email, err := h.queries.DeactivateUser(r.Context(), gen.DeactivateUserParams{
 		DeactivatedAt: &now,
 		ID:            id,
@@ -384,7 +384,6 @@ func (h *UsersHandler) HandleDeactivate(w http.ResponseWriter, r *http.Request) 
 	revoked, err := h.queries.RevokeUserRefreshTokens(ctx, gen.RevokeUserRefreshTokensParams{
 		RevokedReason: &reason,
 		UserID:        &id,
-		Email:         email,
 	})
 	if err != nil {
 		slog.Error("admin: revokering av refresh-tokens etter deaktivering feilet", "id", id, "err", err)

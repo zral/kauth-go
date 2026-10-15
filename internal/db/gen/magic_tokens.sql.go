@@ -9,6 +9,27 @@ import (
 	"context"
 )
 
+const burnMagicTokensForEmails = `-- name: BurnMagicTokensForEmails :execrows
+UPDATE magic_tokens SET used = 1
+WHERE email IN (?1, ?2) AND used = 0 AND expires_at > ?3
+`
+
+type BurnMagicTokensForEmailsParams struct {
+	OldEmail string `json:"old_email"`
+	NewEmail string `json:"new_email"`
+	Now      string `json:"now"`
+}
+
+// UPDATE, ikke DELETE: kvoteradene (created_at) maa staa, ellers faller rate-limiten.
+// (ASCII only: sqlc offset bug.)
+func (q *Queries) BurnMagicTokensForEmails(ctx context.Context, arg BurnMagicTokensForEmailsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, burnMagicTokensForEmails, arg.OldEmail, arg.NewEmail, arg.Now)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const consumeMagicToken = `-- name: ConsumeMagicToken :one
 UPDATE magic_tokens
 SET used = 1
