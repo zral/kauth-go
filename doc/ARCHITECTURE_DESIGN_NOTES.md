@@ -232,3 +232,31 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - **Manglende `iat`** avvises med egen grunn `iat_missing`, som ADN 14 krever. kauth utsteder alltid `iat`, så grunnen skiller et slikt token fra en omtildelt adresse.
 - **Fail-open er synlig.** DB-feil gir `slog.Error` og audit `dispatch_subject_check_skipped` (`level=1-5 reason=db_error`, success=1). `context.Canceled` (klienten koblet fra) logges ikke. En epoke som ikke kan tolkes, er fortsatt fail-closed (`email_reassigned`), som på nivå 0.
 - **Ferskhets-auditen** skrives før rutingen. Har nivå 5 ingen default-tjeneste, ender kallet på `/login`, men raden har success=1. Det kan bare skje ved feilkonfigurasjon. Akseptert.
+
+---
+
+## ADN 16 — Felles utstedelse for alle innloggingsmetoder og felles føderert sti for Google og Microsoft, uten leverandørregister (2026-10-16)
+
+**Status:** Implementert (2026-10-16, 014)
+→ Analyse: [doc/features/014_AN_FODERERT_INNLOGGING.md](features/014_AN_FODERERT_INNLOGGING.md) · Plan: [doc/features/014_PL_FODERERT_INNLOGGING.md](features/014_PL_FODERERT_INNLOGGING.md)
+
+**Beslutning:**
+1. **Én utstedelsessti for Google, Microsoft, magic link og passord** (`loginCompleter.complete`): `checkPolicy` → access-token → refresh-token → refresh-cookie → rydding av state-cookie (bare føderert) → `last_login` → suksess-audit → `302 /dispatch?token=&rt=&service=`. Ved feil skrives ingenting til svaret, og hver metode svarer som før. `checkPolicy` ligger her, så ingen metode kan utstede tokens uten den.
+2. **Én føderert sti for Google og Microsoft:** lesing av state (cookie lik param, `parseState`), avvisning med audit og avslutning etter at identiteten er bygd (resolver, feilmapping, utstedelse). Leverandøren beskrives bare med audit-typene for suksess og avvisning, `auth_method`, loggprefiks og navnet på state-cookien (`federatedProvider`). Kodeutveksling, id_token-verifisering, claim-sjekker og rekkefølgen deres blir hos leverandøren.
+3. **Ingen leverandørregister, ingen discovery- eller konfig-abstraksjon.** Et Go-interface for leverandører lages når Fase 4 gir en tredje implementasjon. Init (`/oidc-login`, `/ms-oidc-login`, `/admin/google-init`) deles ikke.
+4. **Admin-Google holdes utenfor.** Den deler state-lesing og Googles verifisering (kodeutveksling, id_token, nonce), men ikke `finish` (tjenestepolicy og feilmapping for resolveren) eller utstedelsen (ADN 14).
+5. **Sett utenfra er alt uendret, med to unntak** som følger av ADN 10 pkt 3: Google svarer `login_failed` på login-siden ved utstedelsesfeil (før 014: `500`), og Microsoft auditerer kodeutvekslings- og id_token-feil (`reason=code_exchange`, `reason=id_token`) som Google gjør. Audit-typer og `Details`-format er ellers uendret.
+6. **Ingen parallelle handlere og ingen bryter.** Rollback er forrige binær. Ingen skjemaendring.
+
+**Begrunnelse:** Utstedelsen lå i fire kopier og resolverfeil-mappingen i to, og kopiene hadde glidd fra hverandre (issue #3 var en kopi uten `checkPolicy`). Det som er likt, skal finnes én gang og testes én gang. Det som er ulikt mellom leverandørene (claims, sjekker, rekkefølge), er nettopp det som skal være lett å lese hos hver leverandør. Et register for Fase 4 ville bygd på antakelser om issuer-allowlist, JWKS-cache og `identity_providers` som ikke er analysert.
+
+**Konsekvens:**
+- En tredje leverandør (Fase 4, Apple) skriver sin egen verifisering og bruker `federatedLogin.finish` og `loginCompleter.complete`.
+- Testsømmene (`finishCallback` i Google og MS, `fetchClaims`) beholder signaturen, og Google får en tilsvarende `fetchClaims`-søm, slik at callbacken kan testes uten nett.
+- Upstream PKCE mot Google og Microsoft finnes ikke i dag, selv om FEATURES sa det før 014. Det legges senere inn ett sted for begge (BACKLOG).
+- «Ingen konto» og policybrudd auditeres fortsatt ikke i Google- og MS-flyten (BACKLOG), men det er nå ett sted å gjøre det.
+
+**Presiseringer fra implementeringen:**
+- **Navn og filer.** Utstedelsen heter `loginCompleter.complete` (`login_complete.go`). Den fødererte stien er `federatedLogin` med `finish`, `reject` og `auditRejected` (`federated.go`), og leverandøren beskrives av `federatedProvider{login, rejectedType}`. Admin-Google ligger i `google_admin.go`.
+- **Policyavslag er merket.** `checkPolicy`-feil returneres som `errPolicyDenied` med uendret tekst. Alt som ikke er et policyavslag, får metodens svar ved utstedelsesfeil. Dermed havner aldri en ukjent feiltekst i passordets 403-kropp.
+- **Testsømmer.** Google har `fetchClaims`-søm som Microsoft. JWKS-URL-en til Microsoft er den ueksporterte pakkevariabelen `msKeysURL`, med uendret verdi i prod. Sømmen er global og tåler ikke `t.Parallel`.

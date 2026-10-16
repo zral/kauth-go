@@ -22,9 +22,11 @@ En komplett oversikt over hva kauth gjør og hvordan. README-en gir overordnet m
 
 Fire metoder, alle valgbare per tjeneste via boolean-felter i `services`-tabellen (`auth_google`, `auth_microsoft`, `auth_magic_link`, `auth_password`).
 
+Alle fire går gjennom samme utstedelse: `checkPolicy`, access- og refresh-token, refresh-cookie, rydding av state-cookie (bare Google og Microsoft), `last_login`, suksess-audit og redirect til `/dispatch`. Google og Microsoft deler i tillegg en føderert sti for state, avvisning og resolverfeil (ADN 16). Verifiseringen av id_token er hos hver leverandør. Admin-Google bruker ikke utstedelsen.
+
 ### Google OIDC
 
-Standard OAuth2-flyt med PKCE og signert state. Nonce sendes til Google og sjekkes mot `id_token.nonce`. `email_verified == true` kreves i både vanlig og admin-gren; ellers avvises innloggingen og `google_oidc_rejected` logges i audit. Per-tjeneste OAuth-klient hvis `google_client_id` er satt på service-raden, ellers global klient fra miljøvariabler. Redirect-URI bygges per request fra `Host`-headeren, slik at ulike auth-hostnames kan registreres mot ulike Google-klienter med presise whitelists.
+Standard OAuth2-flyt med signert state. kauth er konfidensiell klient med hemmelighet og bruker ikke PKCE mot Google. Nonce sendes til Google og sjekkes mot `id_token.nonce`. `email_verified == true` kreves i både vanlig og admin-gren; ellers avvises innloggingen og `google_oidc_rejected` logges i audit. Per-tjeneste OAuth-klient hvis `google_client_id` er satt på service-raden, ellers global klient fra miljøvariabler. Redirect-URI bygges per request fra `Host`-headeren, slik at ulike auth-hostnames kan registreres mot ulike Google-klienter med presise whitelists.
 
 ### Microsoft OIDC
 
@@ -35,6 +37,8 @@ Bruker `/common/oauth2/v2.0`-endepunktet for å akseptere både personlige Micro
 - Tom `email` avvises. Det er ingen fallback til `preferred_username`.
 - Nonce sendes til Microsoft og sjekkes mot `id_token.nonce`.
 - Avvisning logges som `microsoft_oidc_rejected` med `reason=<årsak>` og `tid` i details.
+- Feil i kodeutvekslingen og i verifiseringen av id_token logges som `microsoft_oidc_rejected` med `reason=code_exchange` eller `reason=id_token`, uten e-post og `tid`.
+- kauth bruker ikke PKCE mot Microsoft. Klienten er konfidensiell og har hemmelighet. Innloggingen bindes med signert state og nonce.
 
 ### Magic-link på e-post
 
@@ -419,7 +423,7 @@ State som sendes til OIDC-providere inneholder serviceID, 128-bit nonce, utstede
 
 ### Generiske innloggingsfeil
 
-Feil i OIDC-flyten redirecter til `/login?error=<kode>` med en lukket mengde koder: `login_failed` (tekniske feil) og `access_denied` (ingen konto eller policybrudd, ikke til å skille utenfra). Ukjente `?error=`-verdier vises som generisk tekst i malen, aldri som gitt. Admin sendes til `/admin/login?err=ingen_tilgang`. Årsaken går til audit og logg, og flyten starter aldri leverandøren på nytt automatisk.
+Feil i OIDC-flyten redirecter til `/login?error=<kode>` med en lukket mengde koder: `login_failed` (tekniske feil) og `access_denied` (ingen konto eller policybrudd, ikke til å skille utenfra). Ukjente `?error=`-verdier vises som generisk tekst i malen, aldri som gitt. Google gir også `login_failed` når utstedelsen av token feiler (tidligere `500`). Admin sendes til `/admin/login?err=ingen_tilgang`. Årsaken går til audit og logg, og flyten starter aldri leverandøren på nytt automatisk.
 
 ### Cookie-hygiene
 
@@ -531,7 +535,7 @@ Lagret i `audit_events`-tabellen med felter:
 - `auth_method` — `google`, `microsoft`, `magic_link`, `password`, `refresh`
 - `email`, `service_id`, `ip_address`, `user_agent`
 - `success` — bool, alltid eksplisitt satt av applikasjonen
-- `details` — fritekst, brukes for grunn på feilet login. `refresh_token_reuse` har `gap_s=<n>`, `user_deactivated` har `id=<n> revoked=<antall>` eller `id=<n> revoke_failed` (deaktiveringen står selv om revokeringen feiler; refresh for deaktivert bruker avvises uansett)
+- `details` — fritekst, brukes for grunn på feilet login. `microsoft_oidc_rejected` har `reason=code_exchange` og `reason=id_token` i tillegg til de øvrige årsakene. `refresh_token_reuse` har `gap_s=<n>`, `user_deactivated` har `id=<n> revoked=<antall>` eller `id=<n> revoke_failed` (deaktiveringen står selv om revokeringen feiler; refresh for deaktivert bruker avvises uansett)
 - `created_at` — ISO 8601 UTC
 
 Nye event-typer fra 009: `authorization_code_invalid`, `authorization_code_mismatch`, `authorization_code_reuse`, `authorization_code_exchanged`. Fra 010: `authorization_code_exchanged` har `jti_access`, `jti_id` og `family` i `details`, og `authorization_code_reuse` har `family`. `dispatch_aud_mismatch` har `level=<0-5>`, `token_aud` og `target`, og `dispatch_token_stale` har `age_s=<n>`, eller `iat=missing` når `iat` mangler. Fra 013 har nivå 1–5 `level=1-5` og `mode=audit` på `dispatch_token_stale` (success=1, tokenet sendes videre), `dispatch_subject_mismatch` har `level=1-5 reason=…`, og `dispatch_subject_check_skipped` (success=1) markerer fail-open ved DB-feil. Ingen av dem har token eller kode i `details`. Admin-skriv har `actor=<e-post>` i `details`. Skrivingen er asynkron via kø, bortsett fra admin-skriv (se Audit-isolering).

@@ -39,11 +39,15 @@ Sist gjennomgått: 2026-10-16
 | Audit-volum fra gjentatte presentasjoner av revokerte tokens | Hver presentasjon logger `refresh_token_revoked_presented`. Vurder rate limit eller dedup (008 F3) | — |
 | Legacy token-i-URL av-bryter per tjeneste (B3) | Står i ROADMAP Fase 1, men ble ikke tatt i 008–010. Av som default for nye tjenester. Fjernes når alle klienter er på code+PKCE | ROADMAP M1, B3 |
 | CORS-allowlist per tjeneste, avvis cookie-refresh uten `Origin` | Står i ROADMAP Fase 1. I dag er allowlisten global (`KAUTH_CORS_ORIGINS`). Origin-sjekken før rotasjon finnes, men mot den globale listen | ROADMAP H7 |
-| Fase 3–6 | Forutsetter Fase 2 | ROADMAP §5 |
+| Fase 4–6 | Fase 3 er ferdig (014). Fase 4 er neste | ROADMAP §5 |
+| Upstream PKCE mot Google og Microsoft | FEATURES sa at Google brukte PKCE, men verken Google eller Microsoft gjør det. Kan nå legges inn ett sted for begge | ADN 16 |
+| Callback sjekker ikke at `auth_google`/`auth_microsoft` fortsatt er på | Slås metoden av etter at innloggingen er startet, fullføres den. Vindu på inntil 10 minutter (state-levetiden). Lav (014 D16) | ADN 16 |
+| JWKS for Microsoft hentes på nytt ved hver innlogging | `oidc.NewRemoteKeySet` lages per kall. Vurder cache og robusthet mot nett-feil (014 F3, code review S4) | ADN 16 |
+| Testene bruker `resolver`/`aud` direkte på `MicrosoftHandlers` | Feltene brukes bare av tester etter 014 F6. Flytt testene til `fed`, så feltene kan fjernes (014 F6, code review S1) | ADN 16 |
 | Apple Sign In | Løpende kostnad. Kommer som adapter etter Fase 4 ved dokumentert behov | ADN 7 |
 | GitHub/LinkedIn m.fl. | Kan i stor grad dekkes av generisk OIDC (Fase 4) | ROADMAP §5 |
 | Deaktivert bruker på tjeneste med auto-register gir `login_failed` i stedet for `access_denied` | Uventet feilkode, ufarlig (008 F10 S2) | — |
-| Audit for «ingen konto», policybrudd og DB-feil i vanlig gren av Google-flyten | Bare avvisning på `email_verified` auditeres i dag (008 F10 S3) | — |
+| Audit for «ingen konto», policybrudd og DB-feil i vanlig gren av Google- og Microsoft-flyten | Auditeres ikke i dag (008 F10 S3). Etter 014 er det ett sted å gjøre det: `federatedLogin.finish` | ADN 16 |
 | OIDC-klient i authorization_code-flyten mister `oidc_authz` ved ugyldig state og får ingen spec-feil-redirect | Klienten ender på `/login` i stedet for `redirect_uri?error=` (008 F9 S3) | — |
 | Limit per IP på `POST /magic-login` | Også e-postflom via aliaser (`x+1@`) mot én innboks. Kvoten per e-post stopper dem ikke. Krever en IP-modell (ADN 9 pkt 7, 009 F3) | ADN 11 |
 | vinkjeller og univers-authgate kaller ikke kauth `/logout` | Refresh-familien revokeres ikke ved utlogging der. spekto bør bekreftes (009 P-betingelser) | ROADMAP H6 |
