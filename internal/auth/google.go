@@ -35,13 +35,11 @@ type AdminSessionStarter interface {
 type GoogleHandlers struct {
 	cfg           config.Config
 	sqlDB         *sql.DB
-	queries       *gen.Queries
-	issuer        *token.Issuer
-	refresh       *token.RefreshService
 	reg           *service.Registry
 	aud           *audit.Service
 	adminSessions AdminSessionStarter
 	resolver      *identityResolver
+	completer     *loginCompleter
 	// endpoint overstyres bare i tester, så kodeutveksling ikke treffer Google.
 	endpoint *oauth2.Endpoint
 	// fetchClaims er en testsøm; nil betyr ekte kodeutveksling og verifisering.
@@ -49,7 +47,7 @@ type GoogleHandlers struct {
 }
 
 func NewGoogleHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service, adminSessions AdminSessionStarter) *GoogleHandlers {
-	return &GoogleHandlers{cfg: cfg, sqlDB: sqlDB, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, adminSessions: adminSessions, resolver: newIdentityResolver(sqlDB, aud)}
+	return &GoogleHandlers{cfg: cfg, sqlDB: sqlDB, reg: reg, aud: aud, adminSessions: adminSessions, resolver: newIdentityResolver(sqlDB, aud), completer: &loginCompleter{queries: q, issuer: iss, refresh: ref, aud: aud}}
 }
 
 // InitiateLogin — GET /oidc-login eller /social-login
@@ -307,29 +305,16 @@ func (h *GoogleHandlers) finishCallback(w http.ResponseWriter, r *http.Request, 
 		}
 		return
 	}
-	if err := checkPolicy(user, svc); err != nil {
-		redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		return
+	if err := h.completer.complete(w, r, svc, user, loginGoogle); err != nil {
+		switch {
+		case errors.Is(err, errPolicyDenied):
+			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
+		case errors.Is(err, errIssueRefresh):
+			http.Error(w, "kunne ikke utstede refresh-token", http.StatusInternalServerError)
+		default:
+			http.Error(w, "kunne ikke utstede token", http.StatusInternalServerError)
+		}
 	}
-	ip, ua := ClientIP(r), r.Header.Get("User-Agent")
-	at, err := h.issuer.IssueAccess(user, *svc)
-	if err != nil {
-		http.Error(w, "kunne ikke utstede token", http.StatusInternalServerError)
-		return
-	}
-	rt, err := h.refresh.Issue(ctx, user, *svc, ip, ua)
-	if err != nil {
-		http.Error(w, "kunne ikke utstede refresh-token", http.StatusInternalServerError)
-		return
-	}
-	setRefreshCookie(w, rt)
-	clearCookie(w, "oidc_state")
-	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	if err := h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, ID: user.ID}); err != nil {
-		slog.Error("google: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
-	}
-	h.aud.Log(ctx, audit.Event{Type: "google_oidc_login", AuthMethod: "google", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt)+"&service="+url.QueryEscape(svc.ID), http.StatusFound)
 }
 
 // auditAdminFailure skriver admin_google_login med success=0.

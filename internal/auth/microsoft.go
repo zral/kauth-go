@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -29,19 +27,17 @@ import (
 const msAuthBase = "https://login.microsoftonline.com/common/oauth2/v2.0"
 
 type MicrosoftHandlers struct {
-	cfg      config.Config
-	queries  *gen.Queries
-	issuer   *token.Issuer
-	refresh  *token.RefreshService
-	reg      *service.Registry
-	aud      *audit.Service
-	resolver *identityResolver
+	cfg       config.Config
+	reg       *service.Registry
+	aud       *audit.Service
+	resolver  *identityResolver
+	completer *loginCompleter
 	// fetchClaims er en testsøm; nil betyr ekte kodeutveksling og verifisering.
 	fetchClaims func(ctx context.Context, cfg *oauth2.Config, code string) (msClaims, error)
 }
 
 func NewMicrosoftHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service) *MicrosoftHandlers {
-	return &MicrosoftHandlers{cfg: cfg, queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, resolver: newIdentityResolver(sqlDB, aud)}
+	return &MicrosoftHandlers{cfg: cfg, reg: reg, aud: aud, resolver: newIdentityResolver(sqlDB, aud), completer: &loginCompleter{queries: q, issuer: iss, refresh: ref, aud: aud}}
 }
 
 // InitiateLogin — GET /ms-oidc-login
@@ -220,30 +216,13 @@ func (h *MicrosoftHandlers) finishCallback(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-	if err := checkPolicy(user, svc); err != nil {
-		redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		return
+	if err := h.completer.complete(w, r, svc, user, loginMicrosoft); err != nil {
+		if errors.Is(err, errPolicyDenied) {
+			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
+		} else {
+			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		}
 	}
-	at, err := h.issuer.IssueAccess(user, *svc)
-	if err != nil {
-		slog.Error("microsoft: kunne ikke utstede token", "error", err)
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-		return
-	}
-	rt, err := h.refresh.Issue(ctx, user, *svc, ip, ua)
-	if err != nil {
-		slog.Error("microsoft: kunne ikke utstede refresh-token", "error", err)
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-		return
-	}
-	setRefreshCookie(w, rt)
-	clearCookie(w, "ms_state")
-	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	if err := h.queries.UpdateUserLastLogin(ctx, gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, ID: user.ID}); err != nil {
-		slog.Error("microsoft: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
-	}
-	h.aud.Log(ctx, audit.Event{Type: "microsoft_oidc_login", AuthMethod: "microsoft", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt)+"&service="+url.QueryEscape(svc.ID), http.StatusFound)
 }
 
 func msCreds(cfg config.Config, svc *gen.Service) (id, secret string) {

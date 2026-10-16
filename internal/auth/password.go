@@ -1,10 +1,9 @@
 package auth
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -16,11 +15,12 @@ import (
 
 // PasswordHandlers håndterer passord-innlogging og OAuth2 refresh-grant.
 type PasswordHandlers struct {
-	queries *gen.Queries
-	issuer  *token.Issuer
-	refresh *token.RefreshService
-	reg     *service.Registry
-	aud     *audit.Service
+	queries   *gen.Queries
+	issuer    *token.Issuer
+	refresh   *token.RefreshService
+	reg       *service.Registry
+	aud       *audit.Service
+	completer *loginCompleter
 	// passwordLoginEnabled er den globale bryteren (KAUTH_PASSWORD_LOGIN_ENABLED).
 	// Den gjelder /do-login uansett tjenestens auth_password.
 	passwordLoginEnabled bool
@@ -40,7 +40,8 @@ func (h *PasswordHandlers) WithCORSOrigins(origins []string) *PasswordHandlers {
 }
 
 func NewPasswordHandlers(q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service, passwordLoginEnabled bool) *PasswordHandlers {
-	return &PasswordHandlers{queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, passwordLoginEnabled: passwordLoginEnabled}
+	return &PasswordHandlers{queries: q, issuer: iss, refresh: ref, reg: reg, aud: aud, passwordLoginEnabled: passwordLoginEnabled,
+		completer: &loginCompleter{queries: q, issuer: iss, refresh: ref, aud: aud}}
 }
 
 // DoLogin — POST /do-login
@@ -79,28 +80,12 @@ func (h *PasswordHandlers) DoLogin(w http.ResponseWriter, r *http.Request) {
 	// require_role/enforce_org håndheves nå her — tidligere ble
 	// passord-login (i motsetning til Google/Microsoft) aldri sjekket mot
 	// disse (github.com/zral/kauth-go/issues/3).
-	if err := checkPolicy(user, svc); err != nil {
+	if err := h.completer.complete(w, r, svc, user, loginPassword); err != nil {
+		if !errors.Is(err, errPolicyDenied) {
+			http.Error(w, "intern feil", http.StatusInternalServerError)
+			return
+		}
 		h.aud.Log(r.Context(), audit.Event{Type: "login_failed", AuthMethod: "password", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: false, Details: err.Error()})
 		http.Error(w, err.Error(), http.StatusForbidden)
-		return
 	}
-
-	at, err := h.issuer.IssueAccess(user, *svc)
-	if err != nil {
-		http.Error(w, "intern feil", http.StatusInternalServerError)
-		return
-	}
-	rt, err := h.refresh.Issue(r.Context(), user, *svc, ip, ua)
-	if err != nil {
-		http.Error(w, "intern feil", http.StatusInternalServerError)
-		return
-	}
-	setRefreshCookie(w, rt)
-
-	lastLogin := time.Now().UTC().Format(time.RFC3339)
-	if err := h.queries.UpdateUserLastLogin(r.Context(), gen.UpdateUserLastLoginParams{LastLogin: &lastLogin, ID: user.ID}); err != nil {
-		slog.Error("password: kunne ikke oppdatere last_login", "email", user.Email, "error", err)
-	}
-	h.aud.Log(r.Context(), audit.Event{Type: "login_success", AuthMethod: "password", Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
-	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt)+"&service="+url.QueryEscape(svc.ID), http.StatusFound)
 }
