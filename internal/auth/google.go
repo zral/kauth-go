@@ -44,6 +44,8 @@ type GoogleHandlers struct {
 	resolver      *identityResolver
 	// endpoint overstyres bare i tester, så kodeutveksling ikke treffer Google.
 	endpoint *oauth2.Endpoint
+	// fetchClaims er en testsøm; nil betyr ekte kodeutveksling og verifisering.
+	fetchClaims func(ctx context.Context, cfg *oauth2.Config, clientID, code string) (cl googleClaims, tokenNonce, reason string)
 }
 
 func NewGoogleHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service, adminSessions AdminSessionStarter) *GoogleHandlers {
@@ -152,29 +154,39 @@ func (h *GoogleHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) 
 		RedirectURL:  "https://" + r.Host + "/callback",
 		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 	}
-	fail := func(reason string) { h.rejectCallback(w, r, svc, adminPurpose, reason) }
-	oauth2Token, err := oauthCfg.Exchange(ctx, r.URL.Query().Get("code"))
-	if err != nil {
-		fail("code_exchange")
+	fetch := h.fetchClaims
+	if fetch == nil {
+		fetch = fetchGoogleClaims
+	}
+	cl, tokenNonce, reason := fetch(ctx, oauthCfg, clientID, r.URL.Query().Get("code"))
+	if reason != "" {
+		h.rejectCallback(w, r, svc, adminPurpose, reason)
 		return
+	}
+	h.finishCallback(w, r, svc, adminPurpose, cl, tokenNonce, claims.Nonce)
+}
+
+// fetchGoogleClaims bytter koden, verifiserer id_token mot Googles discovery og
+// leser claims. reason er tom ved suksess, ellers den tekniske årsaken som går
+// til audit.
+func fetchGoogleClaims(ctx context.Context, cfg *oauth2.Config, clientID, code string) (cl googleClaims, tokenNonce, reason string) {
+	oauth2Token, err := cfg.Exchange(ctx, code)
+	if err != nil {
+		return cl, "", "code_exchange"
 	}
 	provider, err := oidc.NewProvider(ctx, "https://accounts.google.com")
 	if err != nil {
-		fail("discovery")
-		return
+		return cl, "", "discovery"
 	}
 	rawIDToken, _ := oauth2Token.Extra("id_token").(string)
 	idToken, err := provider.Verifier(&oidc.Config{ClientID: clientID}).Verify(ctx, rawIDToken)
 	if err != nil {
-		fail("id_token")
-		return
+		return cl, "", "id_token"
 	}
-	var cl googleClaims
 	if err := idToken.Claims(&cl); err != nil {
-		fail("claims")
-		return
+		return googleClaims{}, "", "claims"
 	}
-	h.finishCallback(w, r, svc, adminPurpose, cl, idToken.Nonce, claims.Nonce)
+	return cl, idToken.Nonce, ""
 }
 
 // rejectCallback avviser en callback med generisk respons. Teknisk årsak går til
