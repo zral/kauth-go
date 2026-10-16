@@ -297,3 +297,20 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - **Restart ved endring.** Leverandører, tilordninger, allowlist og hemmeligheter leses én gang ved oppstart. En avvist rad logges (`idp: leverandør ikke lastet … reason=`) uten å stoppe oppstarten, så én feil rad ikke tar ned de andre tjenestene. En tilordning til en rad som ikke ble lastet, gir ingen knapp.
 - **Ingen gjenbruk av leverandør-id.** `identity_providers.id` er `AUTOINCREMENT`. `sqlite3`-kommandolinjen har `foreign_keys` av, så en manuell `DELETE` kan etterlate en tilordning, og uten `AUTOINCREMENT` ville neste leverandør fått samme id og arvet den. `Load` varsler bare om tilordninger til aktive rader som ble avvist. Foreldreløse tilordninger finnes med SQL-en i driftsprosedyren.
 - **Utgående vakt.** I tillegg til private og link-local adresser blokkeres NAT64, 6to4, Teredo, IPv4-kompatible, `fec0::/10`, dokumentasjonsprefiks, `240.0.0.0/4` og broadcast. Det bryter IPv6-only-nett med NAT64, noe som er akseptert fordi prod har IPv4.
+
+## ADN 18 — Leverandøradmin uten ny tillitsrot, og kobling bevist av brukeren via invitasjon (2026-10-16)
+
+**Status:** Under arbeid (016)
+→ Analyse: [doc/features/016_AN_ADMIN_LEVERANDOR_KOBLING.md](features/016_AN_ADMIN_LEVERANDOR_KOBLING.md) · Plan: [doc/features/016_PL_ADMIN_LEVERANDOR_KOBLING.md](features/016_PL_ADMIN_LEVERANDOR_KOBLING.md)
+
+**Beslutning:**
+1. Admin får innsyn i alle leverandørrader med lastestatus og årsak, men ingen rute oppretter, endrer eller sletter rader i `identity_providers`. To-nøkkel-prinsippet i ADN 17 står: en admin-sesjon kan ikke innføre en ny tillitsrot.
+2. Tilordning av en *lastet* leverandør til en tjeneste kan endres i admin og lastes inn i registeret uten omstart. Leverandørsettet lastes fortsatt bare ved oppstart.
+3. Generiske identiteter kobles med en koblingsinvitasjon: admin velger bruker, leverandør og tjeneste, kauth sender en engangslenke (hash, 24 t) til brukerens registrerte adresse, og `(issuer, sub)` fra et id_token kauth selv har verifisert bindes atomisk til akkurat den brukeren. Admin skriver aldri inn `sub`.
+4. Invitasjonen bæres av en signert state med eget formål. Den kan ikke brukes til innlogging, gir ingen tokens og setter aldri `admin_ok`.
+
+**Begrunnelse:** Innliming av `sub` var det svakeste leddet i 015. En ventetabell for avviste identiteter ville latt admin godkjenne på en ubetrodd e-postpåstand. Invitasjonen krever kontroll over både e-posten og leverandørkontoen.
+
+**Konsekvens:**
+- Endring av leverandørrader, allowlist og hemmeligheter er fortsatt driftsprosedyre med omstart (017 tar kryptering).
+- En videresendt invitasjon kan brukes av mottakeren. Rest-risikoen tilsvarer magic link og gjøres synlig med kvitteringsmail.
