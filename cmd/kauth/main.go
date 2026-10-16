@@ -100,7 +100,8 @@ func main() {
 	adminAuthH := admin.NewAuthHandler(queries, issuer, mailSvc, auditSvc, cfg)
 	adminUsersH := admin.NewUsersHandler(queries, sqlDB, auditSvc)
 	adminAuditH := admin.NewAuditHandler(sqlDB)
-	adminSvcsH := admin.NewServicesHandler(queries, registry, auditSvc)
+	adminProvidersH := admin.NewProvidersHandler(queries, sqlDB, idps, auditSvc)
+	adminSvcsH := admin.NewServicesHandler(queries, registry, auditSvc).WithProviders(adminProvidersH)
 
 	// ── 9. Start bakgrunnsjobber ─────────────────────────────────────────────
 	go jobs.NewCleanup(queries).Run(ctx)
@@ -210,6 +211,10 @@ func main() {
 			r.Post("/services", adminSvcsH.HandleCreate)
 			r.Get("/services/{id}/edit", adminSvcsH.HandleEdit)
 			r.Post("/services/{id}", adminSvcsH.HandleUpdate)
+			r.Post("/services/{id}/providers", adminProvidersH.HandleServiceUpdate)
+
+			// Leverandøroversikt (lesende; raden selv endres bare via driftsprosedyren)
+			r.Get("/providers", adminProvidersH.HandleList)
 		})
 	})
 

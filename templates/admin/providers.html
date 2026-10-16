@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leverandører — kauth Admin</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; }
+        nav { background: #1e293b; padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; }
+        nav a { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
+        nav a.active { color: #f1f5f9; }
+        nav .spacer { flex: 1; }
+        main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+        h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #334155; color: #64748b; font-weight: 500; }
+        td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e293b; vertical-align: top; }
+        .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 99px; font-size: 0.75rem; }
+        .badge-green { background: #14532d; color: #86efac; }
+        .badge-red   { background: #7f1d1d; color: #fca5a5; }
+        .badge-grey  { background: #1e293b; color: #94a3b8; }
+        .hint { font-size: 0.8rem; color: #64748b; margin: 0.5rem 0 1rem; }
+        .note { background: #1e293b; border: 1px solid #334155; padding: 0.6rem 0.9rem; border-radius: 5px; margin-bottom: 1rem; font-size: 0.875rem; color: #cbd5e1; }
+    </style>
+</head>
+<body>
+<nav>
+    <strong style="color:#f1f5f9">kauth admin</strong>
+    <a href="/admin/users">Brukere</a>
+    <a href="/admin/audit">Auditlogg</a>
+    <a href="/admin/services">Tjenester</a>
+    <a href="/admin/providers" class="active">Leverandører</a>
+    <span class="spacer"></span>
+    <a href="/admin/logout">Logg ut</a>
+</nav>
+<main>
+    <h1>Leverandører</h1>
+    <div class="note">
+        Status, aktiv og hemmelighet gjelder fra siste omstart av kauth. Tilordning til tjenester leses fra databasen og kan endres på tjenestesiden.
+        Nye leverandører og endringer i issuer, klient eller hemmelighet følger driftsprosedyren (doc/IDENTITY_PROVIDERS.md) og krever omstart.
+    </div>
+    {{if .Providers}}
+    <div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">Navn</th><th scope="col">Issuer</th><th scope="col">Status</th><th scope="col">Allowlist</th><th scope="col">E-post</th><th scope="col">Hemmelighet</th><th scope="col">Tjenester</th></tr></thead>
+        <tbody>
+        {{range .Providers}}
+        <tr>
+            <td>{{.DisplayName}}<br><code>{{.Slug}}</code></td>
+            <td>{{.Issuer}}</td>
+            <td>
+                {{if .Loaded}}<span class="badge badge-green">Lastet</span>
+                {{else if not .Active}}<span class="badge badge-grey">Inaktiv</span>
+                {{else}}<span class="badge badge-red">Avvist</span>{{end}}
+                {{if .Reason}}<br><code>{{.Reason}}</code>{{end}}
+            </td>
+            <td>{{if .Allowlisted}}ja{{else}}nei{{end}}</td>
+            <td>{{if .TrustEmail}}stoles på{{else}}stoles ikke på{{end}}{{if .EmailDomains}}<br>{{range $i, $d := .EmailDomains}}{{if $i}}, {{end}}{{$d}}{{end}}{{end}}</td>
+            <td>{{if .SecretEnv}}<code>{{.SecretEnv}}</code><br>{{if .SecretSet}}<span class="badge badge-green">satt</span>{{else}}<span class="badge badge-red">ikke satt</span>{{end}}{{else}}ingen (offentlig klient){{end}}</td>
+            <td>{{range .Services}}<code>{{.ServiceID}}</code> ({{.Position}})<br>{{else}}<span style="color:#475569">—</span>{{end}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    </div>
+    {{else}}
+    <p class="hint">Ingen leverandører er registrert.</p>
+    {{end}}
+</main>
+</body>
+</html>

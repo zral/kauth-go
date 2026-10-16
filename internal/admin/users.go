@@ -270,7 +270,11 @@ func (h *UsersHandler) editData(ctx context.Context, u gen.User) (map[string]int
 	if err != nil {
 		return nil, fmt.Errorf("list identiteter: %w", err)
 	}
-	views := identityViews(idns)
+	names, err := h.queries.ListIdentityProviderNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list leverandørnavn: %w", err)
+	}
+	views := identityViews(idns, names)
 	hasAdminIdentity := false
 	for _, v := range views {
 		if v.AdminOK {
@@ -298,11 +302,19 @@ type identityView struct {
 	ID                                                  int64
 	Provider, Tenant, Subject, Email, Created, LastUsed string
 	AdminOK                                             bool
+	Unknown                                             bool
 }
 
 const msIssuerPrefix = "https://login.microsoftonline.com/"
 
-func identityViews(in []gen.UserIdentity) []identityView {
+// identityViews gir visningsnavn for oidc-identiteter ved oppslag på issuer. En
+// identitet hvis leverandørrad er borte vises som ukjent, med issuer, så admin ser
+// hva den hører til uten å gjette.
+func identityViews(in []gen.UserIdentity, names []gen.ListIdentityProviderNamesRow) []identityView {
+	byIssuer := make(map[string]gen.ListIdentityProviderNamesRow, len(names))
+	for _, n := range names {
+		byIssuer[n.Issuer] = n
+	}
 	out := make([]identityView, 0, len(in))
 	for _, i := range in {
 		v := identityView{
@@ -314,6 +326,14 @@ func identityViews(in []gen.UserIdentity) []identityView {
 			Created:  i.CreatedAt,
 			LastUsed: "—",
 			AdminOK:  i.AdminOk == 1,
+		}
+		if i.Provider == "oidc" {
+			if n, ok := byIssuer[i.Issuer]; ok {
+				v.Provider = n.DisplayName + " (" + n.Slug + ")"
+			} else {
+				v.Provider, v.Unknown = "ukjent leverandør", true
+				v.Tenant = i.Issuer
+			}
 		}
 		if i.Provider == "microsoft" && strings.HasPrefix(i.Issuer, msIssuerPrefix) {
 			if tid, _, ok := strings.Cut(strings.TrimPrefix(i.Issuer, msIssuerPrefix), "/"); ok && tid != "" {

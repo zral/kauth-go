@@ -30,6 +30,15 @@ type ServicesHandler struct {
 	auditor  auditLogger
 	listTpl  *template.Template
 	editTpl  *template.Template
+	// providers gir leverandørseksjonen på redigeringssiden; nil i tester og
+	// oppsett uten leverandørregister, og seksjonen utelates da.
+	providers *ProvidersHandler
+}
+
+// WithProviders kobler på leverandørseksjonen på tjenestesiden.
+func (h *ServicesHandler) WithProviders(p *ProvidersHandler) *ServicesHandler {
+	h.providers = p
+	return h
 }
 
 func NewServicesHandler(
@@ -168,11 +177,23 @@ func (h *ServicesHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.editTpl.Execute(w, map[string]interface{}{
+	data := map[string]interface{}{
 		"IsNew":   false,
 		"Service": withoutSecrets(*found),
-	})
+	}
+	warns := warnFlags(r, "reload", "audit")
+	data["WarnReload"], data["WarnAudit"] = warns["reload"], warns["audit"]
+	if h.providers != nil {
+		rows, kept, err := h.providers.serviceRows(r, id)
+		if err != nil {
+			slog.Error("admin: les leverandørtilordning feilet", "service_id", id, "error", err)
+			http.Error(w, "databasefeil", http.StatusInternalServerError)
+			return
+		}
+		data["ShowProviders"], data["ProviderRows"], data["KeptRows"] = true, rows, kept
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = h.editTpl.Execute(w, data)
 }
 
 // HandleUpdate lagrer endringer på eksisterende tjeneste.
@@ -452,7 +473,13 @@ func identityPolicyChanges(old gen.Service, p gen.UpdateServiceParams) string {
 // findService henter en tjeneste uavhengig av active-flagget. GetServiceByID filtrerer
 // på active = 1, og admin må kunne redigere (og reaktivere) deaktiverte tjenester.
 func (h *ServicesHandler) findService(ctx context.Context, id string) (*gen.Service, error) {
-	services, err := h.queries.ListAllServices(ctx)
+	return findServiceByID(ctx, h.queries, id)
+}
+
+// findServiceByID er findService uten handler, delt med leverandørtilordningen.
+// nil uten feil betyr at tjenesten ikke finnes.
+func findServiceByID(ctx context.Context, q *gen.Queries, id string) (*gen.Service, error) {
+	services, err := q.ListAllServices(ctx)
 	if err != nil {
 		return nil, err
 	}

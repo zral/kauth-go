@@ -40,6 +40,8 @@
         .bound { font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.75rem; }
         .bound strong { color: #e2e8f0; }
         .msg.err { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #7f1d1d; color: #fca5a5; font-size: 0.875rem; }
+            .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 99px; font-size: 0.75rem; }
+        .badge-grey { background: #1e293b; color: #94a3b8; }
     </style>
 </head>
 <body>
@@ -48,6 +50,7 @@
     <a href="/admin/users">Brukere</a>
     <a href="/admin/audit">Auditlogg</a>
     <a href="/admin/services">Tjenester</a>
+    <a href="/admin/providers">Leverandører</a>
     <span class="spacer"></span>
     <a href="/admin/logout">Logg ut</a>
 </nav>
@@ -116,10 +119,10 @@
     {{if .Identities}}
     <div class="table-wrap">
     <table>
-        <thead><tr><th>Leverandør</th><th>Tenant</th><th>Subject</th><th>E-post sist sett</th><th>Admin</th><th>Koblet</th><th>Sist brukt</th><th>Koble fra</th></tr></thead>
+        <thead><tr><th>Leverandør</th><th>Tenant / issuer</th><th>Subject</th><th>E-post sist sett</th><th>Admin</th><th>Koblet</th><th>Sist brukt</th><th>Koble fra</th></tr></thead>
         <tbody>
         {{range .Identities}}
-        <tr><td>{{.Provider}}</td><td>{{.Tenant}}</td><td><code>{{.Subject}}</code></td><td>{{.Email}}</td><td>{{if .AdminOK}}ja{{else}}nei{{end}}</td><td>{{.Created}}</td><td>{{.LastUsed}}</td><td>
+        <tr><td>{{if .Unknown}}<span class="badge badge-grey">{{.Provider}}</span>{{else}}{{.Provider}}{{end}}</td><td>{{.Tenant}}</td><td><code>{{.Subject}}</code></td><td>{{.Email}}</td><td>{{if .AdminOK}}ja{{else}}nei{{end}}</td><td>{{.Created}}</td><td>{{.LastUsed}}</td><td>
             <form method="POST" action="/admin/users/{{$.User.ID}}/identities/{{.ID}}/unlink" style="display:inline">
                 <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Koble fra denne identiteten? Brukeren logges ut av alle tjenester.')">Koble fra</button>
             </form></td></tr>

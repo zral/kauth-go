@@ -26,6 +26,14 @@
         .btn-primary { background: #3b82f6; color: #fff; }
         .btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
         .actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+        .warn { background: #422006; color: #fcd34d; border: 1px solid #854d0e; padding: 0.6rem 0.9rem; border-radius: 5px; margin-bottom: 1rem; font-size: 0.875rem; }
+        table.prov { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        table.prov th { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #334155; color: #64748b; font-weight: 500; }
+        table.prov td { padding: 0.4rem 0.5rem; border-bottom: 1px solid #1e293b; }
+        table.prov input[type=number] { width: 5rem; box-sizing: border-box; padding: 0.3rem 0.4rem; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; }
+        hr.sep { border: 0; border-top: 1px solid #334155; margin: 2rem 0 0; }
+        label.inline { display: inline; margin: 0; }
+        a.lnk { color: #93c5fd; }
         .msg.err { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #7f1d1d; color: #fca5a5; font-size: 0.875rem; }
     </style>
 </head>
@@ -35,12 +43,15 @@
     <a href="/admin/users">Brukere</a>
     <a href="/admin/audit">Auditlogg</a>
     <a href="/admin/services">Tjenester</a>
+    <a href="/admin/providers">Leverandører</a>
     <span class="spacer"></span>
     <a href="/admin/logout">Logg ut</a>
 </nav>
 <main>
     <h1>{{if .IsNew}}Ny tjeneste{{else}}Rediger {{.Service.ID}}{{end}}</h1>
     {{if .Error}}<div class="msg err">{{.Error}}</div>{{end}}
+    {{if .WarnReload}}<div class="warn" role="alert">Lagret, men ikke tatt i bruk. Start kauth på nytt.</div>{{end}}
+    {{if .WarnAudit}}<div class="warn" role="alert">Lagret, men ikke auditert. Sjekk loggen.</div>{{end}}
     <form method="POST" action="{{if .IsNew}}/admin/services{{else}}/admin/services/{{.Service.ID}}{{end}}" enctype="multipart/form-data">
         <h2>Identitet</h2>
         {{if .IsNew}}
@@ -189,6 +200,51 @@
             <a href="/admin/services" class="btn btn-outline">Avbryt</a>
         </div>
     </form>
+    {{if .ShowProviders}}
+    <hr class="sep">
+    <h2>Identitetsleverandører</h2>
+    <p class="hint">Lagres uavhengig av skjemaet over.</p>
+    <form method="POST" action="/admin/services/{{.Service.ID}}/providers">
+        {{if .ProviderRows}}
+        <table class="prov">
+            <thead><tr><th scope="col">Aktiv for tjenesten</th><th scope="col">Leverandør</th><th scope="col">Posisjon</th></tr></thead>
+            <tbody>
+            {{range .ProviderRows}}
+            <tr>
+                <td><input type="checkbox" name="provider_{{.ID}}" value="on" id="provider_{{.ID}}" aria-label="Aktiv for tjenesten: {{.DisplayName}}" {{if .Assigned}}checked{{end}}></td>
+                <td><label for="provider_{{.ID}}" class="inline">{{.DisplayName}}</label> <code>{{.Slug}}</code></td>
+                <td><input type="number" name="position_{{.ID}}" min="0" max="9999" value="{{.Position}}" aria-label="Posisjon for {{.DisplayName}}"></td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        <p class="hint">Lavest posisjon vises først på innloggingssiden. Endringen gjelder straks, uten omstart. Bare leverandører som er lastet kan velges.</p>
+        {{else}}
+        <p class="hint">Ingen leverandør er lastet. Se <a href="/admin/providers" class="lnk">Leverandører</a>.</p>
+        {{end}}
+        {{if .KeptRows}}
+        <h2>Tilordnet, men ikke lastet</h2>
+        <table class="prov">
+            <thead><tr><th scope="col">Leverandør</th><th scope="col">Posisjon</th><th scope="col">Status</th><th scope="col">Fjern</th></tr></thead>
+            <tbody>
+            {{range .KeptRows}}
+            <tr>
+                <td>{{.DisplayName}} <code>{{.Slug}}</code></td>
+                <td>{{.Position}}</td>
+                <td>{{if .Inactive}}Inaktiv{{else if .Reason}}<code>{{.Reason}}</code>{{end}}<br>Ikke lastet. Beholdes, og virker etter omstart hvis leverandøren lastes.</td>
+                <td><input type="checkbox" name="remove_{{.ID}}" value="on" aria-label="Fjern {{.DisplayName}} fra tjenesten"></td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+        {{if or .ProviderRows .KeptRows}}
+        <div class="actions">
+            <button type="submit" class="btn btn-primary">Lagre leverandører</button>
+        </div>
+        {{end}}
+    </form>
+    {{end}}
 </main>
 </body>
 </html>

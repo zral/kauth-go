@@ -120,6 +120,7 @@ func DiscoveryReason(err error) string {
 type Registry struct {
 	providers     map[string]Provider
 	statuses      []Status
+	reloadMu      sync.Mutex   // serialiserer hele omlastingen (les DB + bytt)
 	assignMu      sync.RWMutex // vokter byService, som er det eneste som endres etter oppstart
 	byService     map[string][]string
 	client        *http.Client
@@ -197,6 +198,10 @@ func (r *Registry) Statuses() []Status {
 // forrige tilordning. Deaktivering av leverandør eller tjeneste i DB slår
 // inn via active-filteret i spørringen, så det trengs ingen egen sjekk her.
 func (r *Registry) ReloadAssignments(ctx context.Context, q *gen.Queries) error {
+	// Uten serialisering kan to samtidige lagringer lese hver sin DB-tilstand og
+	// bytte i feil rekkefølge, slik at en utdatert tilordning blir stående.
+	r.reloadMu.Lock()
+	defer r.reloadMu.Unlock()
 	assigns, err := q.ListServiceIdentityProviders(ctx)
 	if err != nil {
 		return fmt.Errorf("idp: les tilordninger: %w", err)
