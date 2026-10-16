@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
@@ -25,6 +26,14 @@ type Config struct {
 	PublicKey  *rsa.PublicKey
 
 	OIDCStateSecret []byte
+
+	// OIDCIssuers er allowlisten for generiske OIDC-leverandører (015).
+	// Eksakte strenger: en rad i identity_providers lastes bare når issuer
+	// står her ordrett, så en DB-skriv alene kan ikke åpne en ny utgiver.
+	OIDCIssuers []string
+	// OIDCAllowInsecure tillater http og loopback mot leverandører. Bare for
+	// eval og lokal utvikling.
+	OIDCAllowInsecure bool
 
 	SMTPHost     string
 	SMTPPort     int
@@ -145,6 +154,16 @@ func Load() (*Config, error) {
 		}
 	}
 
+	c.OIDCIssuers = splitIssuers(os.Getenv("KAUTH_OIDC_ISSUERS"))
+	c.OIDCAllowInsecure = os.Getenv("KAUTH_OIDC_ALLOW_INSECURE") == "true"
+	if c.OIDCAllowInsecure {
+		// En kopiert eval-.env skal ikke kunne åpne for http og loopback i prod.
+		if os.Getenv("KAUTH_INSECURE_COOKIES") != "true" {
+			errs = append(errs, "KAUTH_OIDC_ALLOW_INSECURE=true krever KAUTH_INSECURE_COOKIES=true")
+		}
+		slog.Warn("KAUTH_OIDC_ALLOW_INSECURE=true: http og loopback tillatt mot OIDC-leverandører, skal ikke brukes i prod")
+	}
+
 	c.SMTPHost = optional("KAUTH_SMTP_HOST", "")
 	c.SMTPPort, _ = strconv.Atoi(optional("KAUTH_SMTP_PORT", "587"))
 	c.SMTPUser = optional("KAUTH_SMTP_USER", "")
@@ -216,6 +235,20 @@ func Load() (*Config, error) {
 		return nil, errors.New("konfigurasjonsfeil:\n  - " + strings.Join(errs, "\n  - "))
 	}
 	return c, nil
+}
+
+// splitIssuers deler på mellomrom og/eller komma. Ingen normalisering: allowlisten
+// skal matche eksakt, ellers ville «https://x/» og «https://x» blitt samme utgiver.
+func splitIssuers(v string) []string {
+	var out []string
+	for _, f := range strings.FieldsFunc(v, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	}) {
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // parseHTTPAddr godtar kun en ren IP-literal. Vertsnavn avvises fordi

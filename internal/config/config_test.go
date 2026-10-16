@@ -188,3 +188,50 @@ func TestLoad_HTTPAddr(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestLoad_OIDCIssuers(t *testing.T) {
+	setMinimalEnv(t)
+	cases := map[string][]string{
+		"":                                      nil,
+		"  , ,":                                 nil,
+		"https://a.example":                     {"https://a.example"},
+		"https://a.example, https://b.example/": {"https://a.example", "https://b.example/"},
+		"https://a.example,https://b.example https://C.example": {"https://a.example", "https://b.example", "https://C.example"},
+	}
+	for in, want := range cases {
+		t.Setenv("KAUTH_OIDC_ISSUERS", in)
+		c, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, want, c.OIDCIssuers, in)
+	}
+}
+
+func TestLoad_OIDCAllowInsecure(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KAUTH_INSECURE_COOKIES", "true")
+	for v, want := range map[string]bool{"": false, "false": false, "TRUE": false, "1": false, "true": true} {
+		t.Setenv("KAUTH_OIDC_ALLOW_INSECURE", v)
+		c, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, want, c.OIDCAllowInsecure, v)
+	}
+}
+
+func TestLoad_OIDCAllowInsecure_KreverInsecureCookies(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KAUTH_OIDC_ALLOW_INSECURE", "true")
+	for _, v := range []string{"", "false"} {
+		t.Setenv("KAUTH_INSECURE_COOKIES", v)
+		_, err := Load()
+		require.ErrorContains(t, err, "KAUTH_OIDC_ALLOW_INSECURE")
+	}
+	t.Setenv("KAUTH_INSECURE_COOKIES", "true")
+	c, err := Load()
+	require.NoError(t, err)
+	require.True(t, c.OIDCAllowInsecure)
+	// Uten allow-insecure er INSECURE_COOKIES irrelevant for denne sjekken.
+	t.Setenv("KAUTH_OIDC_ALLOW_INSECURE", "")
+	t.Setenv("KAUTH_INSECURE_COOKIES", "")
+	_, err = Load()
+	require.NoError(t, err)
+}
