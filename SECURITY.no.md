@@ -17,6 +17,7 @@ kauth har ingen formelle versjoner ennå. `master` er den eneste støttede grene
 ## Hva som er i scope
 
 - Autentiserings- og autoriseringsflyter (OIDC, magic-link, passord, refresh-token-rotasjon)
+- Generiske OIDC-leverandører: issuer-allowlist, utgående HTTP-klient (SSRF-vern), e-posttillit og kontokobling (se `doc/IDENTITY_PROVIDERS.md`)
 - Token-utstedelse og -verifisering (JWT, JWKS)
 - Cookie-håndtering (HttpOnly, Secure, SameSite)
 - HMAC-state og state-cookie-håndtering for OIDC

@@ -260,3 +260,40 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - **Navn og filer.** Utstedelsen heter `loginCompleter.complete` (`login_complete.go`). Den fødererte stien er `federatedLogin` med `finish`, `reject` og `auditRejected` (`federated.go`), og leverandøren beskrives av `federatedProvider{login, rejectedType}`. Admin-Google ligger i `google_admin.go`.
 - **Policyavslag er merket.** `checkPolicy`-feil returneres som `errPolicyDenied` med uendret tekst. Alt som ikke er et policyavslag, får metodens svar ved utstedelsesfeil. Dermed havner aldri en ukjent feiltekst i passordets 403-kropp.
 - **Testsømmer.** Google har `fetchClaims`-søm som Microsoft. JWKS-URL-en til Microsoft er den ueksporterte pakkevariabelen `msKeysURL`, med uendret verdi i prod. Sømmen er global og tåler ikke `t.Parallel`.
+
+---
+
+## ADN 17 — Generiske OIDC-leverandører som DB-rader med to nøkler (2026-10-16)
+
+**Status:** Implementert (2026-10-16, 015)
+→ Analyse: [doc/features/015_AN_GENERISK_OIDC.md](features/015_AN_GENERISK_OIDC.md) · Plan: [doc/features/015_PL_GENERISK_OIDC.md](features/015_PL_GENERISK_OIDC.md) · Drift: [doc/IDENTITY_PROVIDERS.md](IDENTITY_PROVIDERS.md)
+
+**Beslutning:**
+1. `identity_providers` og `service_identity_providers`, rutene `/idp/{slug}/login|callback`, og ett register i minnet med lat discovery og cache av discovery og JWKS. Google og Microsoft er uendret og ligger utenfor tabellen.
+2. En leverandør lastes bare når issueren står både i tabellen og eksakt i `KAUTH_OIDC_ISSUERS`. Issuere fra Google og Microsoft avvises.
+3. All trafikk mot generiske leverandører går via én klient: bare https, ingen redirect, tidsavbrudd, størrelsestak og dial-vakt mot ikke-offentlige adresser.
+4. `trust_email=0` er default: bare allerede koblede identiteter. `trust_email=1` krever `email_verified=true` og at domenet står i leverandørens `email_domains`.
+5. `client_secret_env` peker på en env-variabel med prefikset `KAUTH_IDP_`. PKCE-verifieren utledes med HMAC fra state, og slug ligger i både sti og state.
+6. En generisk identitet gir aldri admin-tilgang.
+
+**Begrunnelse:** En rad i `identity_providers` er en tillitserklæring på linje med en signeringsnøkkel. Uten disse fire linjene ville en DB-skriving vært nok til SSRF, til kontoovertakelse via en IdP som påstår en fremmed e-post, eller til å lekke hemmeligheter.
+
+**Konsekvens:**
+- Leverandører legges til, endres og fjernes med SQL og miljøvariabler, og krever restart. Admin-UI, kryptering av hemmeligheter og eksplisitt kobling kommer i Fase 5 (BACKLOG).
+- Med `trust_email=0` må admin koble kontoer for hånd i `user_identities`. `sub` står ikke i audit eller logg, så den må hentes hos leverandøren.
+- Slettes en leverandør, blir identitetene liggende. Driftsprosedyren har SQL for å rydde dem.
+- Google og Microsoft kan senere flyttes over på den samme klienten, discovery-cachen og `PKCEVerifier` (BACKLOG).
+- Testleverandøren og `internal/oidctest` er ikke i prod-binæren (+0,79 % størrelse mot tag `014`, og testkoden er ikke i avhengighetstreet).
+
+**Presiseringer fra implementeringen:**
+- **Tillitsflagget er invertert, og `finish` feiler lukket.** Feltet heter `EmailUntrusted` (ikke `EmailTrusted`), fordi `linkPolicy{}` brukes av admin-Google og i eksisterende tester, og nullverdien må bety tillit der. Generisk OIDC går derfor alltid via `finishWithPolicy`, og `finish` uten eksplisitt policy avviser `oidc` (`reason=internal`). En glemt policy gir dermed aldri stille tillit. Tillitsavslag auditeres som `oidc_rejected reason=email_untrusted`.
+- **ASCII-krav til e-posten.** `NormalizeEmail` bretter Unicode (U+212A blir `k`), så en betrodd IdP kunne latt `\u212Aari@firma.no` treffe `kari@firma.no`. Tillit krever at den rå, utrimmede adressen bare har tegn fra `0x21` til `0x7e` og nøyaktig én `@`. Mellomrom i endene avvises også, fordi `TrimSpace` ellers fjerner NBSP og gjør adressen til en annen brukers. Å bruke samme krav i andre flyter er ført i BACKLOG.
+- **DB-CHECK-er som forsvar i dybden.** Migrasjon `012` speiler de viktigste lastereglene i `CHECK`: reserverte issuere, slug-format, `KAUTH_IDP_`-prefiks, `trust_email` uten domener, og `admin_ok = 0` for `oidc`. Lastevalideringen i kode er fortsatt autoritativ (den dekker flere regler, blant annet allowlisten og at hemmelighetsvariabelen ikke er tom). En rad satt inn for hånd skal avvises av databasen heller enn å åpne en vei. `user_identities` ble bygd om med en vakt som stopper migrasjonen ved radtap.
+- **Stale-while-revalidate.** Discovery og JWKS caches per leverandør i 24 timer. Etter det returneres forrige verdi straks og fornyes i bakgrunnen med én henting om gangen, forrige verdi gjelder i opptil 7 døgn, og første henting som feiler gir negativ cache i 60 s. Dermed blokkerer en treg leverandør ikke innloggingen (opptil 10 s ved synkron fornyelse var et review-funn). Discovery kjøres med egen kontekst, ikke forespørselens, fordi `oidc.NewProvider` lagrer konteksten i nøkkelsettet.
+- **`token_endpoint` på en annen vert får hemmeligheten.** Discovery-dokumentet bestemmer hvor `client_secret` sendes, og token-endepunktet kan ligge på en annen vert enn issueren. Det er akseptert (Google gjør det samme): issueren er allerede admin-betrodd via de to nøklene, endepunktet må være https, og dial-vakten gjelder. Endepunktet valideres for https, men ikke for vert.
+- **`azp` og `iss`-parameter.** `azp` avvises når den er satt og ulik `client_id` (OIDC Core §3.1.3.7), også med én `aud`, siden go-oidc ikke sjekker den. `iss` i tilbakeruten må være lik issueren, og er påkrevd når leverandøren annonserer `authorization_response_iss_parameter_supported` (RFC 9207). Kan metadata ikke leses, avvises innloggingen. Bare et id_token fra token-endepunktet verifiseres, aldri et klientlevert, fordi ukjent `kid` gir JWKS-henting uten rate-grense (BACKLOG).
+- **Algoritmer og klientautentisering.** Snittet av leverandørens annonserte algoritmer og RS/PS/ES/EdDSA gjelder (HS256 og `none` aldri). `client_secret_basic` foretrekkes, `client_secret_post` brukes hvis det er det eneste, og offentlig klient sender bare `client_id` med PKCE.
+- **Testleverandøren.** `cmd/kauth-testidp` bygger på `internal/oidctest` og har kontrollendepunkter for negative moduser (feil `iss`, `aud`, nonce, `azp`, utløpt token, ukjent `kid`, `alg=none`, `HS256`, treg og feilende token-endepunkt, og ondsinnet discovery). Den binder seg bare til loopback, er ikke del av `build`, `build-arm64` eller `deploy`, og brukes av eval-serveren med `KAUTH_OIDC_ALLOW_INSECURE=true`, som krever `KAUTH_INSECURE_COOKIES=true` og aldri skal settes i prod. Hver instans i `oidctest` har egne nøkler, så isolasjonstester mellom leverandører ikke hviler på `iss` og `aud` alene.
+- **Restart ved endring.** Leverandører, tilordninger, allowlist og hemmeligheter leses én gang ved oppstart. En avvist rad logges (`idp: leverandør ikke lastet … reason=`) uten å stoppe oppstarten, så én feil rad ikke tar ned de andre tjenestene. En tilordning til en rad som ikke ble lastet, gir ingen knapp.
+- **Ingen gjenbruk av leverandør-id.** `identity_providers.id` er `AUTOINCREMENT`. `sqlite3`-kommandolinjen har `foreign_keys` av, så en manuell `DELETE` kan etterlate en tilordning, og uten `AUTOINCREMENT` ville neste leverandør fått samme id og arvet den. `Load` varsler bare om tilordninger til aktive rader som ble avvist. Foreldreløse tilordninger finnes med SQL-en i driftsprosedyren.
+- **Utgående vakt.** I tillegg til private og link-local adresser blokkeres NAT64, 6to4, Teredo, IPv4-kompatible, `fec0::/10`, dokumentasjonsprefiks, `240.0.0.0/4` og broadcast. Det bryter IPv6-only-nett med NAT64, noe som er akseptert fordi prod har IPv4.

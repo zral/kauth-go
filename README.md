@@ -19,6 +19,7 @@ Running in production across a handful of services.
 - Exposes JWKS and OpenID Discovery under `/.well-known/`
 - Speaks standard OIDC `authorization_code` + PKCE (RFC 6749 §4.1, RFC 7636, mandatory for every `response_type=code` request — no confidential-client exception) — a real `id_token` with `aud`/`nonce`, so an external client you don't control the code of can plug in an off-the-shelf OIDC library instead of the bespoke token-in-URL flow. See [doc/FEATURES.md](doc/FEATURES.md#oidc-authorization_code--pkce).
 - Offers four sign-in paths per service: Google OIDC, Microsoft OIDC, email magic link, and passwords (the last one off by default — see *The passwordless choice* below)
+- Adds any other standards-compliant OIDC provider per service as a database row plus an issuer allowlist entry and a restart, with no code change. The provider's email is not trusted unless you say so (`trust_email`). See [doc/IDENTITY_PROVIDERS.md](doc/IDENTITY_PROVIDERS.md).
 - Central user administration: one admin panel for every service
 - Audit log with 90-day retention, filterable on every column and exportable to CSV
 
@@ -290,7 +291,8 @@ Cloudflare Tunnel sits in front: kauth listens on `127.0.0.1` by default (`KAUTH
 ## Architecture in broad strokes
 
 - `cmd/kauth` — entry point. Config, database startup, router wiring, graceful shutdown.
-- `internal/auth` — sign-in handlers (Google, Microsoft, magic link, password), dispatch, login page, middleware.
+- `internal/auth` — sign-in handlers (Google, Microsoft, generic OIDC, magic link, password), dispatch, login page, middleware.
+- `internal/idp` — generic OIDC providers: validation of the provider rows, the locked outbound HTTP client, discovery and JWKS cache, PKCE derivation.
 - `internal/token` — JWT issuance, JWKS, refresh rotation.
 - `internal/admin` — admin panel: user administration, audit log, service config, magic-link and Google sign-in for admins. On the protected routes every request is checked against the database, so a deactivated admin loses access at once. Every write under `/admin` requires a same-origin request.
 - `internal/service` — service resolver with a cache. Decides which service an incoming request belongs to, based on redirect URI or auth host.

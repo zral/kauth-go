@@ -53,12 +53,14 @@ If those assumptions break — kauth exposed directly on a public network withou
 - Constant-time HMAC comparison on state cookies.
 - Anti-enumeration on magic link and admin login (200 ms floor plus identical responses).
 - Rate limiting on magic links (3 attempts per 15 minutes per email address).
+- Generic OIDC providers (`identity_providers`) are loaded only when the issuer is in both the table and the `KAUTH_OIDC_ISSUERS` allowlist, so a database write alone cannot add a trusted issuer. All outbound traffic to them goes through one client: https only, no redirects, size and time limits, and a dial guard against non-public addresses. Their email is untrusted by default (`trust_email=0`: only already-linked identities sign in); with `trust_email=1` it needs `email_verified`, a plain-ASCII address and a domain on the provider's list. Client secrets live in `KAUTH_IDP_*` environment variables, never in the database, and a generic identity never grants admin access. Operations guide: [doc/IDENTITY_PROVIDERS.md](doc/IDENTITY_PROVIDERS.md).
 - Audit writes isolated in a goroutine — an audit failure can never block authentication.
 - Explicit `Secure: true` on every cookie (overridable for local HTTP development through `KAUTH_INSECURE_COOKIES=true`).
 - CORS disabled by default (`KAUTH_CORS_ORIGINS=` empty list means no CORS headers at all). Enabled only for specific endpoints (`/token`, `/.well-known/*`).
 
 ## Known limitations
 
+- `KAUTH_OIDC_ALLOW_INSECURE=true` (http and loopback towards OIDC providers) exists for local development and evaluation only. It must never be set in production. kauth refuses to start with it unless `KAUTH_INSECURE_COOKIES=true` is also set.
 - We haven't run a formal penetration test. The code has been reviewed internally, but no external review has been carried out.
 - The magic-link rate limiter is process-local (in-memory). If kauth runs as several instances behind a load balancer, each instance keeps its own tally. kauth currently runs as a single instance, so this isn't a problem in practice.
 - No automated rotation of the RSA signing key. Changing it manually requires a coordinated deploy.

@@ -39,11 +39,17 @@ Sist gjennomgått: 2026-10-16
 | Audit-volum fra gjentatte presentasjoner av revokerte tokens | Hver presentasjon logger `refresh_token_revoked_presented`. Vurder rate limit eller dedup (008 F3) | — |
 | Legacy token-i-URL av-bryter per tjeneste (B3) | Står i ROADMAP Fase 1, men ble ikke tatt i 008–010. Av som default for nye tjenester. Fjernes når alle klienter er på code+PKCE | ROADMAP M1, B3 |
 | CORS-allowlist per tjeneste, avvis cookie-refresh uten `Origin` | Står i ROADMAP Fase 1. I dag er allowlisten global (`KAUTH_CORS_ORIGINS`). Origin-sjekken før rotasjon finnes, men mot den globale listen | ROADMAP H7 |
-| Fase 4–6 | Fase 3 er ferdig (014). Fase 4 er neste | ROADMAP §5 |
-| Upstream PKCE mot Google og Microsoft | FEATURES sa at Google brukte PKCE, men verken Google eller Microsoft gjør det. Kan nå legges inn ett sted for begge | ADN 16 |
+| Fase 5–6 | Fase 4 (015) er ferdig. Fase 5 er neste | ROADMAP §5 |
+| Upstream PKCE og discovery-/JWKS-cache for Google og Microsoft | Verken Google eller Microsoft bruker PKCE i dag (FEATURES sa det en periode). Fra 015 finnes `idp.PKCEVerifier` og en låst klient med discovery- og JWKS-cache, og begge kan gjenbrukes. Krever at Google- og MS-flytene flyttes over til den nye klienten | ADN 16, ADN 17 |
 | Callback sjekker ikke at `auth_google`/`auth_microsoft` fortsatt er på | Slås metoden av etter at innloggingen er startet, fullføres den. Vindu på inntil 10 minutter (state-levetiden). Lav (014 D16) | ADN 16 |
-| JWKS for Microsoft hentes på nytt ved hver innlogging | `oidc.NewRemoteKeySet` lages per kall. Vurder cache og robusthet mot nett-feil (014 F3, code review S4) | ADN 16 |
+| JWKS for Microsoft hentes på nytt ved hver innlogging | `oidc.NewRemoteKeySet` lages per kall. Løses sammen med raden over: bruk `idp`-registerets cache og klient (014 F3, code review S4) | ADN 16, ADN 17 |
 | Testene bruker `resolver`/`aud` direkte på `MicrosoftHandlers` | Feltene brukes bare av tester etter 014 F6. Flytt testene til `fed`, så feltene kan fjernes (014 F6, code review S1) | ADN 16 |
+| Throttling av JWKS-refetch ved ukjent `kid` | Et id_token med ukjent `kid` gir én JWKS-henting per innloggingsforsøk (1:1, ingen forsterkning), og bare leverandøren selv kan utløse det, siden bare back-channel-tokens verifiseres. Legg på en minste avstand mellom hentinger per leverandør (015 eval T6.8, F3 security M2) | ADN 17 |
+| Admin-UI for generiske leverandører, tilordning og eksplisitt kobling | I dag er leverandører og tilordninger `sqlite3`-prosedyre, og `sub` for manuell kobling må hentes hos leverandøren. Hører til Fase 5 sammen med kryptert lagring av hemmeligheter | ROADMAP Fase 5, ADN 17 |
+| Admin-visningen av identiteter viser bare «oidc», ikke leverandørnavnet | To leverandører ser like ut. Slå opp `issuer` mot `identity_providers` i visningen (015 F1, code review S4) | ADN 17 |
+| `-race` i CI | ThreadSanitizer virker ikke på Pi-en (VMA 47 bit), så samtidighetskoden i `idp`-registeret og audit-køen er bare testet med `-count=N`. Kjøres i CI i Fase 6 (015 F3) | ROADMAP Fase 6 |
+| `NormalizeEmail` bretter unicode også for andre flyter | U+212A (Kelvin) blir `k`, så en adresse kan treffe en annen brukers. Generisk OIDC krever ren ASCII for tillit (015 F4, A1). Vurder samme krav for Google, Microsoft og admin-endring av e-post | ADN 17 |
+| Nyregistrering via føderert innlogging auditeres ikke som `identity_linked` | Auto-registrering skriver bruker og identitet uten audit-rad for koblingen. Gjelder alle føderte metoder (015 eval T2.11) | ADN 13 |
 | Apple Sign In | Løpende kostnad. Kommer som adapter etter Fase 4 ved dokumentert behov | ADN 7 |
 | GitHub/LinkedIn m.fl. | Kan i stor grad dekkes av generisk OIDC (Fase 4) | ROADMAP §5 |
 | Deaktivert bruker på tjeneste med auto-register gir `login_failed` i stedet for `access_denied` | Uventet feilkode, ufarlig (008 F10 S2) | — |

@@ -20,9 +20,9 @@ En komplett oversikt over hva kauth gjør og hvordan. README-en gir overordnet m
 
 ## Innloggingsmetoder
 
-Fire metoder, alle valgbare per tjeneste via boolean-felter i `services`-tabellen (`auth_google`, `auth_microsoft`, `auth_magic_link`, `auth_password`).
+Fire innebygde metoder, valgbare per tjeneste via boolean-felter i `services`-tabellen (`auth_google`, `auth_microsoft`, `auth_magic_link`, `auth_password`). I tillegg kan en tjeneste ha generiske OIDC-leverandører (se [Generisk OIDC](#generisk-oidc)), som tilordnes i `service_identity_providers` og ikke har et eget flagg.
 
-Alle fire går gjennom samme utstedelse: `checkPolicy`, access- og refresh-token, refresh-cookie, rydding av state-cookie (bare Google og Microsoft), `last_login`, suksess-audit og redirect til `/dispatch`. Google og Microsoft deler i tillegg en føderert sti for state, avvisning og resolverfeil (ADN 16). Verifiseringen av id_token er hos hver leverandør. Admin-Google bruker ikke utstedelsen.
+Alle metodene, også generisk OIDC, går gjennom samme utstedelse: `checkPolicy`, access- og refresh-token, refresh-cookie, rydding av state-cookie (bare de fødererte: `oidc_state`, `ms_state` og `idp_state`), `last_login`, suksess-audit og redirect til `/dispatch`. Google, Microsoft og generisk OIDC deler i tillegg en føderert sti for state, avvisning og resolverfeil (ADN 16). Verifiseringen av id_token er hos hver leverandør. Admin-Google bruker ikke utstedelsen.
 
 ### Google OIDC
 
@@ -39,6 +39,19 @@ Bruker `/common/oauth2/v2.0`-endepunktet for å akseptere både personlige Micro
 - Avvisning logges som `microsoft_oidc_rejected` med `reason=<årsak>` og `tid` i details.
 - Feil i kodeutvekslingen og i verifiseringen av id_token logges som `microsoft_oidc_rejected` med `reason=code_exchange` eller `reason=id_token`, uten e-post og `tid`.
 - kauth bruker ikke PKCE mot Microsoft. Klienten er konfidensiell og har hemmelighet. Innloggingen bindes med signert state og nonce.
+
+### Generisk OIDC
+
+Innlogging mot en konfigurerbar OIDC-leverandør (015, ADN 17). Leverandørene er rader i `identity_providers`, tilordnet tjenester i `service_identity_providers` (med `position` for rekkefølge). Hver tilordnet leverandør gir en knapp «Fortsett med <navn>» på login-siden, etter Microsoft og før magic link. Uten tilordning er login-siden uendret. Google og Microsoft ligger utenfor tabellen. Driftsprosedyre: [IDENTITY_PROVIDERS.md](IDENTITY_PROVIDERS.md).
+
+- **Flyt:** `GET /idp/{slug}/login` og `GET /idp/{slug}/callback`. Authorization code med PKCE S256 (verifieren utledes med HMAC fra state, ingenting lagres), nonce og signert state med slug. Slug i stien må være lik slug i staten, og tjenesten kommer fra staten, aldri fra stien. Redirect-URI er `https://<Host>/idp/<slug>/callback`.
+- **Lasting:** en rad lastes bare når den er aktiv, har gyldig slug og visningsnavn, og issueren står eksakt i `KAUTH_OIDC_ISSUERS` (andre nøkkel), er `https://` og ikke Google eller Microsoft. `client_secret_env` må starte med `KAUTH_IDP_` og peke på en ikke-tom variabel, `scopes` må ha `openid`, og `trust_email=1` krever `email_domains`. En avvist rad logges (`idp: leverandør ikke lastet`) og tar ikke ned oppstarten. Alt leses ved oppstart, så endringer krever restart.
+- **Utgående klient:** discovery, JWKS og token-endepunkt går via én låst klient: bare https, ingen redirect, 10 s, 1 MiB, og dial-vakt mot loopback, private og andre ikke-offentlige adresser (også NAT64, 6to4 og Teredo). Discovery og JWKS caches per leverandør (24 t, stale-while-revalidate, gammel verdi gyldig i 7 døgn, negativ cache 60 s).
+- **id_token:** signaturen verifiseres mot leverandørens JWKS med snittet av annonserte algoritmer og RS/PS/ES/EdDSA (aldri HS256 eller `none`). `iss`, `aud`, utløp, nonce og `azp` (når satt) sjekkes. `iss`-parameteren i tilbakeruten kreves når leverandøren annonserer RFC 9207. Bare et id_token fra token-endepunktet (back-channel) verifiseres.
+- **E-posttillit:** `trust_email=0` (standard) gir innlogging bare for allerede koblede identiteter. `trust_email=1` krever `email_verified`, ren ASCII-adresse med én `@` og et domene i `email_domains` (eksakt, uten subdomener). Mangler ett vilkår, er innloggingen som ved `trust_email=0`. ASCII-kravet finnes fordi `NormalizeEmail` bretter unicode.
+- **Identitet:** `(issuer, subject)` med `provider='oidc'` i `user_identities`. Samme `sub` hos to leverandører er to identiteter. En generisk identitet gir aldri `admin_ok` og går aldri gjennom admin-stiene.
+- **Audit:** `oidc_login` ved suksess (`auth_method=oidc`) og `oidc_rejected` ved avvisning, med `provider=<slug> reason=<kode>`. Årsakene er `unknown_service`, `unknown_provider`, `provider_error`, `issuer_param`, `discovery`, `code_exchange`, `id_token_missing`, `id_token`, `nonce`, `missing_sub`, `email_missing`, `email_untrusted`, `user_inactive`, `user_conflict` og `internal`. Teksten fra leverandøren havner aldri i svaret til brukeren.
+- **Testleverandør:** `cmd/kauth-testidp` (bygges med `make testidp`, ikke del av prod-binæren) brukes av eval-serveren sammen med `KAUTH_OIDC_ALLOW_INSECURE=true`.
 
 ### Magic-link på e-post
 
@@ -61,6 +74,7 @@ E-post er et attributt på brukeren, ikke identiteten (ADN 13). Identiteten til 
 
 - **Google:** issuer er alltid `https://accounts.google.com` (også når `iss` kommer uten `https://`), subject er `sub`.
 - **Microsoft:** issuer er `https://login.microsoftonline.com/{tid}/v2.0` med `tid` i små bokstaver, subject er `oid` i små bokstaver. `oid` er påkrevd og må være en GUID, ellers avvises innloggingen (`microsoft_oidc_rejected reason=missing_oid`). `sub` brukes ikke, fordi den er parvis per Entra-app.
+- **Generisk OIDC:** issuer er issueren i `identity_providers`, ordrett. Subject er `sub`, maks 255 tegn.
 - **Magic link og passord** lagrer ingen identitet. De bruker `users.email`.
 - **`public_id`:** hver bruker har en UUID v4 (`users.public_id`, `crypto/rand`) som aldri endres.
 
@@ -531,8 +545,8 @@ Intern-sti-grenen i `/dispatch` er fjernet: på nivå 1 godtas bare en `redirect
 ## Audit-logg
 
 Lagret i `audit_events`-tabellen med felter:
-- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `dispatch_subject_mismatch`, `dispatch_subject_check_skipped`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, ...
-- `auth_method` — `google`, `microsoft`, `magic_link`, `password`, `refresh`
+- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `oidc_login`, `oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `dispatch_subject_mismatch`, `dispatch_subject_check_skipped`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, ...
+- `auth_method` — `google`, `microsoft`, `oidc`, `magic_link`, `password`, `refresh`
 - `email`, `service_id`, `ip_address`, `user_agent`
 - `success` — bool, alltid eksplisitt satt av applikasjonen
 - `details` — fritekst, brukes for grunn på feilet login. `microsoft_oidc_rejected` har `reason=code_exchange` og `reason=id_token` i tillegg til de øvrige årsakene. `refresh_token_reuse` har `gap_s=<n>`, `user_deactivated` har `id=<n> revoked=<antall>` eller `id=<n> revoke_failed` (deaktiveringen står selv om revokeringen feiler; refresh for deaktivert bruker avvises uansett)
@@ -566,6 +580,8 @@ Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
 | GET | `/callback` | Google OAuth callback |
 | GET | `/ms-oidc-login`, `/ms-social-login` | Initier Microsoft OAuth |
 | GET | `/ms-callback` | Microsoft OAuth callback |
+| GET | `/idp/{slug}/login` | Initier innlogging mot generisk OIDC-leverandør (`?service=<id>`) |
+| GET | `/idp/{slug}/callback` | Callback fra generisk OIDC-leverandør |
 | GET | `/magic-login` | Magic-link-skjema, valgfri `?service=<id>` og `?lang=<nb\|en\|de>` |
 | POST | `/magic-login` | Send magic-link |
 | GET | `/magic-login/{token}` | Bekreftelsesside (endrer ingenting) |
@@ -597,7 +613,7 @@ Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
 
 ## Datamodell
 
-Syv SQLite-tabeller med WAL og foreign keys på:
+Ni SQLite-tabeller med WAL og foreign keys på:
 
 ### `services`
 
@@ -609,7 +625,11 @@ Brukerkontoer: id, public_id (UUID v4, unik, uforanderlig), email (unik på `low
 
 ### `user_identities`
 
-Eksterne identiteter: id, user_id (FK til `users`, `ON DELETE CASCADE`), provider (`google`/`microsoft`), issuer, subject, email (sist sett), admin_ok, created_at, last_used_at. Unik på `(issuer, subject)`.
+Eksterne identiteter: id, user_id (FK til `users`, `ON DELETE CASCADE`), provider (`google`/`microsoft`/`oidc`), issuer, subject, email (sist sett), admin_ok, created_at, last_used_at. Unik på `(issuer, subject)`.
+
+### `identity_providers` og `service_identity_providers`
+
+Generiske OIDC-leverandører (015): id, slug (unik), display_name, issuer (unik), client_id, client_secret_env (navnet på en `KAUTH_IDP_*`-variabel, aldri selve hemmeligheten), scopes, trust_email, email_domains, active, created_at. Tilordningen har `(service_id, provider_id)` som primærnøkkel og `position`, og slettes med tjenesten eller leverandøren. CHECK-regler i databasen speiler lastereglene som forsvar i dybden. Se [IDENTITY_PROVIDERS.md](IDENTITY_PROVIDERS.md).
 
 ### `magic_tokens`
 
