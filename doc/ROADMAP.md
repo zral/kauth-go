@@ -120,18 +120,67 @@ Alvorlighet: **K** kritisk · **H** høy · **M** middels · **L** lav. «Prod»
 
 Én erfaren utvikler (DSF-pipeline). Estimater i utviklerdager, eksklusive ekstern revisjon.
 
-| Fase | Innhold | Risikoer | Est. | DSF-feature |
-|---|---|---|---|---|
-| **0 — Akutt herding** | Merge origin → prod; K1 intern-sti-allowlist; K2 admin-handoff + `Verify` med forventet `token_use`/`aud`; K3 redigerende logger + rydd journald; H1 skjemabug + sjekk av prod-data; H2 refresh-binding + policy; H7 avvis CORS-`*` + Origin-sjekk på `/token`; M4 bind 127.0.0.1 + fjern RealIP; M5 sikkerhetsheadere inkl. `Referrer-Policy`; M10 passord-kill-switch; L4 | K1–K3, H1–H3, H7, M4, M5, M10, L4, L5 | 3–5 (faktisk ca. 2 t) | 007 ✔ |
-| **1 — Herd eksisterende flyter** | Utløpstid (`iat`) i signert OIDC-state; full formålsbinding magic-token ↔ tjeneste med eksplisitt `purpose`-kolonne i stedet for `service_id IS NULL` (fra 007-review); Upstream nonce + PKCE (Google/MS); `email_verified`/`xms_edov`/`tid`; refresh i én transaksjon + revoke ved logout/deaktivering; `aud`+`jti` på alle tokens; magic link: bekreftelsesside, hashing, limiter, tjenestebinding; admin-CSRF (og `PostFormValue` i admin-skrivehandlere, fra 007 F4); CORS-allowlist per tjeneste og Origin-sjekk mot RT-ens lagrede tjeneste før rotasjon, samt audit og senere avvisning av cookie-refresh uten Origin (fra 007 F7); audit-kø; admin-middleware mot DB; legacy-av-bryter per tjeneste | H4–H6, M1–M3, M6, M7, M9, L1–L3, L7 | 7–11 | 008–010 (klientene i BACKLOG) |
-| **2 — Stabil identitet** | `user_identities(user_id, provider, issuer, subject)` unik på `(issuer, subject)`; stabil intern ID; e-postnormalisering; migrering med kollisjonsrapport; `sub_format` per tjeneste; eksplisitt kobling/frakobling og recovery (B1, B2). **011 ✔ i prod 2026-10-15:** identitetsmodell, `public_id`, `user_id` på sesjoner, `sub_format`, `auto_link`, admin-godkjent identitet og migrasjonsvakt (stopper i stedet for kollisjonsrapport). **012 ✔ i prod 2026-10-15:** frakobling, e-postendring i admin, e-postepoke på `/dispatch` nivå 0 og admin, engangsbinding av admin-Google og recovery som prosedyre. Eksplisitt kobling og innstramming av overgangsunntaket er utsatt til første tjeneste med `auto_link=0` (Fase 5) | P-funnene, M11 ✔ (011) | 6–9 | 011 ✔, 012 ✔ |
-| **3 — Felles føderert innlogging** | `FederatedLoginService` + provider-grensesnitt; Google/MS refaktorert inn (gamle handlere kjører side om side til de er verifisert); `checkPolicy` og utstedelse ett sted | — | 4–6 | 013 |
-| **4 — Generisk OIDC** | `identity_providers` + `service_identity_providers`; discovery med eksplisitt issuer-allowlist (SSRF-vern); JWKS-cache; lokal OIDC-testleverandør for negativtester | — | 5–8 | 014 |
-| **5 — Policy, admin-UX, nøkler og hemmeligheter** | Provider-admin og tilordning per tjeneste; `allow_magic_link` / `allowed_providers` / `require_federated_login`; nøkkelring med `kid`; secrets kryptert i hvile | M8, M12 | 5–8 | 015–016 |
-| **6 — Test, drift og release** | CI (fmt, vet, test, `-race`, govulncheck); E2E mot testleverandør; restore-test av backup; fuzzing av redirect/callback; oppdatert SECURITY.md/FEATURES.md; ekstern revisjon; `v1.0.0` | L6 | 5–8 | 017 |
-| | **Totalt** | | **35–55** | |
+| Fase | Innhold | Risikoer | Est. | Faktisk (aktiv) | DSF-feature |
+|---|---|---|---|---|---|
+| **0 — Akutt herding** | Merge origin → prod; K1 intern-sti-allowlist; K2 admin-handoff + `Verify` med forventet `token_use`/`aud`; K3 redigerende logger + rydd journald; H1 skjemabug + sjekk av prod-data; H2 refresh-binding + policy; H7 avvis CORS-`*` + Origin-sjekk på `/token`; M4 bind 127.0.0.1 + fjern RealIP; M5 sikkerhetsheadere inkl. `Referrer-Policy`; M10 passord-kill-switch; L4 | K1–K3, H1–H3, H7, M4, M5, M10, L4, L5 | 3–5 | ca. 2,9 t (13.10) | 007 ✔ |
+| **1 — Herd eksisterende flyter** | Utløpstid (`iat`) i signert OIDC-state; full formålsbinding magic-token ↔ tjeneste med eksplisitt `purpose`-kolonne i stedet for `service_id IS NULL` (fra 007-review); Upstream nonce + PKCE (Google/MS); `email_verified`/`xms_edov`/`tid`; refresh i én transaksjon + revoke ved logout/deaktivering; `aud`+`jti` på alle tokens; magic link: bekreftelsesside, hashing, limiter, tjenestebinding; admin-CSRF (og `PostFormValue` i admin-skrivehandlere, fra 007 F4); CORS-allowlist per tjeneste og Origin-sjekk mot RT-ens lagrede tjeneste før rotasjon, samt audit og senere avvisning av cookie-refresh uten Origin (fra 007 F7); audit-kø; admin-middleware mot DB; legacy-av-bryter per tjeneste | H4–H6, M1–M3, M6, M7, M9, L1–L3, L7 | 7–11 | ca. 7,2 t (13.–14.10) | 008–010 ✔ (klientene i BACKLOG) |
+| **2 — Stabil identitet** | `user_identities(user_id, provider, issuer, subject)` unik på `(issuer, subject)`; stabil intern ID; e-postnormalisering; migrering med kollisjonsrapport; `sub_format` per tjeneste; eksplisitt kobling/frakobling og recovery (B1, B2). **011 ✔ i prod 2026-10-15:** identitetsmodell, `public_id`, `user_id` på sesjoner, `sub_format`, `auto_link`, admin-godkjent identitet og migrasjonsvakt (stopper i stedet for kollisjonsrapport). **012 ✔ i prod 2026-10-15:** frakobling, e-postendring i admin, e-postepoke på `/dispatch` nivå 0 og admin, engangsbinding av admin-Google og recovery som prosedyre. Eksplisitt kobling og innstramming av overgangsunntaket er utsatt til første tjeneste med `auto_link=0` (Fase 5). **013 ✔ i prod 2026-10-16:** e-postepoke og brukersjekk på `/dispatch` nivå 1–5 (fra eval 012, ikke i opprinnelig plan) | P-funnene, M11 ✔ (011) | 6–9 | ca. 4,9 t (14.–16.10, inkl. 013) | 011 ✔, 012 ✔, 013 ✔ |
+| **3 — Felles føderert innlogging** | Felles utstedelse for alle fire metodene (`checkPolicy` og utstedelse ett sted); felles føderert sti for Google og MS uten leverandørregister; ingen parallelle handlere | — | 4–6 | ca. 5,8 t (16.10) | 014 ✔ (i prod 2026-10-16) |
+| **4 — Generisk OIDC** | `identity_providers` + `service_identity_providers`; discovery med eksplisitt issuer-allowlist (SSRF-vern); JWKS-cache; lokal OIDC-testleverandør for negativtester | — | 5–8 | ca. 3,6 t (16.10) | 015 ✔ (i prod 2026-10-16) |
+| **5 — Policy, admin-UX, nøkler og hemmeligheter** | Provider-admin og tilordning per tjeneste; `allow_magic_link` / `allowed_providers` / `require_federated_login`; nøkkelring med `kid`; secrets kryptert i hvile | M8, M12 | 5–8 | — | 016–017 |
+| **6 — Test, drift og release** | CI (fmt, vet, test, `-race`, govulncheck); E2E mot testleverandør; restore-test av backup; fuzzing av redirect/callback; oppdatert SECURITY.md/FEATURES.md; ekstern revisjon; `v1.0.0` | L6 | 5–8 | — | 018 |
+| | **Totalt** | | **35–55** | **ca. 21 t så langt (Fase 0–3)** | |
 
-Fase 0 (007) ble estimert til 3–5 utviklerdager og gjennomført på ca. 2 timer med autonom DSF-kjøring (deployet 2026-10-13). Estimatene for de senere fasene er ikke justert ennå. Én fase er for lite grunnlag til å kalibrere resten.
+#### Estimat mot faktisk (per 2026-10-16)
+
+Faktisk tid er aktiv tid fra lifecycle-telemetrien (`.claude/logs/lifecycle.jsonl`), med pauser over 30 min trukket fra. Den dekker analyse, plan, implementering, review, eval og utrulling. Lars' egen tid til beslutninger, manuell test og `sudo`-steg i prod ligger delvis utenfor. Kalendertid er fra første DSF-commit til «i prod» i git-loggen.
+
+| Feature | Fase | Aktiv | Kalender | Merknad |
+|---|---|---|---|---|
+| 007 | 0 | 171 min | 13.10 17:20 → 20:14 (3 t) | Lars' eget anslag: ca. 2 t |
+| 008 | 1 | 122 min | 13.10 20:17 → 22:57 (2,7 t) | Venting på restart for MS/Google |
+| 009 | 1 | 226 min | 13.10 23:03 → 14.10 16:48 (18 t) | Impl. ferdig 02:00, deploy av Lars neste dag |
+| 010 | 1 | 86 min | 14.10 17:49 → 20:50 (3 t) | |
+| 011 | 2 | 164 min | 14.10 21:41 → 15.10 19:07 (21 t) | Nattpause mellom F2 og F3, beslutning PD8b |
+| 012 | 2 | 90 min | 15.10 22:05 → 23:25 (1,3 t) | |
+| 013 | 2 (tillegg) | 41 min | 16.10 00:21 → 00:58 (0,6 t) | Fra eval 012 |
+| 014 | 3 | 350 min | 16.10 06:32 → 13:04 (6,5 t) | Refaktorering, karakteriseringstester først (F1). Lars-test gjenstår |
+| **Sum 007–014** | **0–3** | **ca. 21 t** | **13.10 17:20 → 16.10 13:04 (2,8 døgn)** | |
+
+Fase 0–2 var estimert til 16–25 utviklerdager (120–190 t à 7,5 t). De tok ca. 15 timer aktivt, omtrent 2 utviklerdager, altså 8–12 ganger raskere enn estimatet. Forholdet er ganske stabilt per fase: Fase 0 ca. 8–13×, Fase 1 ca. 7–11×, Fase 2 ca. 9–14×. Det som trekker kalendertiden ut, er ventetid på Lars (deploy med `sudo`, ekte innlogging, beslutninger), ikke agentarbeidet.
+
+Fase 3 (014) var estimert til 4–6 dager (30–45 t) og tok ca. 5,8 timer, altså 5–8×. Den er den tregeste fasen så langt. Forbeholdet under slo til: Det fantes ingen ferdig fil:linje-analyse å bygge på, og en ren refaktorering krevde karakteriseringstester før koden kunne flyttes (F1 tok ca. 2 t kalendertid). Testkjøringen ble også lengre (`go test -count=3` på auth tar ca. 5 min). Samlet for Fase 0–3 er estimatet 20–31 dager (150–233 t) mot ca. 21 t faktisk, altså 7–11×.
+
+**Kalibrert anslag for resten:** Fase 4–6 er estimert til 15–24 utviklerdager. Fase 4 (generisk OIDC) er ny protokollkode med SSRF-flate, og den ligner mer på Fase 3 enn på Fase 0–2. Bruk derfor 5–8× for Fase 4–5 (10–16 dager), som gir **10–24 timer aktivt**. Deler av Fase 6 er ikke agentarbeid: ekstern revisjon, E2E mot en ekte testleverandør og restore-test. Fase 6 kommer i tillegg, og ekstern revisjon føres der som egen kalenderpost.
+
+Kodebasen før denne planen (Go-porten, 98 commits 18.06–02.10) er ikke med i tallene.
+
+#### Fordeling på aktivitet (007–014)
+
+Den aktive tiden er fordelt slik. Når en subagent kjører, går tiden til agentens type: `code-review`, `security-review`, `scope-guard` og `migration-guard` regnes som review, `test` og `scenario-test` som testing, og `product-owner` og `explore` som planlegging. Agenter uten type klassifiseres etter beskrivelsen («Impl F3», «Eval 013», «Doc-review»). Kjører flere agenter samtidig, deles tiden likt mellom dem. Uten aktive agenter går tiden til dirigentens gjeldende fase (`analyse`/`plan`, `impl`, `review`, `eval`/`test`). Planlegging omfatter analyse og plan. Testing omfatter holdout-scenarier, eval og test- og scope-agenten.
+
+| Feature | Planlegging | Implementering | Review | Testing | Deploy | Sum |
+|---|---|---|---|---|---|---|
+| 007 | 22 | 54 | 79 | 17 | 0 | 171 |
+| 008 | 16 | 25 | 67 | 12 | 2 | 122 |
+| 009 | 23 | 84 | 34 | 64 | 22 | 226 |
+| 010 | 9 | 6 | 15 | 57 | 0 | 86 |
+| 011 | 23 | 56 | 50 | 35 | 0 | 164 |
+| 012 | 17 | 35 | 19 | 19 | 0 | 90 |
+| 013 | 3 | 14 | 9 | 15 | 0 | 41 |
+| 014 | 14 | 120 | 181 | 35 | 0 | 350 |
+| **Sum (min)** | **128** | **393** | **454** | **252** | **24** | **1 251** |
+| **Timer** | **2,1** | **6,6** | **7,6** | **4,2** | **0,4** | **20,9** |
+| **Andel** | **10 %** | **31 %** | **36 %** | **20 %** | **2 %** | |
+
+**Hva tallene viser:**
+
+- **Kvalitetssikringen tar mer tid enn koden.** Review og testing utgjør 56 % av tiden, mot 31 % for implementering. Selve kodingen går fort (ofte 2–10 min per fase), mens review-runder med security-review på alle auth-differ tar lengst tid.
+- **Planleggingen er billig.** 10 % av tiden gikk med til planlegging, men den bærer mye: ROADMAP-funnene med fil:linje-bevis gjorde analysene i Fase 0–2 korte.
+- **014 skiller seg ut.** Review tok 52 % av tiden. En ren refaktorering av fire innloggingsflyter ga mange review-runder for å vise at atferden er uendret. Det forklarer det meste av den lavere faktoren for Fase 3.
+- **Deploy ser nesten gratis ut, men er det ikke.** Prod-installasjonen (`sudo`, restart, ekte innlogging) gjør Lars utenfor telemetrien. Det er den som drar ut kalendertiden.
+
+**Forbehold:** Tallene er en tilnærming. Fasemarkørene mangler noen steder. Test- og scope-agenten gjør både testing og scope-sjekk, og den er regnet som testing. Intent-capture av scenarier i analysefasen er også regnet som testing. Dirigentens egen tid mens agenter kjører, blir ført på agentene.
 
 Fase 0 er en forutsetning for alt annet og bør gå før noen klient endres. Fase 1 og 2 kan delvis overlappe; Fase 3 forutsetter Fase 2.
 
