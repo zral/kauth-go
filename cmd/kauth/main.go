@@ -98,7 +98,7 @@ func main() {
 	// ── 8. Initialiser admin-handlers ────────────────────────────────────────
 	// cfg er allerede *config.Config — ingen & nødvendig
 	adminAuthH := admin.NewAuthHandler(queries, issuer, mailSvc, auditSvc, cfg)
-	adminUsersH := admin.NewUsersHandler(queries, sqlDB, auditSvc)
+	adminUsersH := admin.NewUsersHandler(queries, sqlDB, auditSvc).WithInvites(idps, mailSvc, cfg.BaseURL)
 	adminAuditH := admin.NewAuditHandler(sqlDB)
 	adminProvidersH := admin.NewProvidersHandler(queries, sqlDB, idps, auditSvc)
 	adminSvcsH := admin.NewServicesHandler(queries, registry, auditSvc).WithProviders(adminProvidersH)
@@ -199,6 +199,8 @@ func main() {
 			r.Post("/users/{id}/deactivate", adminUsersH.HandleDeactivate)
 			r.Post("/users/{id}/email", adminUsersH.HandleEmailChange)
 			r.Post("/users/{id}/identities/{identityID}/unlink", adminUsersH.HandleUnlink)
+			r.Post("/users/{id}/link-invites", adminUsersH.HandleInviteCreate)
+			r.Post("/users/{id}/link-invites/{inviteID}/revoke", adminUsersH.HandleInviteRevoke)
 			r.Get("/users/export", adminUsersH.HandleExport)
 
 			// Audit-logg
@@ -240,7 +242,7 @@ func main() {
 	// Felles avslutning for signal og server-feil: sendinger, så audit, så DB.
 	drain := func() {
 		// Pågående magic-link-sendinger får en frist, ellers tapes de ved SIGTERM.
-		waitSends(5*time.Second, magicH.WaitForSends, adminAuthH.WaitForSends)
+		waitSends(5*time.Second, magicH.WaitForSends, adminAuthH.WaitForSends, adminUsersH.WaitForSends)
 		// Audit tømmes før databasen lukkes, ellers tapes køede hendelser.
 		auditCtx, auditCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer auditCancel()

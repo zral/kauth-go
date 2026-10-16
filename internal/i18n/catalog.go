@@ -40,6 +40,9 @@ var catalog = map[string]Strings{
 
 		MailSubject: "Your sign-in link",
 		MailBody:    "Hello!\n\nClick to sign in (valid for 15 minutes):\n\n{link}\n\nIf you didn't request this, you can ignore this email.\n",
+
+		LinkInviteSubject: "Sign in with {provider}",
+		LinkInviteBody:    "Hello!\n\nAn administrator wants you to be able to sign in with your {provider} account. Open the link and sign in with {provider} to confirm:\n\n{link}\n\nThe link works once and expires in 24 hours. If you weren't expecting this, delete the email. Nothing will change.\n",
 	},
 
 	"nb": {
@@ -79,6 +82,9 @@ var catalog = map[string]Strings{
 
 		MailSubject: "Din innloggingslenke",
 		MailBody:    "Hei!\n\nKlikk for å logge inn (gyldig 15 min):\n\n{link}\n\nHvis du ikke ba om dette, ignorer denne e-posten.\n",
+
+		LinkInviteSubject: "Koble {provider} til brukeren din",
+		LinkInviteBody:    "Hei!\n\nEn administrator vil at du skal kunne logge inn med {provider}. Åpne lenken og logg inn hos {provider} for å bekrefte:\n\n{link}\n\nLenken virker i 24 timer, og bare én gang. Visste du ikke om dette, kan du slette e-posten. Da skjer det ingenting.\n",
 	},
 
 	"de": {
@@ -118,5 +124,8 @@ var catalog = map[string]Strings{
 
 		MailSubject: "Ihr Anmeldelink",
 		MailBody:    "Hallo!\n\nKlicken Sie, um sich anzumelden (15 Minuten gültig):\n\n{link}\n\nFalls Sie dies nicht angefordert haben, ignorieren Sie diese E-Mail.\n",
+
+		LinkInviteSubject: "{provider}-Konto mit Ihrem Benutzer verbinden",
+		LinkInviteBody:    "Hallo!\n\nEin Administrator möchte, dass Sie sich künftig mit {provider} anmelden können. Öffnen Sie den Link und melden Sie sich bei {provider} an, um das zu bestätigen:\n\n{link}\n\nDer Link ist 24 Stunden und nur einmal gültig. Wenn Sie das nicht erwartet haben, löschen Sie diese E-Mail. Es ändert sich nichts.\n",
 	},
 }

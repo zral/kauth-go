@@ -41,6 +41,9 @@
         .bound strong { color: #e2e8f0; }
         .msg.err { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #7f1d1d; color: #fca5a5; font-size: 0.875rem; }
             .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 99px; font-size: 0.75rem; }
+        .msg.ok { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #14532d; color: #bbf7d0; font-size: 0.875rem; }
+        form.inline { display: inline; }
+        select.invite-select { width: 100%; box-sizing: border-box; padding: 0.6rem 0.75rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; font-size: 0.9rem; }
         .badge-grey { background: #1e293b; color: #94a3b8; }
     </style>
 </head>
@@ -133,6 +136,52 @@
     <p class="hint">Frakobling sperrer ikke kontoen. Med auto-kobling kobles den til igjen ved neste innlogging. Er kontoen kompromittert, deaktiver brukeren.</p>
     {{else}}
     <p class="hint">Ingen Google- eller Microsoft-konto er koblet ennå. Kobles ved første innlogging.</p>
+    {{end}}
+    {{end}}
+    {{if and .ShowIdentities .ShowInvites}}
+    <h2>Koblingsinvitasjoner</h2>
+    {{if .InviteError}}<div class="msg err" role="alert">{{.InviteError}}</div>{{end}}
+    {{if .InviteSent}}<div class="msg ok" role="status">Invitasjon sendt til {{.User.Email}}.</div>{{end}}
+    <ul class="hint">
+        <li>Brukeren får en lenke på e-post, logger inn hos leverandøren, og kontoen kobles til denne brukeren.</li>
+        <li>Lenken gjelder i 24 timer og kan brukes én gang.</li>
+        <li>En ny invitasjon for samme leverandør erstatter den forrige.</li>
+        <li>Tjenesten bestemmer hvilken innloggingsside og avsenderadresse brukeren ser.</li>
+    </ul>
+    {{if .Invites}}
+    <div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">Leverandør</th><th scope="col">Tjeneste</th><th scope="col">Utløper</th><th scope="col">Opprettet av</th><th scope="col">Handling</th></tr></thead>
+        <tbody>
+        {{range .Invites}}
+        <tr><td>{{.Provider}}</td><td>{{.Service}}</td><td>{{.ExpiresAt}}</td><td>{{.CreatedBy}}</td><td>
+            <form method="POST" action="/admin/users/{{$.User.ID}}/link-invites/{{.ID}}/revoke" class="inline">
+                <button type="submit" class="btn btn-danger btn-sm" aria-label="Trekk tilbake invitasjon for {{.Provider}}">Trekk tilbake</button>
+            </form></td></tr>
+        {{end}}
+        </tbody>
+    </table>
+    </div>
+    {{else}}
+    <p class="hint">Ingen aktive invitasjoner.</p>
+    {{end}}
+    {{if .Deactivated}}
+    <p class="hint">Brukeren er deaktivert og kan ikke inviteres.</p>
+    {{else if .InviteOptions}}
+    <form method="POST" action="/admin/users/{{.User.ID}}/link-invites">
+        <div class="form-group">
+            <label for="invite_pair">Leverandør og tjeneste</label>
+            <select id="invite_pair" name="pair" class="invite-select" required>
+                {{range .InviteOptions}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+            </select>
+            <p class="hint">Lenken sendes til {{.User.Email}}.</p>
+        </div>
+        <div class="actions">
+            <button type="submit" class="btn btn-primary">Send invitasjon</button>
+        </div>
+    </form>
+    {{else}}
+    <p class="hint">Ingen leverandør er tilordnet en aktiv tjeneste ennå. Tilordne på tjenestesiden først.</p>
     {{end}}
     {{end}}
 </main>

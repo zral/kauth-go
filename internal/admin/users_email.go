@@ -68,7 +68,7 @@ func (h *UsersHandler) HandleEmailChange(w http.ResponseWriter, r *http.Request)
 	ctx := context.WithoutCancel(r.Context())
 	now := time.Now().UTC().Format(emailTimeFormat)
 	var oldEmail string
-	var revoked, burned int64
+	var revoked, burned, invitesBurned int64
 	err = token.RunInTx(ctx, h.sqlDB, func(q *gen.Queries) error {
 		// Revokeringen kommer først: det er en skriving, så transaksjonen tar
 		// skrivelåsen før den leser. Leser den først og skriver etterpå, kan en
@@ -114,6 +114,14 @@ func (h *UsersHandler) HandleEmailChange(w http.ResponseWriter, r *http.Request)
 			NewEmail: newEmail,
 			Now:      now,
 		})
+		if err != nil {
+			return err
+		}
+		// K26: en invitasjon er bundet til adressen den ble laget for. Lenken ligger
+		// i den gamle innboksen, og den skal ikke lenger kunne brukes etter byttet.
+		invitesBurned, err = q.BurnLinkInvitesForUser(ctx, gen.BurnLinkInvitesForUserParams{
+			Now: token.FormatLinkInviteTime(time.Now()), UserID: id,
+		})
 		return err
 	})
 	switch {
@@ -145,7 +153,7 @@ func (h *UsersHandler) HandleEmailChange(w http.ResponseWriter, r *http.Request)
 		IP:      extractIP(r),
 		UA:      r.UserAgent(),
 		Success: true,
-		Details: fmt.Sprintf("id=%d old=%q revoked=%d burned=%d", id, oldEmail, revoked, burned),
+		Details: fmt.Sprintf("id=%d old=%q revoked=%d burned=%d invites_burned=%d", id, oldEmail, revoked, burned, invitesBurned),
 	})
 	if !auditOK {
 		http.Redirect(w, r, usersRedirect(false), http.StatusSeeOther)

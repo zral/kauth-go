@@ -34,6 +34,7 @@ type UsersHandler struct {
 	auditor auditLogger
 	listTpl *template.Template
 	editTpl *template.Template
+	inv     *inviteDeps // nil til WithInvites er kalt
 }
 
 func NewUsersHandler(queries *gen.Queries, sqlDB *sql.DB, auditor auditLogger) *UsersHandler {
@@ -257,6 +258,8 @@ func (h *UsersHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "databasefeil", http.StatusInternalServerError)
 		return
 	}
+	// Fast flagg, aldri URL-verdien, så malen ikke viser det avsender av lenken vil.
+	data["InviteSent"] = r.URL.Query().Get("invite") == "sent"
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = h.editTpl.Execute(w, data)
@@ -285,6 +288,10 @@ func (h *UsersHandler) editData(ctx context.Context, u gen.User) (map[string]int
 	if u.AdminBoundAt != nil {
 		boundAt = *u.AdminBoundAt
 	}
+	invites, inviteOpts, err := h.inviteData(ctx, u)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]interface{}{
 		"IsNew":          false,
 		"User":           u,
@@ -293,6 +300,10 @@ func (h *UsersHandler) editData(ctx context.Context, u gen.User) (map[string]int
 		"AdminBoundAt":   boundAt,
 		// Bundet uten noen admin_ok-identitet: ny admin-konto krever driftsprosedyren.
 		"BoundWithoutIdentity": boundAt != "" && !hasAdminIdentity,
+		"ShowInvites":          h.inv != nil,
+		"Invites":              invites,
+		"InviteOptions":        inviteOpts,
+		"Deactivated":          u.DeactivatedAt != nil,
 	}, nil
 }
 
@@ -411,9 +422,23 @@ func (h *UsersHandler) HandleDeactivate(w http.ResponseWriter, r *http.Request) 
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	// E-posten kommer fra brukerraden (RETURNING), ikke fra URL/skjema, og
 	// brukes bare i auditraden. Revokeringen går på user_id (D8a).
-	email, err := h.queries.DeactivateUser(r.Context(), gen.DeactivateUserParams{
-		DeactivatedAt: &now,
-		ID:            id,
+	// Invitasjonene brennes i samme transaksjon: en deaktivert bruker skal ikke
+	// ha en lenke som kan kobles til kontoen. Callbacken avviser den også, men
+	// lenken skal ikke leve videre til en eventuell reaktivering.
+	var email string
+	var invitesBurned int64
+	txCtx := context.WithoutCancel(r.Context())
+	err = token.RunInTx(txCtx, h.sqlDB, func(q *gen.Queries) error {
+		var err error
+		email, err = q.DeactivateUser(txCtx, gen.DeactivateUserParams{
+			DeactivatedAt: &now,
+			ID:            id,
+		})
+		if err != nil {
+			return err
+		}
+		invitesBurned, err = q.BurnLinkInvitesForUser(txCtx, gen.BurnLinkInvitesForUserParams{Now: token.FormatLinkInviteTime(time.Now()), UserID: id})
+		return err
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
@@ -437,9 +462,9 @@ func (h *UsersHandler) HandleDeactivate(w http.ResponseWriter, r *http.Request) 
 	})
 	if err != nil {
 		slog.Error("admin: revokering av refresh-tokens etter deaktivering feilet", "id", id, "err", err)
-		details = fmt.Sprintf("id=%d revoke_failed", id)
+		details = fmt.Sprintf("id=%d revoke_failed invites_burned=%d", id, invitesBurned)
 	} else {
-		details = fmt.Sprintf("id=%d revoked=%d", id, revoked)
+		details = fmt.Sprintf("id=%d revoked=%d invites_burned=%d", id, revoked, invitesBurned)
 	}
 
 	auditOK := logAdminWrite(ctx, h.auditor, audit.Event{

@@ -73,6 +73,10 @@ type Strings struct {
 	// Magic-link-e-post. MailBody har nøyaktig én {link}-placeholder.
 	MailSubject string
 	MailBody    string
+
+	// Koblingsinvitasjon: begge har {provider}, brødteksten også nøyaktig én {link}.
+	LinkInviteSubject string
+	LinkInviteBody    string
 }
 
 // Get returnerer katalogen for locale, eller Fallback-katalogen ved ukjent

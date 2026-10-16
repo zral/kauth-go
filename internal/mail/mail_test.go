@@ -290,3 +290,26 @@ func TestSMTP_HappyPathPlain(t *testing.T) {
 		t.Fatal("serveren fikk aldri meldingen")
 	}
 }
+
+func TestBuildLinkInviteBody_AllLocales(t *testing.T) {
+	link := "https://auth.example.test/link/abc"
+	for _, locale := range []string{"en", "nb", "de"} {
+		body := buildLinkInviteBody(i18n.Get(locale), link, "Acme")
+		assert.Contains(t, body, link, locale)
+		assert.Contains(t, body, "Acme", locale)
+		assert.NotContains(t, body, "{link}", locale)
+		assert.NotContains(t, body, "{provider}", locale)
+	}
+}
+
+func TestSendLinkInvite_FromAddressWithoutBrevoKey_Errors(t *testing.T) {
+	svc := New(config.Config{SMTPMock: false})
+	err := svc.SendLinkInvite("bruker@example.test", "Spekto", "https://x.test/link/t", "Acme", "nb", "noreply@spekto.live")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "KAUTH_BREVO_API_KEY")
+	assert.NotContains(t, err.Error(), "/link/t")
+}
+
+func TestSendLinkInvite_MockModeSucceeds(t *testing.T) {
+	require.NoError(t, New(config.Config{SMTPMock: true}).SendLinkInvite("a@b.test", "N", "https://x.test/link/t", "Acme", "nb", ""))
+}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/zral/kauth-go/internal/db/gen"
+	"github.com/zral/kauth-go/internal/token"
 )
 
 type Cleanup struct {
@@ -16,23 +17,26 @@ func NewCleanup(queries *gen.Queries) *Cleanup {
 	return &Cleanup{queries: queries}
 }
 
-// Run starter tre cleanup-goroutiner med 1-times intervall.
+// Run starter cleanup-goroutiner med 1-times intervall.
 // Blokkerer til ctx er kansellert.
 func (c *Cleanup) Run(ctx context.Context) {
 	magicTicker := time.NewTicker(1 * time.Hour)
 	refreshTicker := time.NewTicker(1 * time.Hour)
 	auditTicker := time.NewTicker(1 * time.Hour)
 	authCodeTicker := time.NewTicker(1 * time.Hour)
+	linkInviteTicker := time.NewTicker(1 * time.Hour)
 	defer magicTicker.Stop()
 	defer refreshTicker.Stop()
 	defer auditTicker.Stop()
 	defer authCodeTicker.Stop()
+	defer linkInviteTicker.Stop()
 
 	// Kjør alle cleanup-runder umiddelbart ved oppstart
 	c.cleanMagicTokens(ctx)
 	c.cleanRefreshTokens(ctx)
 	c.cleanAuditEvents(ctx)
 	c.cleanAuthorizationCodes(ctx)
+	c.cleanLinkInvites(ctx)
 
 	for {
 		select {
@@ -47,6 +51,8 @@ func (c *Cleanup) Run(ctx context.Context) {
 			c.cleanAuditEvents(ctx)
 		case <-authCodeTicker.C:
 			c.cleanAuthorizationCodes(ctx)
+		case <-linkInviteTicker.C:
+			c.cleanLinkInvites(ctx)
 		}
 	}
 }
@@ -105,4 +111,19 @@ func (c *Cleanup) cleanAuditEvents(ctx context.Context) {
 		return
 	}
 	log.Printf("cleanup: slettet audit events eldre enn 90 dager (grense: %s)", cutoff)
+}
+
+// linkInviteRetention holder utløpte og brukte invitasjoner så lenge at
+// kvoteraden (maks 5 per time, telt på created_at) aldri slettes mens den
+// fortsatt teller. Brukte rader slettes når expires_at passerer cutoff.
+const linkInviteRetention = 7 * 24 * time.Hour
+
+// cleanLinkInvites sletter koblingsinvitasjoner som utløp for mer enn 7 døgn siden.
+func (c *Cleanup) cleanLinkInvites(ctx context.Context) {
+	cutoff := token.FormatLinkInviteTime(time.Now().Add(-linkInviteRetention))
+	if err := c.queries.DeleteExpiredLinkInvites(ctx, cutoff); err != nil {
+		log.Printf("cleanup: feil ved sletting av koblingsinvitasjoner: %v", err)
+		return
+	}
+	log.Printf("cleanup: slettet koblingsinvitasjoner utløpt før %s", cutoff)
 }

@@ -152,3 +152,13 @@ func (r *Registry) IsAllowedCallback(svc *gen.Service, uri string) bool {
 	}
 	return false
 }
+
+// LinkBaseURL avgjør hvilken host e-postlenker for tjenesten skal peke til:
+// tjenestens auth_host, ellers den globale base-URL-en. Delt mellom magic
+// link (auth) og koblingsinvitasjoner (admin), som ikke kan importere hverandre.
+func LinkBaseURL(baseURL string, svc *gen.Service) string {
+	if svc != nil && svc.AuthHost != nil && *svc.AuthHost != "" {
+		return "https://" + *svc.AuthHost
+	}
+	return baseURL
+}

@@ -166,7 +166,7 @@ func TestDeactivate_RevokesAllUserRefreshTokens(t *testing.T) {
 		var n int
 		_ = e.sqldb.QueryRow(
 			"SELECT COUNT(*) FROM audit_events WHERE event_type = 'user_deactivated' AND email = ? AND details = ?",
-			"Ola.Nordmann@Example.com", fmt.Sprintf("id=%d revoked=2", user.ID)).Scan(&n)
+			"Ola.Nordmann@Example.com", fmt.Sprintf("id=%d revoked=2 invites_burned=0", user.ID)).Scan(&n)
 		return n == 1
 	}, 2*time.Second, 10*time.Millisecond)
 }
@@ -261,7 +261,7 @@ func TestDeactivate_RevokeFails_StillSucceedsWithAudit(t *testing.T) {
 		var n int
 		_ = e.sqldb.QueryRow(
 			"SELECT COUNT(*) FROM audit_events WHERE event_type = 'user_deactivated' AND email = 'ola@example.com' AND details = ?",
-			fmt.Sprintf("id=%d revoke_failed", user.ID)).Scan(&n)
+			fmt.Sprintf("id=%d revoke_failed invites_burned=0", user.ID)).Scan(&n)
 		return n == 1
 	}, 2*time.Second, 10*time.Millisecond)
 }

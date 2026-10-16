@@ -97,10 +97,7 @@ func logoHTMLFor(svc *gen.Service) template.HTML {
 // trengt et eget auth_host siden BaseURL allerede pekte dit) faller tilbake
 // til cfg.BaseURL, som bevarer eksisterende oppførsel for dem uendret.
 func resolveMagicLinkBaseURL(cfg config.Config, svc *gen.Service) string {
-	if svc != nil && svc.AuthHost != nil && *svc.AuthHost != "" {
-		return "https://" + *svc.AuthHost
-	}
-	return cfg.BaseURL
+	return service.LinkBaseURL(cfg.BaseURL, svc)
 }
 
 // randRead er byttbar slik at testen kan simulere feil. Fra Go 1.24 krasjer

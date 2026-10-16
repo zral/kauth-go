@@ -50,6 +50,38 @@ func (s *Service) SendMagicLink(to, fromName, linkURL, locale, fromAddress strin
 	return sendSMTP(addr, s.cfg.SMTPHost, auth, s.cfg.SMTPFrom, to, msg, s.cfg.SMTPStartTLS)
 }
 
+// SendLinkInvite sender koblingsinvitasjonen (016). Samme transportvalg og
+// mock-linje som SendMagicLink; mock-linjen har lenken så eval kan lese den.
+// providerName er leverandørens visningsnavn og kommer fra en admin-satt rad.
+func (s *Service) SendLinkInvite(to, fromName, linkURL, providerName, locale, fromAddress string) error {
+	t := i18n.Get(locale)
+	if s.cfg.SMTPMock {
+		fmt.Printf("[MAIL MOCK] To: %s | Fra: %s (%s) | Språk: %s | Type: link-invite | Link: %s\n", to, fromName, fromAddress, locale, linkURL)
+		return nil
+	}
+	// Linjeskift i navnet ville blitt til ekstra e-posthoder i Subject.
+	providerName = strings.NewReplacer("\r", " ", "\n", " ").Replace(providerName)
+	subject := strings.ReplaceAll(t.LinkInviteSubject, "{provider}", providerName)
+	body := buildLinkInviteBody(t, linkURL, providerName)
+
+	if fromAddress != "" {
+		if s.cfg.BrevoAPIKey == "" {
+			return fmt.Errorf("email_from_address=%q satt men KAUTH_BREVO_API_KEY mangler", fromAddress)
+		}
+		return sendBrevo(s.cfg.BrevoAPIKey, fromAddress, fromName, to, subject, body)
+	}
+	msg := buildMessage(s.cfg.SMTPFrom, fromName, to, subject, body)
+	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
+	auth := smtp.PlainAuth("", s.cfg.SMTPUser, s.cfg.SMTPPassword, s.cfg.SMTPHost)
+	return sendSMTP(addr, s.cfg.SMTPHost, auth, s.cfg.SMTPFrom, to, msg, s.cfg.SMTPStartTLS)
+}
+
+// buildLinkInviteBody setter inn leverandørnavn og lenke i den oversatte teksten.
+func buildLinkInviteBody(t i18n.Strings, linkURL, providerName string) string {
+	body := strings.ReplaceAll(t.LinkInviteBody, "{provider}", providerName)
+	return strings.ReplaceAll(body, "{link}", linkURL)
+}
+
 // sendBrevo sender via Brevos transaksjons-e-post-API (samme endepunkt og
 // mønster som POV-appens src/lib/server/mail/transport.ts). htmlContent er
 // påkrevd av API-et uten templateId — bygges her som en minimal HTML-innpakning

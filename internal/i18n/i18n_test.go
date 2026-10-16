@@ -54,3 +54,12 @@ func TestGet_UnknownLocaleFallsBackToEnglish(t *testing.T) {
 	assert.Equal(t, catalog[Fallback], Get("fr"))
 	assert.Equal(t, catalog[Fallback], Get(""))
 }
+
+func TestLinkInviteTextPlaceholders(t *testing.T) {
+	for locale, s := range catalog {
+		assert.Equal(t, 1, strings.Count(s.LinkInviteBody, "{link}"), "locale %s: én {link}", locale)
+		assert.GreaterOrEqual(t, strings.Count(s.LinkInviteBody, "{provider}"), 1, "locale %s: {provider} i brødtekst", locale)
+		assert.Contains(t, s.LinkInviteSubject, "{provider}", "locale %s: {provider} i emne", locale)
+		assert.NotContains(t, s.LinkInviteBody, "%s", "locale %s", locale)
+	}
+}
