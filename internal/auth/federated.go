@@ -77,10 +77,30 @@ func (f *federatedLogin) reject(w http.ResponseWriter, r *http.Request, p federa
 // identitet og utsteder tokens. Policyavslag og manglende konto gir
 // access_denied uten å si hvilket; alt annet som feiler gir login_failed.
 func (f *federatedLogin) finish(w http.ResponseWriter, r *http.Request, p federatedProvider, svc *gen.Service, ext externalIdentity) {
-	user, _, err := f.resolver.resolve(r.Context(), ext, policyFor(svc), resolveMeta{ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent")})
+	// Fail-closed: generisk OIDC må alltid avgjøre e-posttillit selv via
+	// finishWithPolicy. policyFor gir tillit, så et kall hit ville gitt stille
+	// tillit til en leverandør som ikke har fått det.
+	if p.login.AuthMethod == loginOIDC.AuthMethod {
+		slog.Error("oidc: finish kalt uten eksplisitt policy")
+		f.auditRejected(r, p, svc.ID, rejection{Email: ext.Email, Reason: "internal"})
+		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		return
+	}
+	f.finishWithPolicy(w, r, p, svc, ext, policyFor(svc), "")
+}
+
+// finishWithPolicy er finish med en eksplisitt policy, for leverandører som
+// selv avgjør om e-posten er til å stole på (generisk OIDC). rejectCtx er
+// Context i audit-raden for avslag som skrives her.
+func (f *federatedLogin) finishWithPolicy(w http.ResponseWriter, r *http.Request, p federatedProvider, svc *gen.Service, ext externalIdentity, pol linkPolicy, rejectCtx string) {
+	user, _, err := f.resolver.resolve(r.Context(), ext, pol, resolveMeta{ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent")})
 	if err != nil {
 		switch {
 		case errors.Is(err, errNoAccount):
+			// Uten e-posttillit er hvert avslag på en ukjent identitet synlig i audit.
+			if pol.EmailUntrusted {
+				f.auditRejected(r, p, svc.ID, rejection{Email: ext.Email, Context: rejectCtx, Reason: "email_untrusted"})
+			}
 			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
 		case errors.Is(err, errUserInactive):
 			f.auditRejected(r, p, svc.ID, rejection{Email: ext.Email, Reason: "user_inactive"})

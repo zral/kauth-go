@@ -47,6 +47,7 @@ const (
 	ModeNoIDToken      Mode = "no_id_token"
 	ModeAuthorizeError Mode = "authorize_error"
 	ModeIssParamWrong  Mode = "iss_param_wrong"
+	ModeBadAzp         Mode = "bad_azp"
 	ModeToken500       Mode = "token_500"
 	ModeTokenSlow      Mode = "token_slow"
 )
@@ -131,6 +132,9 @@ type Options struct {
 	Issuer string
 	// Addr er lytteadressen. Tom gir 127.0.0.1:0.
 	Addr string
+	// AdvertiseIssParam annonserer authorization_response_iss_parameter_supported
+	// i discovery, uavhengig av om authorize-redirecten faktisk har iss.
+	AdvertiseIssParam bool
 	// IssParam legger iss (RFC 9207) til authorize-redirecten.
 	IssParam bool
 	// SlowDelay er forsinkelsen i discovery-modusen slow og token_slow.
@@ -463,6 +467,9 @@ func (p *IdP) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 		"subject_types_supported":               []string{"public"},
 		"token_endpoint_auth_methods_supported": p.authMethods(),
 	}
+	if p.opts.AdvertiseIssParam {
+		doc["authorization_response_iss_parameter_supported"] = true
+	}
 	switch mode {
 	case DiscDown500:
 		http.Error(w, "down", http.StatusInternalServerError)
@@ -719,6 +726,8 @@ func (p *IdP) signIDToken(ac *authCode) (string, error) {
 		payload["aud"] = "some-other-client"
 	case ModeMultiAudBadAzp:
 		payload["aud"] = []string{ac.clientID, "some-other-client"}
+		payload["azp"] = "some-other-client"
+	case ModeBadAzp:
 		payload["azp"] = "some-other-client"
 	case ModeWrongNonce:
 		payload["nonce"] = "wrong-nonce"

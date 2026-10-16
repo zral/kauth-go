@@ -45,7 +45,13 @@ const (
 type externalIdentity struct{ Provider, Issuer, Subject, Email, Name string }
 
 type linkPolicy struct {
-	AutoLink, AutoRegister  bool
+	AutoLink, AutoRegister bool
+	// EmailUntrusted er invertert i forhold til PD7 med vilje: nullverdien
+	// betyr tillit fordi admin-stiens linkPolicy{} og alle eksisterende
+	// kallere (Google, Microsoft, tester) er bygget på det. Bare generisk
+	// OIDC setter feltet, og den går alltid via finishWithPolicy; finish uten
+	// policy avviser oidc (fail-closed), så glemt policy aldri gir tillit.
+	EmailUntrusted          bool
 	DefaultRole, DefaultOrg string
 }
 
@@ -97,6 +103,12 @@ func (r *identityResolver) resolveOnce(ctx context.Context, ext externalIdentity
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return gen.User{}, none, "", err
+	}
+
+	// Uten e-posttillit er ukjent identitet et avslag: ingen kobling og ingen
+	// registrering på en adresse leverandøren ikke har fått tillit for.
+	if pol.EmailUntrusted {
+		return gen.User{}, none, "", errNoAccount
 	}
 
 	// (2) Ukjent identitet: koble til brukeren som eier den bekreftede e-posten.

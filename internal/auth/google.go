@@ -119,6 +119,11 @@ func (h *GoogleHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	// State signert for en generisk leverandør hører til /idp-callbacken.
+	if claims.IDP != "" {
+		redirectLoginError(w, r, "", errCodeLoginFailed)
+		return
+	}
 	svcID, adminPurpose := claims.ServiceID, claims.Admin
 	// Tjenesten kommer fra den signerte staten satt i InitiateLogin. Host-headeren
 	// skal ikke kunne overstyre den, ellers ender en undertjeneste uten egen

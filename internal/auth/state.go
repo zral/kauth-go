@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,13 @@ import (
 // statePurposeAdmin markerer at OIDC-flyten skal ende i en admin-sesjon, ikke
 // en vanlig tjenesteinnlogging.
 const statePurposeAdmin = "admin"
+
+// statePrefixIDP innleder slug-suffikset for generiske leverandører (PD6).
+const statePrefixIDP = "idp="
+
+// stateSlugRe er samme mønster som idp.Provider.Slug. Det har ingen ":", så
+// suffikset kan leses entydig fra høyre.
+var stateSlugRe = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 
 // stateMaxAge og stateMaxSkew avgrenser hvor lenge en signert state er gyldig.
 // Skjevheten tåler små klokkeavvik mellom instanser uten å akseptere state
@@ -31,6 +39,8 @@ type stateClaims struct {
 	ServiceID string
 	Nonce     string
 	Admin     bool
+	// IDP er slug for en generisk leverandør. Aldri sammen med Admin.
+	IDP string
 }
 
 // SignState lager en HMAC-SHA256-signert state for en vanlig innlogging.
@@ -48,6 +58,14 @@ func signAdminState(secret []byte, serviceID, nonce string) string {
 	return signStatePayload(secret, serviceID+":"+nonce+":"+issuedAt()+":"+statePurposeAdmin)
 }
 
+// signIDPState er SignState med slug for en generisk leverandør i den
+// signerte payloaden, slik at Google/MS-callbacken ikke kan ta imot den og
+// /idp-callbacken kan kreve at stien matcher.
+// payload = "serviceID:nonce:iat:idp=<slug>"
+func signIDPState(secret []byte, serviceID, nonce, slug string) string {
+	return signStatePayload(secret, serviceID+":"+nonce+":"+issuedAt()+":"+statePrefixIDP+slug)
+}
+
 func issuedAt() string {
 	return strconv.FormatInt(now().Unix(), 10)
 }
@@ -58,11 +76,11 @@ func signStatePayload(secret []byte, payload string) string {
 }
 
 // VerifyState verifiserer en HMAC-signert state for en vanlig innlogging og
-// returnerer serviceID. En admin-state avvises her, slik at den ikke kan
-// gjenbrukes i en flyt som ikke kjenner til admin-formålet.
+// returnerer serviceID. Admin- og IDP-state avvises her, slik at de ikke kan
+// gjenbrukes i en flyt som ikke kjenner til formålet.
 func VerifyState(secret []byte, state string) (serviceID string, ok bool) {
 	c, ok := parseState(secret, state)
-	if !ok || c.Admin {
+	if !ok || c.Admin || c.IDP != "" {
 		return "", false
 	}
 	return c.ServiceID, true
@@ -89,7 +107,16 @@ func parseState(secret []byte, state string) (stateClaims, bool) {
 		return stateClaims{}, false
 	}
 	var c stateClaims
-	if rest, found := strings.CutSuffix(payload, ":"+statePurposeAdmin); found && strings.Count(rest, ":") >= 2 {
+	// IDP-suffikset leses først. Etter det står bare serviceID:nonce:iat igjen,
+	// så et ":admin" foran (admin sammen med IDP) havner i iat-posisjonen og
+	// avvises.
+	if i := strings.LastIndex(payload, ":"); i >= 0 && strings.HasPrefix(payload[i+1:], statePrefixIDP) {
+		slug := payload[i+1+len(statePrefixIDP):]
+		if !stateSlugRe.MatchString(slug) {
+			return stateClaims{}, false
+		}
+		payload, c.IDP = payload[:i], slug
+	} else if rest, found := strings.CutSuffix(payload, ":"+statePurposeAdmin); found && strings.Count(rest, ":") >= 2 {
 		payload, c.Admin = rest, true
 	}
 	// iat og nonce er hex/tall og har aldri ":".
