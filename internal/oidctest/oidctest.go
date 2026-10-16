@@ -179,6 +179,7 @@ type IdP struct {
 
 	opts Options
 	srv  *httptest.Server
+	mux  *http.ServeMux
 	done chan struct{}
 	once sync.Once
 
@@ -318,6 +319,7 @@ func NewServer(opts Options) (*IdP, error) {
 	mux.HandleFunc("/authorize", p.handleAuthorize)
 	mux.HandleFunc("/token", p.handleToken)
 	mux.HandleFunc("/jwks", p.handleJWKS)
+	p.mux = mux
 	p.srv = httptest.NewUnstartedServer(mux)
 	p.srv.Listener.Close()
 	p.srv.Listener = l
@@ -351,6 +353,9 @@ func loopbackAddr(addr string) bool {
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }
+
+// Handle legger en ekstra rute på samme port, for kontroll-API-et i cmd/kauth-testidp.
+func (p *IdP) Handle(pattern string, h http.Handler) { p.mux.Handle(pattern, h) }
 
 // URL er basis-URL-en til serveren (der endepunktene faktisk ligger).
 func (p *IdP) URL() string { return p.srv.URL }

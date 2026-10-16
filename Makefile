@@ -1,7 +1,10 @@
-.PHONY: build build-arm64 sqlc migrate-up test deploy
+.PHONY: build testidp build-arm64 sqlc migrate-up test deploy
 
 build:
 	CGO_ENABLED=0 go build -o bin/kauth ./cmd/kauth
+
+testidp:
+	CGO_ENABLED=0 go build -o bin/kauth-testidp ./cmd/kauth-testidp
 
 build-arm64:
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/kauth-arm64 ./cmd/kauth
