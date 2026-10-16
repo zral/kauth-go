@@ -34,6 +34,20 @@ type AuthorizationCode struct {
 	UserID              *int64  `json:"user_id"`
 }
 
+type IdentityProvider struct {
+	ID              int64   `json:"id"`
+	Slug            string  `json:"slug"`
+	DisplayName     string  `json:"display_name"`
+	Issuer          string  `json:"issuer"`
+	ClientID        string  `json:"client_id"`
+	ClientSecretEnv *string `json:"client_secret_env"`
+	Scopes          string  `json:"scopes"`
+	TrustEmail      int64   `json:"trust_email"`
+	EmailDomains    string  `json:"email_domains"`
+	Active          int64   `json:"active"`
+	CreatedAt       string  `json:"created_at"`
+}
+
 type MagicToken struct {
 	ID          int64   `json:"id"`
 	Token       string  `json:"token"`
@@ -99,6 +113,12 @@ type Service struct {
 	EmailFromAddress      *string `json:"email_from_address"`
 	SubFormat             string  `json:"sub_format"`
 	AutoLink              int64   `json:"auto_link"`
+}
+
+type ServiceIdentityProvider struct {
+	ServiceID  string `json:"service_id"`
+	ProviderID int64  `json:"provider_id"`
+	Position   int64  `json:"position"`
 }
 
 type User struct {
