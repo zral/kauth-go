@@ -265,7 +265,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 17 — Generiske OIDC-leverandører som DB-rader med to nøkler (2026-10-16)
 
-**Status:** Implementert (2026-10-16, 015)
+**Status:** Implementert (2026-10-16, 015). I prod som tag `015`, uten leverandører konfigurert
 → Analyse: [doc/features/015_AN_GENERISK_OIDC.md](features/015_AN_GENERISK_OIDC.md) · Plan: [doc/features/015_PL_GENERISK_OIDC.md](features/015_PL_GENERISK_OIDC.md) · Drift: [doc/IDENTITY_PROVIDERS.md](IDENTITY_PROVIDERS.md)
 
 **Beslutning:**
