@@ -9,8 +9,11 @@
 -- identitetsnøkkelen i user_identities: to rader med samme issuer ville latt
 -- ulike konfigurasjoner dele identiteter. Hemmeligheten lagres aldri her,
 -- bare navnet på miljøvariabelen som holder den.
+-- AUTOINCREMENT: en id gjenbrukes aldri. sqlite3-CLI har foreign_keys av, så en
+-- manuell DELETE kan etterlate en tilordning; uten AUTOINCREMENT ville neste
+-- leverandør fått samme id og stille arvet tilordningen til en annen tjeneste.
 CREATE TABLE identity_providers (
-    id                INTEGER PRIMARY KEY,
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
     slug              TEXT NOT NULL UNIQUE
         CHECK (length(slug) BETWEEN 1 AND 32 AND slug NOT GLOB '*[^a-z0-9-]*'),
     display_name      TEXT NOT NULL,

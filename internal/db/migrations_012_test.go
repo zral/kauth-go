@@ -330,3 +330,21 @@ func TestMigration012_GuardAbortsOnRowLoss(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(11), v)
 }
+
+// Uten AUTOINCREMENT gjenbruker SQLite høyeste slettede id. En tilordning som
+// ble liggende etter en manuell DELETE med foreign_keys av, ville da stille
+// gått over til neste leverandør.
+func TestMigration012_ProviderIDNeverReused(t *testing.T) {
+	d, _ := openMigrated(t)
+	addService(t, d, "s1", 1)
+	p1 := addProvider(t, d, "p1", 1)
+	_, err := d.Exec(`PRAGMA foreign_keys = OFF`)
+	require.NoError(t, err)
+	_, err = d.Exec(`INSERT INTO service_identity_providers (service_id,provider_id) VALUES ('s1',?)`, p1)
+	require.NoError(t, err)
+	_, err = d.Exec(`DELETE FROM identity_providers WHERE id=?`, p1)
+	require.NoError(t, err)
+	p2 := addProvider(t, d, "p2", 1)
+	require.NotEqual(t, p1, p2)
+	require.Zero(t, count(t, d, `SELECT count(*) FROM service_identity_providers sip JOIN identity_providers ip ON ip.id = sip.provider_id`))
+}
