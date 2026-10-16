@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -29,7 +28,7 @@ type GoogleHandlers struct {
 	aud           *audit.Service
 	adminSessions AdminSessionStarter
 	resolver      *identityResolver
-	completer     *loginCompleter
+	fed           *federatedLogin
 	// endpoint overstyres bare i tester, så kodeutveksling ikke treffer Google.
 	endpoint *oauth2.Endpoint
 	// fetchClaims er en testsøm; nil betyr ekte kodeutveksling og verifisering.
@@ -37,7 +36,10 @@ type GoogleHandlers struct {
 }
 
 func NewGoogleHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service, adminSessions AdminSessionStarter) *GoogleHandlers {
-	return &GoogleHandlers{cfg: cfg, sqlDB: sqlDB, reg: reg, aud: aud, adminSessions: adminSessions, resolver: newIdentityResolver(sqlDB, aud), completer: &loginCompleter{queries: q, issuer: iss, refresh: ref, aud: aud}}
+	resolver := newIdentityResolver(sqlDB, aud)
+	completer := &loginCompleter{queries: q, issuer: iss, refresh: ref, aud: aud}
+	return &GoogleHandlers{cfg: cfg, sqlDB: sqlDB, reg: reg, aud: aud, adminSessions: adminSessions, resolver: resolver,
+		fed: &federatedLogin{resolver: resolver, completer: completer, aud: aud}}
 }
 
 // InitiateLogin — GET /oidc-login eller /social-login
@@ -111,16 +113,10 @@ func (h *GoogleHandlers) redirectToGoogle(w http.ResponseWriter, r *http.Request
 // HandleCallback — GET /callback
 func (h *GoogleHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	sc, err := r.Cookie("oidc_state")
-	if err != nil || sc.Value != r.URL.Query().Get("state") {
-		redirectLoginError(w, r, "", errCodeLoginFailed)
-		return
-	}
 	// Admin-formålet leses bare fra den signerte staten, aldri fra query eller
 	// andre cookies.
-	claims, ok := parseState(h.cfg.OIDCStateSecret, sc.Value)
+	claims, ok := readState(w, r, "oidc_state", h.cfg.OIDCStateSecret)
 	if !ok {
-		redirectLoginError(w, r, "", errCodeLoginFailed)
 		return
 	}
 	svcID, adminPurpose := claims.ServiceID, claims.Admin
@@ -187,8 +183,7 @@ func (h *GoogleHandlers) rejectCallback(w http.ResponseWriter, r *http.Request, 
 		redirectAdminLoginError(w, r)
 		return
 	}
-	h.auditRejected(r, svc, "", "reason="+reason)
-	redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+	h.fed.reject(w, r, providerGoogle, svc, rejection{Reason: reason})
 }
 
 // checkIDTokenNonce sammenligner nonce i id_token med den i den signerte
@@ -199,11 +194,6 @@ func checkIDTokenNonce(tokenNonce, stateNonce string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(tokenNonce), []byte(stateNonce)) == 1
-}
-
-// auditRejected skriver google_oidc_rejected for vanlig gren.
-func (h *GoogleHandlers) auditRejected(r *http.Request, svc *gen.Service, email, reason string) {
-	h.aud.Log(r.Context(), audit.Event{Type: "google_oidc_rejected", AuthMethod: "google", Email: email, ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: false, Details: reason})
 }
 
 func (h *GoogleHandlers) tokenEndpoint() oauth2.Endpoint {
@@ -242,7 +232,6 @@ func googleIdentity(cl googleClaims, email string) (externalIdentity, bool) {
 // lest. Skilt ut fra HandleCallback slik at begge grenene kan testes uten
 // Google. Nonce-sjekken ligger her så den dekkes av tester uten live IdP.
 func (h *GoogleHandlers) finishCallback(w http.ResponseWriter, r *http.Request, svc *gen.Service, adminPurpose bool, cl googleClaims, tokenNonce, stateNonce string) {
-	ctx := r.Context()
 	// Binder id_token til akkurat denne innloggingsøkten (replay av et token
 	// fra en annen økt avvises). Først, så begge grener dekkes.
 	if !checkIDTokenNonce(tokenNonce, stateNonce) {
@@ -260,48 +249,19 @@ func (h *GoogleHandlers) finishCallback(w http.ResponseWriter, r *http.Request, 
 	// Uverifisert e-post gir verken oppslag eller auto-registrering, ellers
 	// kan en uverifisert adresse overta eller opprette en konto.
 	if !cl.EmailVerified {
-		h.auditRejected(r, svc, email, "reason=email_unverified")
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		h.fed.reject(w, r, providerGoogle, svc, rejection{Email: email, Reason: "email_unverified"})
 		return
 	}
 	if email == "" {
-		h.auditRejected(r, svc, email, "reason=email_missing")
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		h.fed.reject(w, r, providerGoogle, svc, rejection{Email: email, Reason: "email_missing"})
 		return
 	}
 	ext, ok := googleIdentity(cl, email)
 	if !ok {
-		h.auditRejected(r, svc, email, "reason=missing_sub")
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		h.fed.reject(w, r, providerGoogle, svc, rejection{Email: email, Reason: "missing_sub"})
 		return
 	}
-	user, _, err := h.resolver.resolve(ctx, ext, policyFor(svc), resolveMeta{ServiceID: svc.ID, IP: ClientIP(r), UA: r.Header.Get("User-Agent")})
-	if err != nil {
-		switch {
-		case errors.Is(err, errNoAccount):
-			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		case errors.Is(err, errUserInactive):
-			h.auditRejected(r, svc, email, "reason=user_inactive")
-			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		case errors.Is(err, errLinkDenied):
-			redirectLoginError(w, r, svc.ID, errCodeAccountNotLinked)
-		case errors.Is(err, errUserConflict):
-			slog.Warn("google: auto-registrering kolliderte med eksisterende rad", "service", svc.ID, "error", err)
-			h.auditRejected(r, svc, email, "reason=user_conflict")
-			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-		default:
-			slog.Error("google: kunne ikke finne eller opprette bruker", "error", err)
-			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-		}
-		return
-	}
-	if err := h.completer.complete(w, r, svc, user, loginGoogle); err != nil {
-		if errors.Is(err, errPolicyDenied) {
-			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		} else {
-			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-		}
-	}
+	h.fed.finish(w, r, providerGoogle, svc, ext)
 }
 
 func googleCreds(cfg config.Config, svc *gen.Service) (id, secret string) {
