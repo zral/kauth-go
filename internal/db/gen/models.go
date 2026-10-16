@@ -34,6 +34,19 @@ type AuthorizationCode struct {
 	UserID              *int64  `json:"user_id"`
 }
 
+type IdentityLinkInvite struct {
+	ID         int64   `json:"id"`
+	TokenHash  string  `json:"token_hash"`
+	UserID     int64   `json:"user_id"`
+	ProviderID int64   `json:"provider_id"`
+	ServiceID  string  `json:"service_id"`
+	Email      string  `json:"email"`
+	CreatedBy  string  `json:"created_by"`
+	CreatedAt  string  `json:"created_at"`
+	ExpiresAt  string  `json:"expires_at"`
+	UsedAt     *string `json:"used_at"`
+}
+
 type IdentityProvider struct {
 	ID              int64   `json:"id"`
 	Slug            string  `json:"slug"`

@@ -9,10 +9,38 @@ import (
 	"context"
 )
 
+const deleteServiceIdentityProviders = `-- name: DeleteServiceIdentityProviders :exec
+DELETE FROM service_identity_providers WHERE service_id = ?1
+`
+
+func (q *Queries) DeleteServiceIdentityProviders(ctx context.Context, serviceID string) error {
+	_, err := q.db.ExecContext(ctx, deleteServiceIdentityProviders, serviceID)
+	return err
+}
+
+const insertServiceIdentityProvider = `-- name: InsertServiceIdentityProvider :exec
+INSERT INTO service_identity_providers (service_id, provider_id, position)
+VALUES (?1, ?2, ?3)
+`
+
+type InsertServiceIdentityProviderParams struct {
+	ServiceID  string `json:"service_id"`
+	ProviderID int64  `json:"provider_id"`
+	Position   int64  `json:"position"`
+}
+
+func (q *Queries) InsertServiceIdentityProvider(ctx context.Context, arg InsertServiceIdentityProviderParams) error {
+	_, err := q.db.ExecContext(ctx, insertServiceIdentityProvider, arg.ServiceID, arg.ProviderID, arg.Position)
+	return err
+}
+
 const listActiveIdentityProviders = `-- name: ListActiveIdentityProviders :many
+
 SELECT id, slug, display_name, issuer, client_id, client_secret_env, scopes, trust_email, email_domains, active, created_at FROM identity_providers WHERE active = 1 ORDER BY slug
 `
 
+// Comments above queries must be ASCII only: sqlc has an offset bug that
+// corrupts the generated SQL otherwise.
 func (q *Queries) ListActiveIdentityProviders(ctx context.Context) ([]IdentityProvider, error) {
 	rows, err := q.db.QueryContext(ctx, listActiveIdentityProviders)
 	if err != nil {
@@ -48,6 +76,123 @@ func (q *Queries) ListActiveIdentityProviders(ctx context.Context) ([]IdentityPr
 	return items, nil
 }
 
+const listAllIdentityProviders = `-- name: ListAllIdentityProviders :many
+SELECT id, slug, display_name, issuer, client_id, client_secret_env, scopes, trust_email, email_domains, active, created_at FROM identity_providers ORDER BY slug
+`
+
+// All providers including inactive, for the admin overview.
+func (q *Queries) ListAllIdentityProviders(ctx context.Context) ([]IdentityProvider, error) {
+	rows, err := q.db.QueryContext(ctx, listAllIdentityProviders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityProvider{}
+	for rows.Next() {
+		var i IdentityProvider
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.DisplayName,
+			&i.Issuer,
+			&i.ClientID,
+			&i.ClientSecretEnv,
+			&i.Scopes,
+			&i.TrustEmail,
+			&i.EmailDomains,
+			&i.Active,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAssignmentsForService = `-- name: ListAssignmentsForService :many
+SELECT sip.service_id, sip.provider_id, sip.position, ip.slug
+FROM service_identity_providers sip
+JOIN identity_providers ip ON ip.id = sip.provider_id
+WHERE sip.service_id = ?1
+ORDER BY sip.position, ip.slug
+`
+
+type ListAssignmentsForServiceRow struct {
+	ServiceID  string `json:"service_id"`
+	ProviderID int64  `json:"provider_id"`
+	Position   int64  `json:"position"`
+	Slug       string `json:"slug"`
+}
+
+func (q *Queries) ListAssignmentsForService(ctx context.Context, serviceID string) ([]ListAssignmentsForServiceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAssignmentsForService, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAssignmentsForServiceRow{}
+	for rows.Next() {
+		var i ListAssignmentsForServiceRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.ProviderID,
+			&i.Position,
+			&i.Slug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIdentityProviderNames = `-- name: ListIdentityProviderNames :many
+SELECT issuer, display_name, slug FROM identity_providers ORDER BY slug
+`
+
+type ListIdentityProviderNamesRow struct {
+	Issuer      string `json:"issuer"`
+	DisplayName string `json:"display_name"`
+	Slug        string `json:"slug"`
+}
+
+// Issuer to name lookup for the identity list.
+func (q *Queries) ListIdentityProviderNames(ctx context.Context) ([]ListIdentityProviderNamesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listIdentityProviderNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIdentityProviderNamesRow{}
+	for rows.Next() {
+		var i ListIdentityProviderNamesRow
+		if err := rows.Scan(&i.Issuer, &i.DisplayName, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServiceIdentityProviders = `-- name: ListServiceIdentityProviders :many
 SELECT sip.service_id, sip.provider_id, sip.position
 FROM service_identity_providers sip
@@ -58,7 +203,7 @@ ORDER BY sip.service_id, sip.position, ip.slug
 `
 
 // Only active providers on active services, in login page order: position,
-// then slug as a stable tiebreaker. (ASCII only: sqlc offset bug.)
+// then slug as a stable tiebreaker.
 func (q *Queries) ListServiceIdentityProviders(ctx context.Context) ([]ServiceIdentityProvider, error) {
 	rows, err := q.db.QueryContext(ctx, listServiceIdentityProviders)
 	if err != nil {
@@ -69,6 +214,49 @@ func (q *Queries) ListServiceIdentityProviders(ctx context.Context) ([]ServiceId
 	for rows.Next() {
 		var i ServiceIdentityProvider
 		if err := rows.Scan(&i.ServiceID, &i.ProviderID, &i.Position); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServiceIdentityProvidersAll = `-- name: ListServiceIdentityProvidersAll :many
+SELECT sip.service_id, sip.provider_id, sip.position, ip.slug
+FROM service_identity_providers sip
+JOIN identity_providers ip ON ip.id = sip.provider_id
+ORDER BY sip.service_id, sip.position, ip.slug
+`
+
+type ListServiceIdentityProvidersAllRow struct {
+	ServiceID  string `json:"service_id"`
+	ProviderID int64  `json:"provider_id"`
+	Position   int64  `json:"position"`
+	Slug       string `json:"slug"`
+}
+
+// All assignments with slug for display, regardless of active flags.
+func (q *Queries) ListServiceIdentityProvidersAll(ctx context.Context) ([]ListServiceIdentityProvidersAllRow, error) {
+	rows, err := q.db.QueryContext(ctx, listServiceIdentityProvidersAll)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListServiceIdentityProvidersAllRow{}
+	for rows.Next() {
+		var i ListServiceIdentityProvidersAllRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.ProviderID,
+			&i.Position,
+			&i.Slug,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
