@@ -3,6 +3,7 @@ package idp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+
+	"github.com/zral/kauth-go/internal/db/gen"
 )
 
 const (
@@ -116,6 +119,8 @@ func DiscoveryReason(err error) string {
 // Registry holder lastede leverandører og en discovery-cache per slug.
 type Registry struct {
 	providers     map[string]Provider
+	statuses      []Status
+	assignMu      sync.RWMutex // vokter byService, som er det eneste som endres etter oppstart
 	byService     map[string][]string
 	client        *http.Client
 	allowInsecure bool
@@ -129,7 +134,14 @@ type Registry struct {
 // NewRegistry tar imot det Load ga. client skal komme fra NewHTTPClient med
 // samme allowInsecure, som her styrer hvilke endepunkt-URL-er som godtas.
 func NewRegistry(providers map[string]Provider, byService map[string][]string, client *http.Client, allowInsecure bool) *Registry {
+	return NewRegistryWithStatuses(providers, byService, nil, client, allowInsecure)
+}
+
+// NewRegistryWithStatuses tar i tillegg statuslisten fra Load. Den settes
+// bare her, så den aldri skrives etter at registeret er delt.
+func NewRegistryWithStatuses(providers map[string]Provider, byService map[string][]string, statuses []Status, client *http.Client, allowInsecure bool) *Registry {
 	r := &Registry{
+		statuses:      append([]Status(nil), statuses...),
 		providers:     providers,
 		byService:     byService,
 		client:        client,
@@ -168,12 +180,48 @@ func (r *Registry) Get(slug string) (Provider, bool) {
 	return p, ok
 }
 
+// Statuses gir en kopi, så en kaller (f.eks. en mal) ikke kan endre registeret.
+func (r *Registry) Statuses() []Status {
+	out := make([]Status, len(r.statuses))
+	for i, s := range r.statuses {
+		s.EmailDomains = append([]string(nil), s.EmailDomains...)
+		out[i] = s
+	}
+	return out
+}
+
+// ReloadAssignments leser tilordningene på nytt og bytter byService atomisk,
+// så admin-endringer gjelder uten omstart. Bare leverandører som ble lastet
+// ved oppstart kan tilordnes; providers og entries endres ikke, så en
+// leverandør som ble avvist da kan ikke dukke opp her. Ved feil beholdes
+// forrige tilordning. Deaktivering av leverandør eller tjeneste i DB slår
+// inn via active-filteret i spørringen, så det trengs ingen egen sjekk her.
+func (r *Registry) ReloadAssignments(ctx context.Context, q *gen.Queries) error {
+	assigns, err := q.ListServiceIdentityProviders(ctx)
+	if err != nil {
+		return fmt.Errorf("idp: les tilordninger: %w", err)
+	}
+	slugByID := make(map[int64]string, len(r.providers))
+	for slug, p := range r.providers {
+		slugByID[p.ID] = slug
+	}
+	next := buildAssignments(assigns, slugByID)
+	r.assignMu.Lock()
+	r.byService = next
+	r.assignMu.Unlock()
+	return nil
+}
+
 // ForService gir bare lastede leverandører, i tilordningsrekkefølge. En slug
 // som ble avvist ved lasting eller ikke finnes gir ingen leverandør, selv om
-// den står i byService.
+// den står i byService. Gir nil (ikke tom slice) når tjenesten ikke har noen
+// treff; ellers en ny slice som kaller fritt kan endre.
 func (r *Registry) ForService(serviceID string) []Provider {
+	r.assignMu.RLock()
+	slugs := r.byService[serviceID]
+	r.assignMu.RUnlock()
 	var out []Provider
-	for _, slug := range r.byService[serviceID] {
+	for _, slug := range slugs {
 		if p, ok := r.providers[slug]; ok {
 			out = append(out, p)
 		}

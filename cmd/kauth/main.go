@@ -65,13 +65,13 @@ func main() {
 
 	// Generiske OIDC-leverandører (015). Avviste rader logges av Load selv;
 	// bare DB-feil stopper oppstarten.
-	idpProviders, idpByService, err := idp.Load(ctx, queries, idp.Options{
+	idpProviders, idpByService, idpStatuses, err := idp.Load(ctx, queries, idp.Options{
 		Allowlist: cfg.OIDCIssuers, AllowInsecure: cfg.OIDCAllowInsecure, Getenv: os.Getenv,
 	})
 	if err != nil {
 		log.Fatalf("idp load: %v", err)
 	}
-	idps := idp.NewRegistry(idpProviders, idpByService, idp.NewHTTPClient(cfg.OIDCAllowInsecure), cfg.OIDCAllowInsecure)
+	idps := idp.NewRegistryWithStatuses(idpProviders, idpByService, idpStatuses, idp.NewHTTPClient(cfg.OIDCAllowInsecure), cfg.OIDCAllowInsecure)
 	log.Printf("idp: %d generiske OIDC-leverandører lastet", len(idpProviders))
 
 	// ── 5. Initialiser token-laget ───────────────────────────────────────────

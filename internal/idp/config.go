@@ -48,6 +48,14 @@ type Options struct {
 	Getenv        func(string) string
 }
 
+// getenv faller tilbake til prosessmiljøet når ingen er injisert.
+func (o Options) getenv() func(string) string {
+	if o.Getenv == nil {
+		return os.Getenv
+	}
+	return o.Getenv
+}
+
 var (
 	slugRe      = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 	secretEnvRe = regexp.MustCompile(`^KAUTH_IDP_[A-Z0-9_]+$`)
@@ -133,10 +141,7 @@ func logSlug(s string) string {
 // validate returnerer reason ved avvisning. Rekkefølgen er stabil, så hver
 // regel har en egen reason i loggen.
 func validate(row gen.IdentityProvider, opts Options) (Provider, string, bool) {
-	getenv := opts.Getenv
-	if getenv == nil {
-		getenv = os.Getenv
-	}
+	getenv := opts.getenv()
 	if row.Active != 1 {
 		return Provider{}, "inactive", false
 	}
@@ -196,21 +201,63 @@ func validate(row gen.IdentityProvider, opts Options) (Provider, string, bool) {
 	}, "", true
 }
 
-// Load leser leverandører og tilordninger. En avvist rad logges og hoppes
-// over: én feil rad skal ikke ta ned de andre tjenestene. byService bevarer
-// rekkefølgen fra spørringen (position, slug) og inneholder bare slugs som
-// faktisk er lastet.
-func Load(ctx context.Context, q *gen.Queries, opts Options) (map[string]Provider, map[string][]string, error) {
-	rows, err := q.ListActiveIdentityProviders(ctx)
+// Status er adminvisningen av én rad, også inaktive og avviste. Feltene er
+// med vilje uten hemmelighetens verdi: bare env-navnet og om den er satt, så
+// ingen %+v eller mal kan lekke den.
+type Status struct {
+	ID           int64
+	Slug         string
+	DisplayName  string
+	Issuer       string
+	Active       bool
+	Loaded       bool
+	Reason       string
+	Allowlisted  bool
+	SecretEnv    string
+	SecretSet    bool
+	TrustEmail   bool
+	EmailDomains []string
+}
+
+func buildStatus(row gen.IdentityProvider, opts Options, loaded bool, reason string) Status {
+	getenv := opts.getenv()
+	st := Status{
+		ID: row.ID, Slug: row.Slug, DisplayName: row.DisplayName, Issuer: row.Issuer,
+		Active: row.Active == 1, Loaded: loaded, Reason: reason,
+		Allowlisted: inAllowlist(opts.Allowlist, row.Issuer),
+		TrustEmail:  row.TrustEmail == 1, EmailDomains: splitList(row.EmailDomains, ","),
+	}
+	// Kun et gyldig env-navn slås opp; ellers kunne en vilkårlig verdi fra DB
+	// lese en annen hemmelighet i prosessmiljøet.
+	if row.ClientSecretEnv != nil {
+		st.SecretEnv = *row.ClientSecretEnv
+		if secretEnvRe.MatchString(st.SecretEnv) {
+			st.SecretSet = strings.TrimSpace(getenv(st.SecretEnv)) != ""
+		}
+	}
+	return st
+}
+
+// Load leser alle leverandører og tilordninger. En avvist rad logges og
+// hoppes over: én feil rad skal ikke ta ned de andre tjenestene. byService
+// bevarer rekkefølgen fra spørringen (position, slug) og inneholder bare
+// slugs som faktisk er lastet. Statuslisten dekker alle rader, med samme
+// reason som logges. Inaktive rader logges ikke (de er bevisst av).
+func Load(ctx context.Context, q *gen.Queries, opts Options) (map[string]Provider, map[string][]string, []Status, error) {
+	rows, err := q.ListAllIdentityProviders(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("idp: les leverandører: %w", err)
+		return nil, nil, nil, fmt.Errorf("idp: les leverandører: %w", err)
 	}
 	providers := map[string]Provider{}
 	slugByID := map[int64]string{}
+	statuses := make([]Status, 0, len(rows))
 	for _, row := range rows {
 		p, reason, ok := validate(row, opts)
+		statuses = append(statuses, buildStatus(row, opts, ok, reason))
 		if !ok {
-			slog.Warn("idp: leverandør ikke lastet", "slug", logSlug(row.Slug), "reason", reason)
+			if reason != "inactive" {
+				slog.Warn("idp: leverandør ikke lastet", "slug", logSlug(row.Slug), "reason", reason)
+			}
 			continue
 		}
 		providers[p.Slug] = p
@@ -218,8 +265,13 @@ func Load(ctx context.Context, q *gen.Queries, opts Options) (map[string]Provide
 	}
 	assigns, err := q.ListServiceIdentityProviders(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("idp: les tilordninger: %w", err)
+		return nil, nil, nil, fmt.Errorf("idp: les tilordninger: %w", err)
 	}
+	byService := buildAssignments(assigns, slugByID)
+	return providers, byService, statuses, nil
+}
+
+func buildAssignments(assigns []gen.ServiceIdentityProvider, slugByID map[int64]string) map[string][]string {
 	byService := map[string][]string{}
 	for _, a := range assigns {
 		slug, ok := slugByID[a.ProviderID]
@@ -229,5 +281,5 @@ func Load(ctx context.Context, q *gen.Queries, opts Options) (map[string]Provide
 		}
 		byService[a.ServiceID] = append(byService[a.ServiceID], slug)
 	}
-	return providers, byService, nil
+	return byService
 }

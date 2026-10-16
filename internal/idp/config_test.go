@@ -209,7 +209,7 @@ func TestLoad(t *testing.T) {
 			return ""
 		},
 	}
-	providers, by, err := Load(context.Background(), q, o)
+	providers, by, _, err := Load(context.Background(), q, o)
 	require.NoError(t, err)
 	require.Len(t, providers, 2)
 	require.Equal(t, "hemmelig-verdi", providers["alfa"].ClientSecret)
