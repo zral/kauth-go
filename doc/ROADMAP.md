@@ -126,10 +126,10 @@ Alvorlighet: **K** kritisk · **H** høy · **M** middels · **L** lav. «Prod»
 | **1 — Herd eksisterende flyter** | Utløpstid (`iat`) i signert OIDC-state; full formålsbinding magic-token ↔ tjeneste med eksplisitt `purpose`-kolonne i stedet for `service_id IS NULL` (fra 007-review); Upstream nonce + PKCE (Google/MS); `email_verified`/`xms_edov`/`tid`; refresh i én transaksjon + revoke ved logout/deaktivering; `aud`+`jti` på alle tokens; magic link: bekreftelsesside, hashing, limiter, tjenestebinding; admin-CSRF (og `PostFormValue` i admin-skrivehandlere, fra 007 F4); CORS-allowlist per tjeneste og Origin-sjekk mot RT-ens lagrede tjeneste før rotasjon, samt audit og senere avvisning av cookie-refresh uten Origin (fra 007 F7); audit-kø; admin-middleware mot DB; legacy-av-bryter per tjeneste | H4–H6, M1–M3, M6, M7, M9, L1–L3, L7 | 7–11 | ca. 7,2 t (13.–14.10) | 008–010 ✔ (klientene i BACKLOG) |
 | **2 — Stabil identitet** | `user_identities(user_id, provider, issuer, subject)` unik på `(issuer, subject)`; stabil intern ID; e-postnormalisering; migrering med kollisjonsrapport; `sub_format` per tjeneste; eksplisitt kobling/frakobling og recovery (B1, B2). **011 ✔ i prod 2026-10-15:** identitetsmodell, `public_id`, `user_id` på sesjoner, `sub_format`, `auto_link`, admin-godkjent identitet og migrasjonsvakt (stopper i stedet for kollisjonsrapport). **012 ✔ i prod 2026-10-15:** frakobling, e-postendring i admin, e-postepoke på `/dispatch` nivå 0 og admin, engangsbinding av admin-Google og recovery som prosedyre. Eksplisitt kobling og innstramming av overgangsunntaket er utsatt til første tjeneste med `auto_link=0` (Fase 5). **013 ✔ i prod 2026-10-16:** e-postepoke og brukersjekk på `/dispatch` nivå 1–5 (fra eval 012, ikke i opprinnelig plan) | P-funnene, M11 ✔ (011) | 6–9 | ca. 4,9 t (14.–16.10, inkl. 013) | 011 ✔, 012 ✔, 013 ✔ |
 | **3 — Felles føderert innlogging** | Felles utstedelse for alle fire metodene (`checkPolicy` og utstedelse ett sted); felles føderert sti for Google og MS uten leverandørregister; ingen parallelle handlere | — | 4–6 | ca. 5,8 t (16.10) | 014 ✔ (i prod 2026-10-16) |
-| **4 — Generisk OIDC** | `identity_providers` + `service_identity_providers`; discovery med eksplisitt issuer-allowlist (SSRF-vern); JWKS-cache; lokal OIDC-testleverandør for negativtester | — | 5–8 | ca. 3,6 t (16.10) | 015 ✔ (i prod 2026-10-16) |
+| **4 — Generisk OIDC** | `identity_providers` + `service_identity_providers`; discovery med eksplisitt issuer-allowlist (SSRF-vern); JWKS-cache; lokal OIDC-testleverandør for negativtester | — | 5–8 | ca. 3,7 t (16.10) | 015 ✔ (i prod 2026-10-16) |
 | **5 — Policy, admin-UX, nøkler og hemmeligheter** | Provider-admin og tilordning per tjeneste; `allow_magic_link` / `allowed_providers` / `require_federated_login`; nøkkelring med `kid`; secrets kryptert i hvile | M8, M12 | 5–8 | — | 016–017 |
 | **6 — Test, drift og release** | CI (fmt, vet, test, `-race`, govulncheck); E2E mot testleverandør; restore-test av backup; fuzzing av redirect/callback; oppdatert SECURITY.md/FEATURES.md; ekstern revisjon; `v1.0.0` | L6 | 5–8 | — | 018 |
-| | **Totalt** | | **35–55** | **ca. 21 t så langt (Fase 0–3)** | |
+| | **Totalt** | | **35–55** | **ca. 25 t så langt (Fase 0–4)** | |
 
 #### Estimat mot faktisk (per 2026-10-16)
 
@@ -145,17 +145,20 @@ Faktisk tid er aktiv tid fra lifecycle-telemetrien (`.claude/logs/lifecycle.json
 | 012 | 2 | 90 min | 15.10 22:05 → 23:25 (1,3 t) | |
 | 013 | 2 (tillegg) | 41 min | 16.10 00:21 → 00:58 (0,6 t) | Fra eval 012 |
 | 014 | 3 | 350 min | 16.10 06:32 → 13:04 (6,5 t) | Refaktorering, karakteriseringstester først (F1). Lars-test gjenstår |
-| **Sum 007–014** | **0–3** | **ca. 21 t** | **13.10 17:20 → 16.10 13:04 (2,8 døgn)** | |
+| 015 | 4 | 224 min | 16.10 16:49 → 20:27 (3,6 t) | Ingen pauser, én økt. Lars-test (M1–M10) gjenstår |
+| **Sum 007–015** | **0–4** | **ca. 25 t** | **13.10 17:20 → 16.10 20:27 (3,1 døgn)** | |
 
 Fase 0–2 var estimert til 16–25 utviklerdager (120–190 t à 7,5 t). De tok ca. 15 timer aktivt, omtrent 2 utviklerdager, altså 8–12 ganger raskere enn estimatet. Forholdet er ganske stabilt per fase: Fase 0 ca. 8–13×, Fase 1 ca. 7–11×, Fase 2 ca. 9–14×. Det som trekker kalendertiden ut, er ventetid på Lars (deploy med `sudo`, ekte innlogging, beslutninger), ikke agentarbeidet.
 
 Fase 3 (014) var estimert til 4–6 dager (30–45 t) og tok ca. 5,8 timer, altså 5–8×. Den er den tregeste fasen så langt. Forbeholdet under slo til: Det fantes ingen ferdig fil:linje-analyse å bygge på, og en ren refaktorering krevde karakteriseringstester før koden kunne flyttes (F1 tok ca. 2 t kalendertid). Testkjøringen ble også lengre (`go test -count=3` på auth tar ca. 5 min). Samlet for Fase 0–3 er estimatet 20–31 dager (150–233 t) mot ca. 21 t faktisk, altså 7–11×.
 
-**Kalibrert anslag for resten:** Fase 4–6 er estimert til 15–24 utviklerdager. Fase 4 (generisk OIDC) er ny protokollkode med SSRF-flate, og den ligner mer på Fase 3 enn på Fase 0–2. Bruk derfor 5–8× for Fase 4–5 (10–16 dager), som gir **10–24 timer aktivt**. Deler av Fase 6 er ikke agentarbeid: ekstern revisjon, E2E mot en ekte testleverandør og restore-test. Fase 6 kommer i tillegg, og ekstern revisjon føres der som egen kalenderpost.
+Fase 4 (015) var estimert til 5–8 dager (37,5–60 t) og tok ca. 3,7 timer, altså 10–16×. Anslaget fra Fase 3 om 5–8× for ny protokollkode slo ikke til. Analysen og planen tok bare ca. 15 minutter, fordi 014 hadde laget den felles fødererte stien som generisk OIDC kunne plugges inn i. Samlet for Fase 0–4 er estimatet 25–39 dager (188–293 t) mot ca. 25 t faktisk, altså 8–12×.
+
+**Kalibrert anslag for resten:** Fase 5–6 er estimert til 10–16 utviklerdager. Fase 5 (policy, admin-UX, nøkkelring og kryptering i hvile) består av avgrensede tillegg på eksisterende struktur, slik Fase 1–2 og 4 gjorde. Med 8–12× gir det **3–8 timer aktivt** for Fase 5. Fase 6 har ca. 3–6 timer agentarbeid (CI, fuzzing, restore-test, dokumentasjon). Ekstern revisjon og E2E mot en ekte leverandør kan ikke presses sammen, og revisjonen føres som egen kalenderpost.
 
 Kodebasen før denne planen (Go-porten, 98 commits 18.06–02.10) er ikke med i tallene.
 
-#### Fordeling på aktivitet (007–014)
+#### Fordeling på aktivitet (007–015)
 
 Den aktive tiden er fordelt slik. Når en subagent kjører, går tiden til agentens type: `code-review`, `security-review`, `scope-guard` og `migration-guard` regnes som review, `test` og `scenario-test` som testing, og `product-owner` og `explore` som planlegging. Agenter uten type klassifiseres etter beskrivelsen («Impl F3», «Eval 013», «Doc-review»). Kjører flere agenter samtidig, deles tiden likt mellom dem. Uten aktive agenter går tiden til dirigentens gjeldende fase (`analyse`/`plan`, `impl`, `review`, `eval`/`test`). Planlegging omfatter analyse og plan. Testing omfatter holdout-scenarier, eval og test- og scope-agenten.
 
@@ -169,15 +172,17 @@ Den aktive tiden er fordelt slik. Når en subagent kjører, går tiden til agent
 | 012 | 17 | 35 | 19 | 19 | 0 | 90 |
 | 013 | 3 | 14 | 9 | 15 | 0 | 41 |
 | 014 | 14 | 120 | 181 | 35 | 0 | 350 |
-| **Sum (min)** | **128** | **393** | **454** | **252** | **24** | **1 251** |
-| **Timer** | **2,1** | **6,6** | **7,6** | **4,2** | **0,4** | **20,9** |
-| **Andel** | **10 %** | **31 %** | **36 %** | **20 %** | **2 %** | |
+| 015 | 13 | 101 | 15 | 89 | 6 | 224 |
+| **Sum (min)** | **141** | **494** | **469** | **341** | **30** | **1 475** |
+| **Timer** | **2,4** | **8,2** | **7,8** | **5,7** | **0,5** | **24,6** |
+| **Andel** | **10 %** | **33 %** | **32 %** | **23 %** | **2 %** | |
 
 **Hva tallene viser:**
 
-- **Kvalitetssikringen tar mer tid enn koden.** Review og testing utgjør 56 % av tiden, mot 31 % for implementering. Selve kodingen går fort (ofte 2–10 min per fase), mens review-runder med security-review på alle auth-differ tar lengst tid.
+- **Kvalitetssikringen tar mer tid enn koden.** Review og testing utgjør 55 % av tiden, mot 33 % for implementering. Selve kodingen går fort (ofte 2–10 min per fase), mens review-runder med security-review på alle auth-differ tar lengst tid.
 - **Planleggingen er billig.** 10 % av tiden gikk med til planlegging, men den bærer mye: ROADMAP-funnene med fil:linje-bevis gjorde analysene i Fase 0–2 korte.
 - **014 skiller seg ut.** Review tok 52 % av tiden. En ren refaktorering av fire innloggingsflyter ga mange review-runder for å vise at atferden er uendret. Det forklarer det meste av den lavere faktoren for Fase 3.
+- **015 har motsatt profil.** Testing tok 40 % av tiden og review bare 7 %. Review-agentene (code, security, scope og migration) gikk parallelt og var ferdige på ca. 2 minutter per fase. Funnene var likevel reelle, blant annet kontoovertakelse via unicode-bretting av e-post (Kelvin-tegnet) i F4. Testagentens mutasjonstesting tok 25–45 minutter i F3 og F4. Implementeringen (45 %) inkluderer en egen rework-runde i F5 og den kjørbare testleverandøren i F6.
 - **Deploy ser nesten gratis ut, men er det ikke.** Prod-installasjonen (`sudo`, restart, ekte innlogging) gjør Lars utenfor telemetrien. Det er den som drar ut kalendertiden.
 
 **Forbehold:** Tallene er en tilnærming. Fasemarkørene mangler noen steder. Test- og scope-agenten gjør både testing og scope-sjekk, og den er regnet som testing. Intent-capture av scenarier i analysefasen er også regnet som testing. Dirigentens egen tid mens agenter kjører, blir ført på agentene.
