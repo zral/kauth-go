@@ -17,11 +17,6 @@ import (
 // Kalleren skiller den fra policyavslag og svarer i sin metodes format.
 var errIssueFailed = errors.New("utstedelse feilet")
 
-// errIssueRefresh kommer i tillegg når det var refresh-utstedelsen som feilet.
-// Google svarer i dag med ulik tekst for de to stegene, og flyttingen skal
-// ikke endre svaret.
-var errIssueRefresh = errors.New("refresh-utstedelse feilet")
-
 // errPolicyDenied markerer at tjenestens require_role/enforce_org avviste
 // brukeren. Egen markør, slik at kalleren ikke tar en ukjent feil for et
 // policyavslag.
@@ -82,7 +77,7 @@ func (c *loginCompleter) complete(w http.ResponseWriter, r *http.Request, svc *g
 	rt, err := c.refresh.Issue(ctx, user, *svc, ip, ua)
 	if err != nil {
 		slog.Error(m.LogPrefix+": kunne ikke utstede refresh-token", "service", svc.ID, "error", err)
-		return fmt.Errorf("%w (%w): refresh-token: %v", errIssueFailed, errIssueRefresh, err)
+		return fmt.Errorf("%w: refresh-token: %v", errIssueFailed, err)
 	}
 	setRefreshCookie(w, rt)
 	if m.StateCookie != "" {

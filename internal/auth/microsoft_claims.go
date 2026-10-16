@@ -23,6 +23,8 @@ const (
 	msReasonEmailMissing = "email_missing"
 	msReasonClaimsDecode = "claims_decode"
 	msReasonMissingOID   = "missing_oid"
+	msReasonCodeExchange = "code_exchange"
+	msReasonIDToken      = "id_token"
 )
 
 // msClaims er det vi leser fra et signaturverifisert MS-id_token.

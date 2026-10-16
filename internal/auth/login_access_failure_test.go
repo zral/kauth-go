@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rsa"
 	"math/big"
-	"net/http"
 	"testing"
 	"time"
 
@@ -37,12 +36,7 @@ func TestLoginBaseline_AccessTokenIssueFailure(t *testing.T) {
 
 			w := m.login(t, e, svc, user)
 
-			if m.name == "google" {
-				require.Equal(t, http.StatusInternalServerError, w.Code)
-				require.Equal(t, "kunne ikke utstede token\n", w.Body.String())
-			} else {
-				m.issueFailed(t, w, "klarsyn")
-			}
+			m.issueFailed(t, w, "klarsyn")
 			require.Empty(t, w.Result().Cookies())
 			require.NotContains(t, w.Header().Get("Location"), "/dispatch")
 			require.NotContains(t, w.Body.String(), "rt=")

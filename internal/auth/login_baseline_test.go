@@ -184,8 +184,9 @@ func lbMethods() []lbMethod {
 				require.Equal(t, "/login?error=access_denied&service="+svcID, w.Header().Get("Location"))
 			},
 			issueFailed: func(t *testing.T, w *httptest.ResponseRecorder, svcID string) {
-				require.Equal(t, http.StatusInternalServerError, w.Code)
-				require.Equal(t, "kunne ikke utstede refresh-token\n", w.Body.String())
+				require.Equal(t, http.StatusSeeOther, w.Code)
+				require.Equal(t, "/login?error=login_failed&service="+svcID, w.Header().Get("Location"))
+				requireRedirectBodyOnly(t, w)
 			},
 		},
 		{

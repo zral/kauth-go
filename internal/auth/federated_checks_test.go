@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -352,12 +353,13 @@ func TestMSInit_MethodOff_Forbidden(t *testing.T) {
 	require.Empty(t, w.Result().Cookies())
 }
 
-// D2-lås: i dag auditeres ikke en feilet kodeutveksling hos Microsoft. F3
-// snur forventningen til reason=code_exchange.
-func TestMSCallback_ExchangeFailure_NotAudited(t *testing.T) {
+// D2: en feilet kodeutveksling hos Microsoft auditeres som
+// reason=code_exchange, uten e-post og tid. Redirecten er uendret.
+func TestMSCallback_ExchangeFailure_Audited(t *testing.T) {
 	f, _ := newMSFixture(t, 0, nil)
 	f.h.fetchClaims = func(context.Context, *oauth2.Config, string) (msClaims, error) {
-		return msClaims{}, errors.New("kodeutveksling: boom")
+		// Tid satt for å vise at den ikke havner i audit før claims er verifisert.
+		return msClaims{Tid: msOrgTid}, fmt.Errorf("%w: boom", errMSCodeExchange)
 	}
 	w := httptest.NewRecorder()
 	f.h.HandleCallback(w, msStateCookieReq(t, f, "n"))
@@ -365,7 +367,11 @@ func TestMSCallback_ExchangeFailure_NotAudited(t *testing.T) {
 	require.Equal(t, http.StatusSeeOther, w.Code)
 	require.Equal(t, "/login?error=login_failed&service=klarsyn", w.Header().Get("Location"))
 	requireRedirectBodyOnly(t, w)
-	require.Empty(t, lbOfType(drainAudit(t, f.q, f.h.aud), "microsoft_oidc_rejected"))
+	ev := lbOfType(drainAudit(t, f.q, f.h.aud), "microsoft_oidc_rejected")
+	require.Len(t, ev, 1)
+	require.NotNil(t, ev[0].Details)
+	require.Equal(t, "reason=code_exchange", *ev[0].Details)
+	require.Empty(t, ev[0].Email)
 }
 
 // S8: Google-callbacken sammenligner nonce i id_token med nonce fra den

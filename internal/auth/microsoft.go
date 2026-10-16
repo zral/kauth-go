@@ -113,9 +113,18 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 	}
 	cl, err := fetch(ctx, oauthCfg, r.URL.Query().Get("code"))
 	if err != nil {
-		if errors.Is(err, errClaimsDecode) {
+		// Kodeutveksling og id_token-verifisering auditeres uten tid: ingen
+		// claims er lest fra et verifisert token.
+		switch {
+		case errors.Is(err, errClaimsDecode):
 			h.auditRejected(r, svc, cl.Tid, msReasonClaimsDecode)
-		} else {
+		case errors.Is(err, errMSCodeExchange):
+			slog.Warn("microsoft: kodeutveksling feilet", "service", svc.ID, "error", err)
+			h.auditRejected(r, svc, "", msReasonCodeExchange)
+		case errors.Is(err, errMSIDToken):
+			slog.Warn("microsoft: id_token ble ikke godkjent", "service", svc.ID, "error", err)
+			h.auditRejected(r, svc, "", msReasonIDToken)
+		default:
 			slog.Warn("microsoft: id_token-henting feilet", "error", err)
 		}
 		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
@@ -126,24 +135,36 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 
 var errClaimsDecode = errors.New("claims kunne ikke dekodes")
 
+// Sentinels for fetchMSClaims, så HandleCallback kan audite årsaken uten å
+// sende IdP-tekst videre.
+var (
+	errMSCodeExchange = errors.New("kodeutveksling feilet")
+	errMSIDToken      = errors.New("id_token ble ikke godkjent")
+)
+
+// msKeysURL er Microsofts JWKS-endepunkt. Variabelen er ueksportert og
+// finnes bare så tester kan peke på en lokal server; prod-verdien er
+// uendret. Tester som endrer den, kan ikke kjøres med t.Parallel.
+var msKeysURL = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
+
 // fetchMSClaims bytter koden, verifiserer id_token-signaturen og dekoder claims.
 // Ved dekodingsfeil returneres det som lot seg lese av tid sammen med errClaimsDecode.
 func fetchMSClaims(ctx context.Context, cfg *oauth2.Config, code string) (msClaims, error) {
 	oauth2Token, err := cfg.Exchange(ctx, code)
 	if err != nil {
-		return msClaims{}, fmt.Errorf("kodeutveksling: %w", err)
+		return msClaims{}, fmt.Errorf("%w: %v", errMSCodeExchange, err)
 	}
 	rawIDToken, _ := oauth2Token.Extra("id_token").(string)
 	// SkipIssuerCheck er nødvendig: /common utsteder per-tenant iss. Signatur,
 	// audience og utløp verifiseres fortsatt; issuer sjekkes i validateMSClaims.
 	verifier := oidc.NewVerifier(
 		msAuthBase,
-		oidc.NewRemoteKeySet(ctx, "https://login.microsoftonline.com/common/discovery/v2.0/keys"),
+		oidc.NewRemoteKeySet(ctx, msKeysURL),
 		&oidc.Config{ClientID: cfg.ClientID, SkipIssuerCheck: true},
 	)
 	idToken, err := verifier.Verify(ctx, rawIDToken)
 	if err != nil {
-		return msClaims{}, fmt.Errorf("id_token: %w", err)
+		return msClaims{}, fmt.Errorf("%w: %v", errMSIDToken, err)
 	}
 	var cl msClaims
 	if err := idToken.Claims(&cl); err != nil {

@@ -306,13 +306,10 @@ func (h *GoogleHandlers) finishCallback(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if err := h.completer.complete(w, r, svc, user, loginGoogle); err != nil {
-		switch {
-		case errors.Is(err, errPolicyDenied):
+		if errors.Is(err, errPolicyDenied) {
 			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		case errors.Is(err, errIssueRefresh):
-			http.Error(w, "kunne ikke utstede refresh-token", http.StatusInternalServerError)
-		default:
-			http.Error(w, "kunne ikke utstede token", http.StatusInternalServerError)
+		} else {
+			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
 		}
 	}
 }
