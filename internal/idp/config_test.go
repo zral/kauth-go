@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 	"github.com/zral/kauth-go/internal/db"
@@ -65,6 +67,8 @@ func TestValidate_Rejections(t *testing.T) {
 		{"slug kolon", func(r *gen.IdentityProvider) { r.Slug = "a:b" }, nil, "bad_slug"},
 		{"slug tom", func(r *gen.IdentityProvider) { r.Slug = "" }, nil, "bad_slug"},
 		{"slug for lang", func(r *gen.IdentityProvider) { r.Slug = fmt.Sprintf("%033d", 0) }, nil, "bad_slug"},
+		{"display_name tom", func(r *gen.IdentityProvider) { r.DisplayName = "  \t " }, nil, "display_name_empty"},
+		{"display_name 65 runer", func(r *gen.IdentityProvider) { r.DisplayName = strings.Repeat("æ", 65) }, nil, "display_name_too_long"},
 		{"ikke i allowlist", func(r *gen.IdentityProvider) { r.Issuer = "https://evil.example" }, nil, "issuer_not_allowlisted"},
 		{"avsluttende slash", func(r *gen.IdentityProvider) { r.Issuer = "https://idp.acme.example/" }, nil, "issuer_not_allowlisted"},
 		{"store bokstaver i issuer", func(r *gen.IdentityProvider) { r.Issuer = "https://IDP.acme.example" }, nil, "issuer_not_allowlisted"},
@@ -219,6 +223,22 @@ func TestLoad(t *testing.T) {
 	require.Contains(t, out, "slug=uten-hemmelighet")
 	require.Contains(t, out, "reason=secret_env_empty")
 	require.NotContains(t, out, "hemmelig-verdi")
+	require.Contains(t, out, "idp: tilordning til leverandør som ikke er lastet")
+	require.Contains(t, out, "service=s2")
+	require.Contains(t, out, "provider_id=3")
+}
+
+func TestLogSlug(t *testing.T) {
+	require.Equal(t, "acme", logSlug("acme"))
+	require.Len(t, logSlug(strings.Repeat("a", 500)), 64)
+	require.True(t, utf8.ValidString(logSlug(strings.Repeat("æ", 100))))
+}
+
+func TestValidate_DisplayName64OK(t *testing.T) {
+	r := goodRow()
+	r.DisplayName = strings.Repeat("æ", 64)
+	_, reason, ok := validate(r, optsFor("https://idp.acme.example"))
+	require.True(t, ok, reason)
 }
 
 func TestValidate_TomAllowlist(t *testing.T) {

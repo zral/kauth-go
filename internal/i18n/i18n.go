@@ -30,6 +30,7 @@ type Strings struct {
 	// login.html
 	ContinueWithGoogle    string
 	ContinueWithMicrosoft string
+	ContinueWith          string
 	SignInWithEmailLink   string
 
 	// magic-login.html

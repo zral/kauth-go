@@ -45,6 +45,9 @@ func TestGet(t *testing.T) {
 	assert.Equal(t, "Fortsett med Google", Get("nb").ContinueWithGoogle)
 	assert.Equal(t, "Mit Google fortfahren", Get("de").ContinueWithGoogle)
 	assert.Equal(t, "Continue with Google", Get("en").ContinueWithGoogle)
+	assert.Equal(t, "Fortsett med", Get("nb").ContinueWith)
+	assert.Equal(t, "Continue with", Get("en").ContinueWith)
+	assert.Equal(t, "Weiter mit", Get("de").ContinueWith)
 }
 
 func TestGet_UnknownLocaleFallsBackToEnglish(t *testing.T) {

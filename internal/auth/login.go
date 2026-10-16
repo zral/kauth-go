@@ -7,8 +7,15 @@ import (
 
 	"github.com/zral/kauth-go/internal/db/gen"
 	"github.com/zral/kauth-go/internal/i18n"
+	"github.com/zral/kauth-go/internal/idp"
 	"github.com/zral/kauth-go/internal/service"
 )
+
+// LoginProvider er en generisk OIDC-leverandør som vises som knapp.
+type LoginProvider struct {
+	Slug        string
+	DisplayName string
+}
 
 // LoginPageData er template-data for login.html og magic-login.html.
 type LoginPageData struct {
@@ -35,6 +42,9 @@ type LoginPageData struct {
 	// PasswordLoginEnabled er den globale bryteren; passordskjemaet vises
 	// bare når den er på og tjenesten har auth_password=1.
 	PasswordLoginEnabled bool
+	// Providers er tjenestens lastede generiske OIDC-leverandører i
+	// tilordningsrekkefølge. Tom liste gir samme side som før 015.
+	Providers []LoginProvider
 }
 
 // buildBgCSS beregner CSS background-verdier for BodyBgCSS og BeforeBgCSS.
@@ -70,6 +80,8 @@ type LoginHandler struct {
 	Templates *template.Template
 	// PasswordLoginEnabled speiler config.PasswordLoginEnabled.
 	PasswordLoginEnabled bool
+	// IDPs er registeret over generiske leverandører; nil betyr ingen.
+	IDPs *idp.Registry
 }
 
 // ServeLogin håndterer GET /login — også kauths authorization_endpoint for
@@ -164,6 +176,7 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		Tagline:     tagline,
 
 		PasswordLoginEnabled: h.PasswordLoginEnabled,
+		Providers:            h.loginProviders(svc.ID),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -172,6 +185,17 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 	if err := h.Templates.ExecuteTemplate(w, "login.html", data); err != nil {
 		http.Error(w, "mal-feil", http.StatusInternalServerError)
 	}
+}
+
+func (h *LoginHandler) loginProviders(serviceID string) []LoginProvider {
+	if h.IDPs == nil {
+		return nil
+	}
+	var out []LoginProvider
+	for _, p := range h.IDPs.ForService(serviceID) {
+		out = append(out, LoginProvider{Slug: p.Slug, DisplayName: p.DisplayName})
+	}
+	return out
 }
 
 // ServeLegacyLogin håndterer GET /login.html og /login-pov.html → 301 /login.

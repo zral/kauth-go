@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logg inn – Testify</title>
+    
+    
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            
+            margin: 0; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            background: url('/static/fjord-dawn.jpg') center/cover no-repeat fixed;
+        }
+        
+        .card {
+            background: transparent;
+            border-radius: 12px;
+            padding: 2.5rem 2rem;
+            width: 100%; max-width: 380px;
+            margin: 1rem;
+            position: relative;
+        }
+        .logo { text-align: center; margin-bottom: 1.5rem; }
+        .logo-row {
+            display: flex; align-items: center; justify-content: center; gap: .6rem;
+        }
+        .logo-row svg { width: 36px; height: 36px; }
+        .logo h1 {
+            
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0; letter-spacing: -.02em;
+            
+            color: #0f172a; text-shadow: 0 1px 3px rgba(255,255,255,.9);
+            
+            
+        }
+        .logo p {
+            
+            font-size: .85rem; margin: .25rem 0 0;
+            
+            color: #0f172a; font-weight: 500; text-shadow: 0 1px 3px rgba(255,255,255,.9);
+            
+            
+        }
+        .btn-social {
+            width: 100%; padding: .7rem; border: none;
+            border-radius: 6px;
+            font-size: .95rem; cursor: pointer; display: flex;
+            align-items: center; justify-content: center; gap: .5rem;
+            text-decoration: none; font-weight: 500; margin-bottom: .5rem;
+            
+            background: white; color: #334155; border: 1px solid #d1d5db;
+            
+        }
+        .btn-social:hover {
+            
+            background: #f8fafc; border-color: #94a3b8;
+            
+        }
+        
+        .lang {
+            position: absolute; left: 0; right: 0; top: 100%;
+            margin-top: .75rem; text-align: center;
+            font-size: .8rem; letter-spacing: .02em;
+            
+        }
+        .lang a, .lang span { text-decoration: none; padding: 0 .2rem; }
+        
+        .lang a { color: #475569; text-shadow: 0 1px 3px rgba(255,255,255,.9); }
+        .lang a:hover { color: #0f172a; }
+        .lang .active { color: #0f172a; font-weight: 600; text-shadow: 0 1px 3px rgba(255,255,255,.9); }
+        .lang .sep { color: #94a3b8; }
+        
+        .msg-error {
+            padding: .6rem .75rem; border-radius: 6px; margin-bottom: 1rem;
+            text-align: center; font-size: .9rem;
+            
+            color: #dc2626; background: #fef2f2;
+            
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">
+            
+            <h1>Testify</h1>
+            
+            
+        </div>
+
+        
+        <div class="msg-error">
+            Innloggingen feilet. Prøv igjen.
+            
+        </div>
+        
+
+        
+
+        
+
+        
+
+        
+
+        <nav class="lang">
+            <span class="active" lang="nb" title="Norsk">NO</span><span class="sep">·</span><a href="/login?error=login_failed&amp;lang=en&amp;service=test" hreflang="en" title="English">EN</a><span class="sep">·</span><a href="/login?error=login_failed&amp;lang=de&amp;service=test" hreflang="de" title="Deutsch">DE</a>
+        </nav>
+    </div>
+
+    <script>
+        (function() {
+            var params = new URLSearchParams(location.search);
+            
+            
+            
+            
+            
+            
+            if (params.get('response_type') === 'code' && params.get('client_id')) return;
+            var redirectUri = params.get('redirect_uri');
+            if (!redirectUri) return;
+            document.cookie = 'redirect_uri=' + encodeURIComponent(redirectUri) +
+                '; path=/; max-age=600; Secure; SameSite=Lax';
+            var enc = encodeURIComponent(redirectUri);
+            var oidcBtn = document.getElementById('oidc-btn');
+            if (oidcBtn) oidcBtn.href = oidcBtn.href + '&redirect_uri=' + enc;
+            var msBtn = document.getElementById('ms-btn');
+            if (msBtn) msBtn.href = msBtn.href + '&redirect_uri=' + enc;
+            var magicBtn = document.getElementById('magic-btn');
+            if (magicBtn) magicBtn.href = magicBtn.href + '&redirect_uri=' + enc;
+        })();
+    </script>
+</body>
+</html>

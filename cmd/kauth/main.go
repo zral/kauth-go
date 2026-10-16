@@ -21,6 +21,7 @@ import (
 	"github.com/zral/kauth-go/internal/config"
 	"github.com/zral/kauth-go/internal/db"
 	"github.com/zral/kauth-go/internal/fetchmeta"
+	"github.com/zral/kauth-go/internal/idp"
 	"github.com/zral/kauth-go/internal/jobs"
 	"github.com/zral/kauth-go/internal/mail"
 	"github.com/zral/kauth-go/internal/service"
@@ -62,6 +63,17 @@ func main() {
 	}
 	log.Println("serviceregistry: cache varmet opp")
 
+	// Generiske OIDC-leverandører (015). Avviste rader logges av Load selv;
+	// bare DB-feil stopper oppstarten.
+	idpProviders, idpByService, err := idp.Load(ctx, queries, idp.Options{
+		Allowlist: cfg.OIDCIssuers, AllowInsecure: cfg.OIDCAllowInsecure, Getenv: os.Getenv,
+	})
+	if err != nil {
+		log.Fatalf("idp load: %v", err)
+	}
+	idps := idp.NewRegistry(idpProviders, idpByService, idp.NewHTTPClient(cfg.OIDCAllowInsecure), cfg.OIDCAllowInsecure)
+	log.Printf("idp: %d generiske OIDC-leverandører lastet", len(idpProviders))
+
 	// ── 5. Initialiser token-laget ───────────────────────────────────────────
 	issuer, err := token.NewIssuer(cfg.PrivateKey, cfg.PublicKey, cfg.Issuer, cfg.AccessTokenTTL, cfg.AdminTokenTTL)
 	if err != nil {
@@ -73,11 +85,12 @@ func main() {
 	tmpl := template.Must(template.ParseGlob("templates/*.html"))
 
 	// ── 7. Initialiser auth-handlers ─────────────────────────────────────────
-	loginH := &auth.LoginHandler{Registry: registry, Templates: tmpl, PasswordLoginEnabled: cfg.PasswordLoginEnabled}
+	loginH := &auth.LoginHandler{Registry: registry, Templates: tmpl, PasswordLoginEnabled: cfg.PasswordLoginEnabled, IDPs: idps}
 	magicH := auth.NewMagicHandlers(*cfg, queries, mailSvc, issuer, refreshSvc, registry, auditSvc, tmpl)
 	adminSessions := admin.NewSessionStarter(issuer, auditSvc, cfg.AdminTokenTTL)
 	googleH := auth.NewGoogleHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc, adminSessions)
 	msH := auth.NewMicrosoftHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc)
+	genericH := auth.NewGenericOIDCHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, idps, auditSvc)
 	passwordH := auth.NewPasswordHandlers(queries, issuer, refreshSvc, registry, auditSvc, cfg.PasswordLoginEnabled).WithCORSOrigins(cfg.CORSOrigins)
 	dispatchH := &auth.DispatchHandler{Registry: registry, Issuer: issuer, Queries: queries, Audit: auditSvc, Refresh: refreshSvc, DefaultSvcID: ""}
 	meH := &auth.MeHandler{Issuer: issuer, CookieName: "auth_token"}
@@ -124,6 +137,10 @@ func main() {
 	r.Get("/ms-oidc-login", msH.InitiateLogin)
 	r.Get("/ms-social-login", msH.InitiateLogin)
 	r.Get("/ms-callback", msH.HandleCallback)
+
+	// ── Generisk OIDC (015) ───────────────────────────────────────────────────
+	r.Get("/idp/{slug}/login", genericH.HandleLogin)
+	r.Get("/idp/{slug}/callback", genericH.HandleCallback)
 
 	// ── Magic link ────────────────────────────────────────────────────────────
 	r.Get("/magic-login", magicH.ShowForm)

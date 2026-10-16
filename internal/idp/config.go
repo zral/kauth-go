@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/zral/kauth-go/internal/db/gen"
 )
@@ -114,6 +115,21 @@ var domainRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]
 
 func validDomain(d string) bool { return domainRe.MatchString(d) }
 
+const maxDisplayNameRunes = 64
+
+// logSlug avkorter slug til 64 byte (på rune-grense) slik at en ugyldig,
+// vilkårlig lang verdi fra DB ikke blåser opp loggen.
+func logSlug(s string) string {
+	if len(s) <= 64 {
+		return s
+	}
+	s = s[:64]
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
 // validate returnerer reason ved avvisning. Rekkefølgen er stabil, så hver
 // regel har en egen reason i loggen.
 func validate(row gen.IdentityProvider, opts Options) (Provider, string, bool) {
@@ -126,6 +142,13 @@ func validate(row gen.IdentityProvider, opts Options) (Provider, string, bool) {
 	}
 	if !slugRe.MatchString(row.Slug) {
 		return Provider{}, "bad_slug", false
+	}
+	name := strings.TrimSpace(row.DisplayName)
+	if name == "" {
+		return Provider{}, "display_name_empty", false
+	}
+	if utf8.RuneCountInString(name) > maxDisplayNameRunes {
+		return Provider{}, "display_name_too_long", false
 	}
 	if !inAllowlist(opts.Allowlist, row.Issuer) {
 		return Provider{}, "issuer_not_allowlisted", false
@@ -187,7 +210,7 @@ func Load(ctx context.Context, q *gen.Queries, opts Options) (map[string]Provide
 	for _, row := range rows {
 		p, reason, ok := validate(row, opts)
 		if !ok {
-			slog.Warn("idp: leverandør ikke lastet", "slug", row.Slug, "reason", reason)
+			slog.Warn("idp: leverandør ikke lastet", "slug", logSlug(row.Slug), "reason", reason)
 			continue
 		}
 		providers[p.Slug] = p
@@ -199,9 +222,12 @@ func Load(ctx context.Context, q *gen.Queries, opts Options) (map[string]Provide
 	}
 	byService := map[string][]string{}
 	for _, a := range assigns {
-		if slug, ok := slugByID[a.ProviderID]; ok {
-			byService[a.ServiceID] = append(byService[a.ServiceID], slug)
+		slug, ok := slugByID[a.ProviderID]
+		if !ok {
+			slog.Warn("idp: tilordning til leverandør som ikke er lastet", "service", a.ServiceID, "provider_id", a.ProviderID)
+			continue
 		}
+		byService[a.ServiceID] = append(byService[a.ServiceID], slug)
 	}
 	return providers, byService, nil
 }
