@@ -396,10 +396,10 @@ func (h *MagicHandlers) Redeem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// require_role/enforce_org håndheves nå her — tidligere ble magic link
-	// (i motsetning til Google/Microsoft) aldri sjekket mot disse, slik at en
-	// bruker uten en tjenestes påkrevde rolle likevel kunne logge inn dit via
-	// magic link (github.com/zral/kauth-go/issues/3).
+	// require_role/enforce_org håndheves i complete, som er felles for alle
+	// fire metodene. Magic link ble tidligere aldri sjekket mot disse, slik at
+	// en bruker uten en tjenestes påkrevde rolle likevel kunne logge inn dit
+	// (github.com/zral/kauth-go/issues/3).
 	if err := h.completer.complete(w, r, svc, user, loginMagic); err != nil {
 		if !errors.Is(err, errPolicyDenied) {
 			http.Error(w, t.ErrInternal, http.StatusInternalServerError)

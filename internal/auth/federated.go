@@ -17,7 +17,10 @@ type federatedProvider struct {
 	rejectedType string // audit-type for avvisning, f.eks. google_oidc_rejected
 }
 
-var providerGoogle = federatedProvider{login: loginGoogle, rejectedType: "google_oidc_rejected"}
+var (
+	providerGoogle    = federatedProvider{login: loginGoogle, rejectedType: "google_oidc_rejected"}
+	providerMicrosoft = federatedProvider{login: loginMicrosoft, rejectedType: "microsoft_oidc_rejected"}
+)
 
 // federatedLogin samler det den felles stien trenger. Lages i New*Handlers
 // og deler pekere med handleren.

@@ -77,9 +77,9 @@ func (h *PasswordHandlers) DoLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// require_role/enforce_org håndheves nå her — tidligere ble
-	// passord-login (i motsetning til Google/Microsoft) aldri sjekket mot
-	// disse (github.com/zral/kauth-go/issues/3).
+	// require_role/enforce_org håndheves i complete, som er felles for alle
+	// fire metodene. Passord-login ble tidligere aldri sjekket mot disse
+	// (github.com/zral/kauth-go/issues/3).
 	if err := h.completer.complete(w, r, svc, user, loginPassword); err != nil {
 		if !errors.Is(err, errPolicyDenied) {
 			http.Error(w, "intern feil", http.StatusInternalServerError)

@@ -27,17 +27,20 @@ import (
 const msAuthBase = "https://login.microsoftonline.com/common/oauth2/v2.0"
 
 type MicrosoftHandlers struct {
-	cfg       config.Config
-	reg       *service.Registry
-	aud       *audit.Service
-	resolver  *identityResolver
-	completer *loginCompleter
+	cfg      config.Config
+	reg      *service.Registry
+	aud      *audit.Service
+	resolver *identityResolver
+	fed      *federatedLogin
 	// fetchClaims er en testsøm; nil betyr ekte kodeutveksling og verifisering.
 	fetchClaims func(ctx context.Context, cfg *oauth2.Config, code string) (msClaims, error)
 }
 
 func NewMicrosoftHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service) *MicrosoftHandlers {
-	return &MicrosoftHandlers{cfg: cfg, reg: reg, aud: aud, resolver: newIdentityResolver(sqlDB, aud), completer: &loginCompleter{queries: q, issuer: iss, refresh: ref, aud: aud}}
+	resolver := newIdentityResolver(sqlDB, aud)
+	completer := &loginCompleter{queries: q, issuer: iss, refresh: ref, aud: aud}
+	return &MicrosoftHandlers{cfg: cfg, reg: reg, aud: aud, resolver: resolver,
+		fed: &federatedLogin{resolver: resolver, completer: completer, aud: aud}}
 }
 
 // InitiateLogin — GET /ms-oidc-login
@@ -79,20 +82,20 @@ func (h *MicrosoftHandlers) InitiateLogin(w http.ResponseWriter, r *http.Request
 // HandleCallback — GET /ms-callback
 func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	sc, err := r.Cookie("ms_state")
-	if err != nil || sc.Value != r.URL.Query().Get("state") {
-		redirectLoginError(w, r, "", errCodeLoginFailed)
+	claims, ok := readState(w, r, "ms_state", h.cfg.OIDCStateSecret)
+	if !ok {
 		return
 	}
-	claims, ok := parseState(h.cfg.OIDCStateSecret, sc.Value)
-	if !ok || claims.Admin {
+	// Microsoft har ingen admin-flyt. En admin-state er signert for en annen
+	// flyt og avvises før tjenesteoppslag og kodeutveksling.
+	if claims.Admin {
 		redirectLoginError(w, r, "", errCodeLoginFailed)
 		return
 	}
 	// Tjenesten kommer fra den signerte staten satt i InitiateLogin, se google.go.
 	svc := h.reg.Resolve("", claims.ServiceID, "")
 	if svc == nil {
-		h.auditRejected(r, &gen.Service{ID: claims.ServiceID}, "", "unknown_service")
+		h.fed.auditRejected(r, providerMicrosoft, claims.ServiceID, rejection{Reason: "unknown_service"})
 		redirectLoginError(w, r, "", errCodeLoginFailed)
 		return
 	}
@@ -117,13 +120,13 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 		// claims er lest fra et verifisert token.
 		switch {
 		case errors.Is(err, errClaimsDecode):
-			h.auditRejected(r, svc, cl.Tid, msReasonClaimsDecode)
+			h.fed.auditRejected(r, providerMicrosoft, svc.ID, rejection{Context: msTidContext(cl.Tid), Reason: msReasonClaimsDecode})
 		case errors.Is(err, errMSCodeExchange):
 			slog.Warn("microsoft: kodeutveksling feilet", "service", svc.ID, "error", err)
-			h.auditRejected(r, svc, "", msReasonCodeExchange)
+			h.fed.auditRejected(r, providerMicrosoft, svc.ID, rejection{Reason: msReasonCodeExchange})
 		case errors.Is(err, errMSIDToken):
 			slog.Warn("microsoft: id_token ble ikke godkjent", "service", svc.ID, "error", err)
-			h.auditRejected(r, svc, "", msReasonIDToken)
+			h.fed.auditRejected(r, providerMicrosoft, svc.ID, rejection{Reason: msReasonIDToken})
 		default:
 			slog.Warn("microsoft: id_token-henting feilet", "error", err)
 		}
@@ -181,69 +184,32 @@ func fetchMSClaims(ctx context.Context, cfg *oauth2.Config, code string) (msClai
 	return cl, nil
 }
 
-func (h *MicrosoftHandlers) auditRejected(r *http.Request, svc *gen.Service, tid, reason string) {
-	details := "reason=" + reason
-	if tid != "" {
-		details = "tid=" + sanitizeLogValue(tid) + " " + details
+// msTidContext er tenant-konteksten i audit-details ved avslag på claim-nivå.
+// tid kommer fra IdP-en og renses som annen ekstern tekst i logg.
+func msTidContext(tid string) string {
+	if tid == "" {
+		return ""
 	}
-	h.aud.Log(r.Context(), audit.Event{Type: "microsoft_oidc_rejected", AuthMethod: "microsoft", ServiceID: svc.ID,
-		IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: false, Details: details})
-}
-
-// auditRejectedUser avslag etter at claims er godkjent. Her er e-posten kjent og
-// normalisert, i motsetning til claims-avslag hvor tid er eneste kontekst.
-func (h *MicrosoftHandlers) auditRejectedUser(r *http.Request, svc *gen.Service, email, reason string) {
-	h.aud.Log(r.Context(), audit.Event{Type: "microsoft_oidc_rejected", AuthMethod: "microsoft", Email: email, ServiceID: svc.ID,
-		IP: ClientIP(r), UA: r.Header.Get("User-Agent"), Success: false, Details: "reason=" + reason})
+	return "tid=" + sanitizeLogValue(tid)
 }
 
 // finishCallback tar over etter at id_token er signaturverifisert, slik at
 // claims-avslag og policy kan testes uten nettverk.
 func (h *MicrosoftHandlers) finishCallback(w http.ResponseWriter, r *http.Request, svc *gen.Service, cl msClaims, stateNonce string) {
-	ctx := r.Context()
-	ip, ua := ClientIP(r), r.Header.Get("User-Agent")
 	email, reason := validateMSClaims(cl, stateNonce)
 	email = NormalizeEmail(email)
 	if reason != "" {
-		h.auditRejected(r, svc, cl.Tid, reason)
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		h.fed.reject(w, r, providerMicrosoft, svc, rejection{Context: msTidContext(cl.Tid), Reason: reason})
 		return
 	}
 	// oid er subject (PD6). Uten gyldig oid finnes ingen stabil nøkkel, og
 	// da faller vi ikke tilbake til e-post.
 	if !msGUIDPattern.MatchString(cl.Oid) {
-		h.auditRejected(r, svc, cl.Tid, msReasonMissingOID)
-		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
+		h.fed.reject(w, r, providerMicrosoft, svc, rejection{Context: msTidContext(cl.Tid), Reason: msReasonMissingOID})
 		return
 	}
 	ext := externalIdentity{Provider: "microsoft", Issuer: "https://login.microsoftonline.com/" + strings.ToLower(cl.Tid) + "/v2.0", Subject: strings.ToLower(cl.Oid), Email: email, Name: cl.Name}
-	user, _, err := h.resolver.resolve(ctx, ext, policyFor(svc), resolveMeta{ServiceID: svc.ID, IP: ip, UA: ua})
-	if err != nil {
-		switch {
-		case errors.Is(err, errNoAccount):
-			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		case errors.Is(err, errUserInactive):
-			h.auditRejectedUser(r, svc, email, "user_inactive")
-			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		case errors.Is(err, errLinkDenied):
-			redirectLoginError(w, r, svc.ID, errCodeAccountNotLinked)
-		case errors.Is(err, errUserConflict):
-			slog.Warn("microsoft: auto-registrering kolliderte med eksisterende rad", "service", svc.ID, "error", err)
-			h.auditRejectedUser(r, svc, email, "user_conflict")
-			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-		default:
-			slog.Error("microsoft: kunne ikke finne eller opprette bruker", "error", err)
-			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-		}
-		return
-	}
-	if err := h.completer.complete(w, r, svc, user, loginMicrosoft); err != nil {
-		if errors.Is(err, errPolicyDenied) {
-			redirectLoginError(w, r, svc.ID, errCodeAccessDenied)
-		} else {
-			redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
-		}
-	}
+	h.fed.finish(w, r, providerMicrosoft, svc, ext)
 }
 
 func msCreds(cfg config.Config, svc *gen.Service) (id, secret string) {
