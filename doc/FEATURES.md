@@ -21,9 +21,9 @@ En komplett oversikt over hva kauth gjør og hvordan. README-en gir overordnet m
 
 ## Innloggingsmetoder
 
-Fire innebygde metoder, valgbare per tjeneste via boolean-felter i `services`-tabellen (`auth_google`, `auth_microsoft`, `auth_magic_link`, `auth_password`). I tillegg kan en tjeneste ha generiske OIDC-leverandører (se [Generisk OIDC](#generisk-oidc)), som tilordnes i `service_identity_providers` og ikke har et eget flagg.
+Fem innebygde metoder, valgbare per tjeneste via boolean-felter i `services`-tabellen (`auth_google`, `auth_microsoft`, `auth_github`, `auth_magic_link`, `auth_password`). I tillegg kan en tjeneste ha generiske OIDC-leverandører (se [Generisk OIDC](#generisk-oidc)), som tilordnes i `service_identity_providers` og ikke har et eget flagg.
 
-Alle metodene, også generisk OIDC, går gjennom samme utstedelse: `checkPolicy`, access- og refresh-token, refresh-cookie, rydding av state-cookie (bare de fødererte: `oidc_state`, `ms_state` og `idp_state`), `last_login`, suksess-audit og redirect til `/dispatch`. Google, Microsoft og generisk OIDC deler i tillegg en føderert sti for state, avvisning og resolverfeil (ADN 16). Verifiseringen av id_token er hos hver leverandør. Admin-Google bruker ikke utstedelsen.
+Alle metodene, også generisk OIDC, går gjennom samme utstedelse: `checkPolicy`, access- og refresh-token, refresh-cookie, rydding av state-cookie (bare de fødererte: `oidc_state`, `ms_state`, `gh_state` og `idp_state`), `last_login`, suksess-audit og redirect til `/dispatch`. Google, Microsoft, GitHub og generisk OIDC deler i tillegg en føderert sti for state, avvisning og resolverfeil (ADN 16). Verifiseringen av id_token er hos hver leverandør. Admin-Google bruker ikke utstedelsen.
 
 ### Google OIDC
 
@@ -40,6 +40,20 @@ Bruker `/common/oauth2/v2.0`-endepunktet for å akseptere både personlige Micro
 - Avvisning logges som `microsoft_oidc_rejected` med `reason=<årsak>` og `tid` i details.
 - Feil i kodeutvekslingen og i verifiseringen av id_token logges som `microsoft_oidc_rejected` med `reason=code_exchange` eller `reason=id_token`, uten e-post og `tid`.
 - kauth bruker ikke PKCE mot Microsoft. Klienten er konfidensiell og har hemmelighet. Innloggingen bindes med signert state og nonce.
+
+### GitHub
+
+Innlogging med GitHub OAuth App (019, ADN 21). GitHub gir ikke id_token, så det finnes ingen signatur å verifisere. Tilliten hviler på at kauth selv veksler koden server-til-server mot `github.com` over TLS og leser brukeren fra `api.github.com` med tokenet den fikk. Brukes bare i tjenester som slår på `auth_github`.
+
+- **Flyt:** `GET /github-login?service=<id>` og `GET /github-callback`. Authorization code med PKCE S256 (verifieren utledes med HMAC fra state, ingenting lagres), scope `read:user user:email` og `prompt=select_account`. State har eget formål `:github` og cookien heter `gh_state`. Andre flyters state avvises i GitHub-callbacken, og GitHub-state avvises i alle andre callbacks. Tjenesten kommer fra staten, aldri fra Host. `auth_github` sjekkes på nytt i callbacken. Redirect-URI er `https://<Host>/github-callback`.
+- **Utgående trafikk:** via den låste klienten fra generisk OIDC (https, ingen redirect, 10 s, 1 MiB, dial-vakt). Vertene er faste i kode. `KAUTH_GITHUB_BASE_URL` og `KAUTH_GITHUB_API_URL` kan overstyres bare med `KAUTH_OIDC_ALLOW_INSECURE=true` (eval).
+- **Kodeutveksling:** svaret må ha `access_token`, `token_type=bearer` og ingen `error`. GitHub svarer 200 også ved feil, så status alene er ikke nok. Tokenet brukes til to kall og lagres eller logges ikke.
+- **Identitet:** `(https://github.com, id)` med `provider='github'`. `id` må være et positivt heltall. `login` brukes aldri som nøkkel og lagres ikke.
+- **E-post:** bare primæroppføringen i `/user/emails` vurderes, aldri `email` fra `/user`. Den er betrodd når den er verifisert, ren ASCII og ikke en `noreply.github.com`-adresse. Uten betrodd e-post logger bare en allerede koblet identitet inn. Ukjent identitet gir `access_denied` og `reason=email_untrusted`. Med betrodd e-post gjelder `auto_link` og `auto_register` som for Google.
+- **Aldri admin:** det finnes ingen admin-rute for GitHub, og `CHECK (provider NOT IN ('oidc','github') OR admin_ok = 0)` hindrer admin-godkjenning.
+- **Hemmelighet:** `github_client_secret_env` (`KAUTH_SVC_`-referanse) vinner, ellers global `KAUTH_GITHUB_CLIENT_SECRET`. Tomt referansefelt faller tilbake på den globale; en referanse til en tom eller usatt variabel slår ut bare GitHub for tjenesten. Client id er `github_client_id` på tjenesten, ellers `KAUTH_GITHUB_CLIENT_ID`. Én GitHub OAuth App per `auth_host`.
+- **Audit:** `github_oauth_login` ved suksess (`auth_method=github`) og `github_oauth_rejected` ved avvisning med `reason=<kode>`. Årsakene er `unknown_service`, `method_disabled`, `provider_error`, `client_secret_missing`, `code_exchange`, `user_fetch`, `missing_id`, `email_untrusted`, `user_inactive`, `user_conflict` og `internal` (programmeringsfeil, fail-closed). Verken `login`, id, token eller hemmelighet havner i audit eller logg.
+- **Testleverandør:** `internal/githubtest` og `cmd/kauth-testidp -github` (ikke del av prod-binæren) brukes av eval-serveren på `127.0.0.1:8097`.
 
 ### Generisk OIDC
 
@@ -87,6 +101,7 @@ E-post er et attributt på brukeren, ikke identiteten (ADN 13). Identiteten til 
 - **Google:** issuer er alltid `https://accounts.google.com` (også når `iss` kommer uten `https://`), subject er `sub`.
 - **Microsoft:** issuer er `https://login.microsoftonline.com/{tid}/v2.0` med `tid` i små bokstaver, subject er `oid` i små bokstaver. `oid` er påkrevd og må være en GUID, ellers avvises innloggingen (`microsoft_oidc_rejected reason=missing_oid`). `sub` brukes ikke, fordi den er parvis per Entra-app.
 - **Generisk OIDC:** issuer er issueren i `identity_providers`, ordrett. Subject er `sub`, maks 255 tegn.
+- **GitHub:** issuer er alltid `https://github.com`, subject er den numeriske GitHub-id-en i desimal. Brukernavnet (`login`) kan endres og gjenbrukes og brukes derfor ikke.
 - **Magic link og passord** lagrer ingen identitet. De bruker `users.email`.
 - **`public_id`:** hver bruker har en UUID v4 (`users.public_id`, `crypto/rand`) som aldri endres.
 
@@ -377,11 +392,11 @@ Cache invalideres ved Create/Update i admin-panelet.
 
 ### Per-tjeneste OAuth-klienter
 
-`google_client_id`/`google_client_secret`/`microsoft_client_id`/`microsoft_client_secret` overstyrer globale miljøvariabler. Lar ulike tjenester ha separate Google Cloud-prosjekter med presise redirect-URI-whitelists.
+`google_client_id`/`google_client_secret`/`microsoft_client_id`/`microsoft_client_secret` overstyrer globale miljøvariabler. For GitHub er det `github_client_id` og `github_client_secret_env`. Lar ulike tjenester ha separate Google Cloud-prosjekter med presise redirect-URI-whitelists.
 
 ### Per-tjeneste auth-flagg
 
-`auth_google`, `auth_microsoft`, `auth_magic_link`, `auth_password`, `auto_register`, `enforce_org`, `is_default`, `active`. Login-templaten viser kun knapper for aktive metoder.
+`auth_google`, `auth_microsoft`, `auth_github`, `auth_magic_link`, `auth_password`, `auto_register`, `enforce_org`, `is_default`, `active`. Login-templaten viser kun knapper for aktive metoder.
 
 I tillegg `sub_format` (`email`/`id`) og `auto_link` (0/1), se Identitetsmodell. Skjemaet i admin tar vare på lagret verdi når feltet mangler i innsendingen, og avviser ukjent `sub_format`.
 
@@ -566,8 +581,8 @@ Intern-sti-grenen i `/dispatch` er fjernet: på nivå 1 godtas bare en `redirect
 ## Audit-logg
 
 Lagret i `audit_events`-tabellen med felter:
-- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `oidc_login`, `oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `dispatch_subject_mismatch`, `dispatch_subject_check_skipped`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, `service_providers_updated`, `identity_link_invited`, `identity_link_invite_revoked`, `identity_linked`, `identity_link_rejected`, ...
-- `auth_method` — `google`, `microsoft`, `oidc`, `magic_link`, `password`, `refresh`
+- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `oidc_login`, `oidc_rejected`, `github_oauth_login`, `github_oauth_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `dispatch_subject_mismatch`, `dispatch_subject_check_skipped`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, `service_providers_updated`, `identity_link_invited`, `identity_link_invite_revoked`, `identity_linked`, `identity_link_rejected`, ...
+- `auth_method` — `google`, `microsoft`, `github`, `oidc`, `magic_link`, `password`, `refresh`
 - `email`, `service_id`, `ip_address`, `user_agent`
 - `success` — bool, alltid eksplisitt satt av applikasjonen
 - `details` — fritekst, brukes for grunn på feilet login. `microsoft_oidc_rejected` har `reason=code_exchange` og `reason=id_token` i tillegg til de øvrige årsakene. `refresh_token_reuse` har `gap_s=<n>`, `user_deactivated` har `id=<n> revoked=<antall>` eller `id=<n> revoke_failed` (deaktiveringen står selv om revokeringen feiler; refresh for deaktivert bruker avvises uansett)
@@ -637,6 +652,8 @@ Korpuset ligger i `testdata/fuzz/`. CI kjører 30 s per mål på alt unntatt pul
 | GET | `/callback` | Google OAuth callback |
 | GET | `/ms-oidc-login`, `/ms-social-login` | Initier Microsoft OAuth |
 | GET | `/ms-callback` | Microsoft OAuth callback |
+| GET | `/github-login` | Initier GitHub OAuth (`?service=<id>`) |
+| GET | `/github-callback` | GitHub OAuth callback |
 | GET | `/idp/{slug}/login` | Initier innlogging mot generisk OIDC-leverandør (`?service=<id>`) |
 | GET | `/idp/{slug}/callback` | Callback fra generisk OIDC-leverandør |
 | GET | `/link/{token}` | Bekreftelsesside for koblingsinvitasjon (endrer ingenting) |
@@ -679,7 +696,7 @@ Ni SQLite-tabeller med WAL og foreign keys på:
 
 ### `services`
 
-Tjeneste-konfigurasjon. 30+ kolonner inkludert id, sub_format, auto_link, display_name, domain, auth_host, callback_url, branding (theme, accent_color, logo_html, bg_image, bg_css), auth-flagg (auth_google/microsoft/magic_link/password), OAuth-creds (per-service), TTL-er, default_role/org, is_default, active, updated_at. `id` er også `client_id` for en tjeneste som bruker OIDC `authorization_code`-flyten — ingen egen klient-tabell.
+Tjeneste-konfigurasjon. 30+ kolonner inkludert id, sub_format, auto_link, display_name, domain, auth_host, callback_url, branding (theme, accent_color, logo_html, bg_image, bg_css), auth-flagg (auth_google/microsoft/github/magic_link/password), OAuth-creds (per-service), TTL-er, default_role/org, is_default, active, updated_at. `id` er også `client_id` for en tjeneste som bruker OIDC `authorization_code`-flyten — ingen egen klient-tabell.
 
 ### `users`
 
@@ -687,7 +704,7 @@ Brukerkontoer: id, public_id (UUID v4, unik, uforanderlig), email (unik på `low
 
 ### `user_identities`
 
-Eksterne identiteter: id, user_id (FK til `users`, `ON DELETE CASCADE`), provider (`google`/`microsoft`/`oidc`), issuer, subject, email (sist sett), admin_ok, created_at, last_used_at. Unik på `(issuer, subject)`.
+Eksterne identiteter: id, user_id (FK til `users`, `ON DELETE CASCADE`), provider (`google`/`microsoft`/`oidc`/`github`), issuer, subject, email (sist sett), admin_ok, created_at, last_used_at. Unik på `(issuer, subject)`.
 
 ### `identity_providers` og `service_identity_providers`
 

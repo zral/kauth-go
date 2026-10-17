@@ -56,12 +56,15 @@ If those assumptions break — kauth exposed directly on a public network withou
 - Anti-enumeration on magic link and admin login (200 ms floor plus identical responses).
 - Rate limiting on magic links (3 attempts per 15 minutes per email address).
 - Generic OIDC providers (`identity_providers`) are loaded only when the issuer is in both the table and the `KAUTH_OIDC_ISSUERS` allowlist, so a database write alone cannot add a trusted issuer. All outbound traffic to them goes through one client: https only, no redirects, size and time limits, and a dial guard against non-public addresses. Their email is untrusted by default (`trust_email=0`: only already-linked identities sign in); with `trust_email=1` it needs `email_verified`, a plain-ASCII address and a domain on the provider's list. Client secrets live in `KAUTH_IDP_*` environment variables, never in the database, and a generic identity never grants admin access. Operations guide: [doc/IDENTITY_PROVIDERS.md](doc/IDENTITY_PROVIDERS.md).
+- GitHub sign-in (`/github-login`, `/github-callback`) uses fixed hosts in code, the same locked outbound client as generic OIDC, PKCE and a state with its own purpose (`:github`) that no other callback accepts, and vice versa. The identity is the numeric GitHub id, never the username. Only the primary, verified, plain-ASCII, non-`noreply` address is used for linking or registration; otherwise only an already-linked identity can sign in. GitHub never grants admin access (enforced by a `CHECK` on `user_identities`). The client secret lives in a `KAUTH_SVC_*` or `KAUTH_GITHUB_CLIENT_SECRET` environment variable, and the GitHub token is never stored or logged. GitHub, Inc. is a sub-processor for services that enable it.
 - Audit writes isolated in a goroutine — an audit failure can never block authentication.
 - Explicit `Secure: true` on every cookie (overridable for local HTTP development through `KAUTH_INSECURE_COOKIES=true`).
 - CORS disabled by default (`KAUTH_CORS_ORIGINS=` empty list means no CORS headers at all). Enabled only for specific endpoints (`/token`, `/.well-known/*`).
 
 ## Known limitations
 
+- `KAUTH_GITHUB_BASE_URL` and `KAUTH_GITHUB_API_URL` are accepted only together with `KAUTH_OIDC_ALLOW_INSECURE=true` (evaluation only, never production).
+- The federated callbacks (`/callback`, `/ms-callback`, `/github-callback`, `/idp/{slug}/callback`) are unauthenticated public endpoints with no rate limit of their own beyond the signed, short-lived state.
 - `KAUTH_OIDC_ALLOW_INSECURE=true` (http and loopback towards OIDC providers) exists for local development and evaluation only. It must never be set in production. kauth refuses to start with it unless `KAUTH_INSECURE_COOKIES=true` is also set.
 - We haven't run a formal penetration test. The code has been reviewed internally, but no external review has been carried out.
 - The magic-link rate limiter is process-local (in-memory). If kauth runs as several instances behind a load balancer, each instance keeps its own tally. kauth currently runs as a single instance, so this isn't a problem in practice.

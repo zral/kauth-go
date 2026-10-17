@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
+	"github.com/zral/kauth-go/internal/githubtest"
 	"github.com/zral/kauth-go/internal/oidctest"
 )
 
@@ -43,7 +45,14 @@ func main() {
 	clientID := flag.String("client-id", "test-client", "klient-ID")
 	clientSecret := flag.String("client-secret", "", "klienthemmelighet (tom = offentlig klient)")
 	disc := flag.String("discovery-mode", "ok", "ok|wrong_issuer|http_endpoint|redirect|foreign_jwks_host|huge|slow|down500")
+	gh := flag.Bool("github", false, "start fake-GitHub (019) i stedet for OIDC-leverandøren")
+	ghSecrets := flag.String("github-secrets", "", "kommaseparerte klienthemmeligheter fake-GitHub godtar (bare med -github)")
 	flag.Parse()
+
+	if *gh {
+		runGitHub(*addr, *ghSecrets)
+		return
+	}
 
 	if !discModes[oidctest.DiscoveryMode(*disc)] {
 		log.Fatalf("ukjent -discovery-mode %q", *disc)
@@ -100,6 +109,30 @@ func main() {
 	}))
 
 	fmt.Printf("kauth-testidp: issuer=%s client-id=%s discovery-mode=%s lytter=%s\n", *issuer, *clientID, *disc, p.URL())
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+}
+
+// runGitHub kjører fake-GitHub til SIGINT/SIGTERM. Hemmelighetene kommer fra
+// flagget og skrives aldri ut.
+func runGitHub(addr, secrets string) {
+	var list []string
+	for _, v := range strings.Split(secrets, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			list = append(list, v)
+		}
+	}
+	if len(list) == 0 {
+		log.Fatal("-github krever minst én hemmelighet i -github-secrets")
+	}
+	g, err := githubtest.NewServer(githubtest.Options{Addr: addr, Secrets: list})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer g.Close()
+	fmt.Printf("kauth-testidp: github lytter=%s hemmeligheter=%d\n", g.URL(), len(list))
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

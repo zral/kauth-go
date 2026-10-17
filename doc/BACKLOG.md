@@ -64,7 +64,9 @@ Sist gjennomgått: 2026-10-17
 | Språk i invitasjonsmail følger admin | Verken tjeneste eller bruker har språkfelt, så mailen følger admins `Accept-Language` (PD13). Legg til språkfelt på tjeneste eller bruker (016 F4) | ADN 18 |
 | ~~`-race` for `ForService`-låsen i CI~~ | ✔ Løst i 018: dekket av `-race` i CI | ROADMAP Fase 6, ADN 20 |
 | Apple Sign In | Løpende kostnad. Kommer som adapter etter Fase 4 ved dokumentert behov | ADN 7 |
-| GitHub/LinkedIn m.fl. | Kan i stor grad dekkes av generisk OIDC (Fase 4) | ROADMAP §5 |
+| LinkedIn m.fl. | Kan dekkes av generisk OIDC (Fase 4) når leverandøren støtter OIDC. GitHub gjør ikke det og har egen flyt (019, ADN 21) | ROADMAP §5 |
+| Rate limit på fødererte callbacks | `/callback`, `/ms-callback`, `/github-callback` og `/idp/{slug}/callback` er uautentiserte offentlige endepunkter. State og cookie kreves, men det er ingen rate limit. Vurder dem samlet (019 F3, security S2) | ADN 21 |
+| Admin varsler ikke når GitHub er på uten client id eller hemmelighet | Bare oppstartsloggen sier fra. Vurder en advarsel på tjenesteskjemaet og i listen (019 F4, code review S4) | ADN 21 |
 | Deaktivert bruker på tjeneste med auto-register gir `login_failed` i stedet for `access_denied` | Uventet feilkode, ufarlig (008 F10 S2) | — |
 | Audit for «ingen konto», policybrudd og DB-feil i vanlig gren av Google- og Microsoft-flyten | Auditeres ikke i dag (008 F10 S3). Etter 014 er det ett sted å gjøre det: `federatedLogin.finish` | ADN 16 |
 | OIDC-klient i authorization_code-flyten mister `oidc_authz` ved ugyldig state og får ingen spec-feil-redirect | Klienten ender på `/login` i stedet for `redirect_uri?error=` (008 F9 S3) | — |

@@ -232,7 +232,7 @@ Fase 0 er en forutsetning for alt annet og bør gå før noen klient endres. Fas
 
 ### Utenfor scope (bekreftet)
 
-Egen WebAuthn/passkeys, TOTP/HOTP, passord som fremtidig metode, LDAP/AD, SAML, Postgres/Redis, horisontal skalering. **Apple Sign In** ligger i backlog (årsavgift 99 USD for Apple Developer Program; arkitekturen i Fase 3–4 skal gjøre den til en adapter senere).
+Egen WebAuthn/passkeys, TOTP/HOTP, passord som fremtidig metode, LDAP/AD, SAML, Postgres/Redis, horisontal skalering. **Apple Sign In** ligger i backlog (årsavgift 99 USD for Apple Developer Program; arkitekturen i Fase 3–4 skal gjøre den til en adapter senere). LinkedIn og andre OIDC-leverandører går via generisk OIDC (GitHub, som mangler id_token, er levert som egen flyt i 019, ADN 21).
 
 ### Dokumentasjon som må rettes underveis
 

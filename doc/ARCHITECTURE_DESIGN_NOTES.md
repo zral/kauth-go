@@ -380,7 +380,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 21 — GitHub som egen OAuth-leverandør med faste verter, numerisk id og bare primær, verifisert e-post (2026-10-17)
 
-**Status:** Analysert — venter implementering (019)
+**Status:** Implementert (2026-10-17)
 → Analyse: [doc/features/019_AN_GITHUB_LOGIN.md](features/019_AN_GITHUB_LOGIN.md) · Plan: [doc/features/019_PL_GITHUB_LOGIN.md](features/019_PL_GITHUB_LOGIN.md)
 
 **Beslutning:**

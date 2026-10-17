@@ -16,7 +16,7 @@ kauth er én statisk, CGO-fri Go-binær med SQLite (modernc.org/sqlite, WAL), ba
 |---|---|
 | `internal/service` | Tjeneste-resolver (redirect_uri og `auth_host` til tjeneste), cache i minnet |
 | `internal/token` | RS256-utstedelse, nøkkelring med `kid`, JWKS, discovery, refresh-rotasjon, hashing av engangshemmeligheter |
-| `internal/auth` | Google, Microsoft, generisk OIDC, magic link, passord, `/dispatch`, `/token`, state, utlogging |
+| `internal/auth` | Google, Microsoft, GitHub, generisk OIDC, magic link, passord, `/dispatch`, `/token`, state, utlogging |
 | `internal/idp` | Generiske OIDC-leverandører: register, discovery, JWKS-cache, utgående klient med SSRF-vern |
 | `internal/admin` | Admin-panel, admin-middleware, brukere, tjenester, leverandører, koblingsinvitasjoner |
 | `internal/audit` | Audit-kø med én skriver |
@@ -27,12 +27,13 @@ kauth er én statisk, CGO-fri Go-binær med SQLite (modernc.org/sqlite, WAL), ba
 
 ### Ruter (se FEATURES «Endepunkter»)
 
-- Anonyme: `/login` (også `authorization_endpoint`), `/oidc-login`, `/callback`, `/ms-oidc-login`, `/ms-callback`, `/idp/{slug}/login|callback`, `/magic-login[/{token}]`, `/link/{token}`, `/do-login` (av som default), `/token`, `/dispatch`, `/logout`, `/api/me`, `/.well-known/jwks.json`, `/.well-known/openid-configuration`, `/static/*`.
+- Anonyme: `/login` (også `authorization_endpoint`), `/oidc-login`, `/callback`, `/ms-oidc-login`, `/ms-callback`, `/github-login`, `/github-callback`, `/idp/{slug}/login|callback`, `/magic-login[/{token}]`, `/link/{token}`, `/do-login` (av som default), `/token`, `/dispatch`, `/logout`, `/api/me`, `/.well-known/jwks.json`, `/.well-known/openid-configuration`, `/static/*`.
 - Admin: `/admin/*`. Innlogging åpen (magic link, Google); resten krever `konge`-rolle, slått opp i DB på hver request. Alle ikke-sikre metoder krever samme origin.
 
 ### Dataflyter
 
 1. **Føderert innlogging (Google, Microsoft, generisk):** `/login` → leverandør (HMAC-signert state, nonce, PKCE for generisk) → callback → verifisert id_token → identitet `(issuer, subject)` → `checkPolicy` → access- og refresh-token → `/dispatch` → klientens `redirect_uri`.
+   **GitHub (019, ADN 21)** er en variant uten id_token: `/github-login` → GitHub authorize (state med formål `:github`, PKCE S256) → `/github-callback` → kodeutveksling server-til-server mot fast vert → `GET /user` og `/user/emails` med access-token → identitet `(https://github.com, id)` → samme avslutning. Bare primær, verifisert, ASCII, ikke-`noreply` e-post er tillitsgrunnlag. Aldri admin. Audit: `github_oauth_login` og `github_oauth_rejected` med `reason` (`unknown_service`, `method_disabled`, `provider_error`, `client_secret_missing`, `code_exchange`, `user_fetch`, `missing_id`, `email_untrusted`, `user_inactive`, `user_conflict`, `internal` for programmeringsfeil). GitHub-tokenet lagres og logges ikke.
 2. **Magic link:** `POST /magic-login` (rate-limitet, konstant respons) → e-post → `GET` viser bekreftelse → `POST` (samme origin) bruker opp tokenet.
 3. **OIDC `authorization_code` + PKCE:** `/login?response_type=code…` → innlogging → engangskode (hash, 60 s) → `/token` med `code_verifier` → access-, id- og refresh-token.
 4. **Refresh:** `/token` roterer innen familien; gjenbruk av brukt token revokerer familien.
@@ -102,13 +103,14 @@ Fra ADN og [BACKLOG.md](BACKLOG.md); hver står begrunnet i ADN-en det vises til
 - **`NormalizeEmail` bretter unicode** (Kelvin-tegnet): generisk OIDC krever ren ASCII, de andre flytene ikke ennå.
 - **Passordinnlogging uten rate limit (BACKLOG B4):** av i prod.
 - **`CF-Connecting-IP` stoles på fra loopback:** lokale prosesser kan sette klient-IP.
+- **Fødererte callbacks er uautentiserte og uten egen rate limit (019):** `/callback`, `/ms-callback`, `/github-callback` og `/idp/{slug}/callback` krever gyldig signert state og cookie, men har ingen rate limit utover det (BACKLOG).
 - **Magic-link-limiter og enkelte caches er prosess-lokale:** kauth kjører som én instans.
 - **`golang.org/x/crypto` v0.53.0:** 4 sårbarheter, ikke nåbare (BACKLOG).
 - **Ingen formell penetrasjonstest før denne revisjonen** (SECURITY.md).
 
 ## 6. Hva som er testet
 
-- **Enhets- og pakketester** for tokenutstedelse, refresh-rotasjon og gjenbruk, magic-link-limiter, resolver, admin-middleware, SSRF-vakt og leverandørlogikk. Handler-integrasjonstester mot ekte leverandører er bevisst utelatt.
+- **Enhets- og pakketester** for tokenutstedelse, refresh-rotasjon og gjenbruk, magic-link-limiter, resolver, admin-middleware, SSRF-vakt og leverandørlogikk. Handler-integrasjonstester mot ekte leverandører er bevisst utelatt; GitHub-flyten testes ende-til-ende mot en fake (`internal/githubtest`) på loopback.
 - **CI på push til `master` og på PR (018):** `gofmt`, `go vet`, `go test` (CGO-fri), `go test -race`, `govulncheck` (0 nåbare på go1.26.9). Se [FEATURES.md](FEATURES.md#ci-fuzzing-e2e-og-restore-test).
 - **Fuzz (018):** `FuzzIsAllowedCallback`, `FuzzResolveRedirectURI`, `FuzzParseState`, `FuzzStateRoundTrip`, `FuzzDispatchRedirectTarget`, `FuzzMaskPath`. Hvert mål kjørt 2 min lokalt uten funn; 30 s per mål i CI på push til `master` og ved manuell kjøring, ikke på PR.
 - **E2E (018):** `go test -tags e2e ./internal/e2e/...` — innlogging mot fake leverandør, kode, token, refresh-rotasjon, gjenbruksdeteksjon. Loopback, ingen nett.

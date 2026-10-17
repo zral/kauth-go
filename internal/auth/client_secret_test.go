@@ -76,7 +76,19 @@ func TestResolveClientSecret_InvalidNameNeverReadsEnv(t *testing.T) {
 	require.ErrorIs(t, err, errClientSecretMissing)
 }
 
+// resetSecretWarned tømmer den prosessglobale rate-limiten, ellers ser en
+// gjentatt kjøring (-count>1) ingen advarsel fordi forrige kjøring allerede logget.
+func resetSecretWarned(t *testing.T) {
+	t.Helper()
+	wipe := func() {
+		secretWarned.Range(func(k, _ any) bool { secretWarned.Delete(k); return true })
+	}
+	wipe()
+	t.Cleanup(wipe)
+}
+
 func TestResolveClientSecret_LogRateLimited(t *testing.T) {
+	resetSecretWarned(t)
 	buf := captureLog(t)
 	svc := &gen.Service{ID: "rate-test"}
 	for i := 0; i < 5; i++ {
@@ -124,6 +136,7 @@ const (
 )
 
 func TestGoogle_EmptyRef_StartAndCallbackFail_NoFallback(t *testing.T) {
+	resetSecretWarned(t)
 	f := newAdminFlowFixture(t)
 	buf := captureLog(t)
 	f.h.cfg.GoogleClientSecret = secGlobal
@@ -197,6 +210,7 @@ func TestGoogle_RefSet_CallbackExchangesWithEnvSecret(t *testing.T) {
 }
 
 func TestMicrosoft_EmptyRef_StartAndCallbackFail_NoFallback(t *testing.T) {
+	resetSecretWarned(t)
 	f, svc := newMSFixture(t, 0, nil)
 	buf := captureLog(t)
 	f.h.cfg.MicrosoftClientSecret = secGlobal

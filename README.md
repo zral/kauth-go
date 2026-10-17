@@ -20,7 +20,7 @@ Running in production across a handful of services.
 - Rotates refresh tokens atomically with reuse detection (OAuth BCP §4.13): presenting an already-consumed or revoked token revokes the whole family, including the newest token. Logout revokes the family too, but not when a hidden `<img>` or `<iframe>` on a cross-site page triggers it. Same-site requests still can. Client errors give `401 invalid_or_expired_token` / `refresh_token_reused`; internal errors give `500 server_error`
 - Exposes JWKS and OpenID Discovery under `/.well-known/`
 - Speaks standard OIDC `authorization_code` + PKCE (RFC 6749 §4.1, RFC 7636, mandatory for every `response_type=code` request — no confidential-client exception) — a real `id_token` with `aud`/`nonce`, so an external client you don't control the code of can plug in an off-the-shelf OIDC library instead of the bespoke token-in-URL flow. See [doc/FEATURES.md](doc/FEATURES.md#oidc-authorization_code--pkce).
-- Offers four sign-in paths per service: Google OIDC, Microsoft OIDC, email magic link, and passwords (the last one off by default — see *The passwordless choice* below)
+- Offers five sign-in paths per service: Google OIDC, Microsoft OIDC, GitHub OAuth, email magic link, and passwords (the last one off by default — see *The passwordless choice* below)
 - Adds any other standards-compliant OIDC provider per service as a database row plus an issuer allowlist entry and a restart, with no code change. The provider's email is not trusted unless you say so (`trust_email`). See [doc/IDENTITY_PROVIDERS.md](doc/IDENTITY_PROVIDERS.md).
 - Central user administration: one admin panel for every service
 - Audit log with 90-day retention, filterable on every column and exportable to CSV
@@ -231,6 +231,21 @@ When a new service shares a Microsoft client with an existing one (same global `
 - **Wrong tenant**: your account may have access to several Entra directories. "Default Directory" with 0 apps is almost never the right place. Use the directory switcher top-right, or try the classic Azure portal (`portal.azure.com`) if entra.microsoft.com doesn't list enough directories.
 - **Enterprise Application ≠ App registration**: finding the app via the Enterprise Applications list lands you on a page with no Authentication blade at all. Go to **Identity → Applications → App registrations** instead, and search by Application (client) ID.
 - **The Authentication page shows one platform at a time**: the app registration's Overview page has a link that counts redirect URIs (e.g. "1 web") — click that number directly to jump to the right platform section, instead of hunting through the Authentication tab manually.
+
+## Setting up GitHub
+
+GitHub is OAuth 2.0 without an `id_token`, so it has its own flow rather than going through generic OIDC. kauth exchanges the code server to server and reads the user from `api.github.com`. GitHub, Inc. becomes a sub-processor for every service that turns this on, next to Google and Microsoft.
+
+A GitHub OAuth App has one callback URL, so you need one OAuth App per `auth_host`.
+
+1. In GitHub → Settings → Developer settings → OAuth Apps → New OAuth App. (An OAuth App, not a GitHub App; the latter needs the "Email addresses: read" permission and its tokens expire.)
+2. Authorization callback URL: `https://<auth_host>/github-callback`. Do not enable wildcard matching.
+3. Generate a client secret and put it in `.env`. For services on the main host, set `KAUTH_GITHUB_CLIENT_ID` and `KAUTH_GITHUB_CLIENT_SECRET` globally. For a service with its own `auth_host`, set `github_client_id` on the service in the admin panel and put the secret in an environment variable prefixed `KAUTH_SVC_`, referenced in the GitHub client secret environment variable field. An empty or unset variable disables GitHub for that service only; kauth logs it at startup.
+4. Tick "GitHub" on the service (`auth_github = 1`) and restart if you changed `.env`.
+
+kauth asks for the scopes `read:user user:email` and nothing more. The identity is the numeric GitHub id, never the username. Only the primary address from `/user/emails` counts, and only when it is verified, plain ASCII and not a `noreply.github.com` address. A user without such an address can sign in only after the identity is linked; a new user gets `access_denied`. GitHub never grants admin access. The GitHub token is used for two calls and then dropped.
+
+For local evaluation, `cmd/kauth-testidp -github` runs a fake GitHub on loopback (see `scripts/run-eval-server.sh`). It is not part of the production binary.
 
 ## Setting up magic links (email sign-in)
 

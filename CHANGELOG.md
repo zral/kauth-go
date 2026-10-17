@@ -6,6 +6,8 @@ Alle merkbare endringer i prosjektet dokumenteres her. Format inspirert av [Keep
 
 ### Added
 
+- (019) Innlogging med GitHub (OAuth App) per tjeneste: `/github-login` og `/github-callback`, flagg `auth_github`, `github_client_id` og `github_client_secret_env` (`KAUTH_SVC_`-referanse) med global fallback `KAUTH_GITHUB_CLIENT_ID`/`KAUTH_GITHUB_CLIENT_SECRET`. Code + PKCE + signert state med eget formål. Identitet er numerisk GitHub-id, e-post brukes bare når primær og verifisert. Aldri admin. Audit `github_oauth_login` og `github_oauth_rejected`. Knapp «Fortsett med GitHub» (nb/en/de), felt i admin og migrasjon 015 (bygger om `user_identities`). Se [doc/FEATURES.md](doc/FEATURES.md#github).
+- (019) `internal/githubtest` og `cmd/kauth-testidp -github`: fake GitHub for tester og eval-serveren (`127.0.0.1:8097`). Ikke del av prod-binæren.
 - (018) CI på GitHub Actions: gofmt, `go vet`, tester, `-race`, `govulncheck` og E2E på push til `master` og på PR; fuzz på push og manuell kjøring, ikke på PR. Actions pinnet på SHA, `permissions: contents: read`, ingen secrets. `make ci`, `make fuzz`, `make restore-test BACKUP=<fil>`.
 - (018) Seks fuzzmål med egenskapssjekker for redirect_uri-matching, state, `/dispatch`-mål og loggmaskering. Ingen funn.
 - (018) E2E-test (`-tags e2e`, `internal/e2e/`): innlogging mot fake leverandør, autorisasjonskode, `/token`, refresh-rotasjon og gjenbruksdeteksjon, på loopback.
