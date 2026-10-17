@@ -33,6 +33,8 @@ type GoogleHandlers struct {
 	endpoint *oauth2.Endpoint
 	// fetchClaims er en testsøm; nil betyr ekte kodeutveksling og verifisering.
 	fetchClaims func(ctx context.Context, cfg *oauth2.Config, clientID, code string) (cl googleClaims, tokenNonce, reason string)
+	// getenv er en testsøm for klienthemmeligheter; nil betyr os.Getenv.
+	getenv func(string) string
 }
 
 func NewGoogleHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service, adminSessions AdminSessionStarter) *GoogleHandlers {
@@ -79,7 +81,19 @@ func (h *GoogleHandlers) redirectToGoogle(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Google-innlogging ikke aktivert", http.StatusForbidden)
 		return
 	}
-	clientID, _ := googleCreds(h.cfg, svc)
+	clientID := googleCreds(h.cfg, svc)
+	// Hemmeligheten trengs først ved kodeutvekslingen, men en tom referanse
+	// betyr at metoden er ute for tjenesten (K13). Avvis her, så brukeren ikke
+	// sendes til Google for å feile etterpå.
+	if _, err := h.clientSecret(svc); err != nil {
+		if adminPurpose {
+			h.auditAdminFailure(r, svc, "", "reason=client_secret_missing")
+			redirectAdminLoginError(w, r)
+			return
+		}
+		h.fed.reject(w, r, providerGoogle, svc, rejection{Reason: "client_secret_missing"})
+		return
+	}
 	nonce, err := generateNonce()
 	if err != nil {
 		http.Error(w, "intern feil", http.StatusInternalServerError)
@@ -135,7 +149,12 @@ func (h *GoogleHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) 
 		h.rejectCallback(w, r, &gen.Service{ID: svcID}, adminPurpose, "unknown_service")
 		return
 	}
-	clientID, clientSecret := googleCreds(h.cfg, svc)
+	clientID := googleCreds(h.cfg, svc)
+	clientSecret, err := h.clientSecret(svc)
+	if err != nil {
+		h.rejectCallback(w, r, svc, adminPurpose, "client_secret_missing")
+		return
+	}
 	oauthCfg := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
@@ -269,14 +288,15 @@ func (h *GoogleHandlers) finishCallback(w http.ResponseWriter, r *http.Request, 
 	h.fed.finish(w, r, providerGoogle, svc, ext)
 }
 
-func googleCreds(cfg config.Config, svc *gen.Service) (id, secret string) {
+// googleCreds gir klient-ID. Hemmeligheten går via clientSecret.
+func googleCreds(cfg config.Config, svc *gen.Service) (id string) {
 	id = cfg.GoogleClientID
 	if svc.GoogleClientID != nil && *svc.GoogleClientID != "" {
 		id = *svc.GoogleClientID
 	}
-	secret = cfg.GoogleClientSecret
-	if svc.GoogleClientSecret != nil && *svc.GoogleClientSecret != "" {
-		secret = *svc.GoogleClientSecret
-	}
-	return
+	return id
+}
+
+func (h *GoogleHandlers) clientSecret(svc *gen.Service) (string, error) {
+	return resolveClientSecret(h.getenv, svc, "google", svc.GoogleClientSecretEnv, svc.GoogleClientSecret, h.cfg.GoogleClientSecret)
 }

@@ -62,6 +62,7 @@ func main() {
 		log.Fatalf("serviceregistry warmup: %v", err)
 	}
 	log.Println("serviceregistry: cache varmet opp")
+	registry.CheckClientSecrets(os.Getenv)
 
 	// Generiske OIDC-leverandører (015). Avviste rader logges av Load selv;
 	// bare DB-feil stopper oppstarten.

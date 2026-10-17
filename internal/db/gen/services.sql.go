@@ -16,46 +16,49 @@ INSERT INTO services (id, display_name, tagline, domain, auth_host, callback_url
     auth_google, auth_microsoft, auth_magic_link, auth_password,
     google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret,
     jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at,
-    sub_format, auto_link)
+    sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env)
 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-    COALESCE(CAST(?33 AS TEXT), 'email'), COALESCE(CAST(?34 AS INTEGER), 1))
+    COALESCE(CAST(?33 AS TEXT), 'email'), COALESCE(CAST(?34 AS INTEGER), 1),
+    ?35, ?36)
 `
 
 type CreateServiceParams struct {
-	ID                    string  `json:"id"`
-	DisplayName           string  `json:"display_name"`
-	Tagline               *string `json:"tagline"`
-	Domain                string  `json:"domain"`
-	AuthHost              *string `json:"auth_host"`
-	CallbackUrl           string  `json:"callback_url"`
-	LogoHtml              *string `json:"logo_html"`
-	BgImage               *string `json:"bg_image"`
-	BgCss                 *string `json:"bg_css"`
-	Theme                 string  `json:"theme"`
-	AccentColor           string  `json:"accent_color"`
-	EmailFromName         string  `json:"email_from_name"`
-	EmailFromAddress      *string `json:"email_from_address"`
-	AutoRegister          int64   `json:"auto_register"`
-	DefaultRole           *string `json:"default_role"`
-	DefaultOrg            *string `json:"default_org"`
-	RequireRole           *string `json:"require_role"`
-	EnforceOrg            int64   `json:"enforce_org"`
-	IsDefault             int64   `json:"is_default"`
-	AuthGoogle            int64   `json:"auth_google"`
-	AuthMicrosoft         int64   `json:"auth_microsoft"`
-	AuthMagicLink         int64   `json:"auth_magic_link"`
-	AuthPassword          int64   `json:"auth_password"`
-	GoogleClientID        *string `json:"google_client_id"`
-	GoogleClientSecret    *string `json:"google_client_secret"`
-	MicrosoftClientID     *string `json:"microsoft_client_id"`
-	MicrosoftClientSecret *string `json:"microsoft_client_secret"`
-	JwtCookieName         string  `json:"jwt_cookie_name"`
-	AccessTokenTtl        string  `json:"access_token_ttl"`
-	RefreshTokenMaxAge    *string `json:"refresh_token_max_age"`
-	Active                int64   `json:"active"`
-	UpdatedAt             string  `json:"updated_at"`
-	SubFormat             *string `json:"sub_format"`
-	AutoLink              *int64  `json:"auto_link"`
+	ID                       string  `json:"id"`
+	DisplayName              string  `json:"display_name"`
+	Tagline                  *string `json:"tagline"`
+	Domain                   string  `json:"domain"`
+	AuthHost                 *string `json:"auth_host"`
+	CallbackUrl              string  `json:"callback_url"`
+	LogoHtml                 *string `json:"logo_html"`
+	BgImage                  *string `json:"bg_image"`
+	BgCss                    *string `json:"bg_css"`
+	Theme                    string  `json:"theme"`
+	AccentColor              string  `json:"accent_color"`
+	EmailFromName            string  `json:"email_from_name"`
+	EmailFromAddress         *string `json:"email_from_address"`
+	AutoRegister             int64   `json:"auto_register"`
+	DefaultRole              *string `json:"default_role"`
+	DefaultOrg               *string `json:"default_org"`
+	RequireRole              *string `json:"require_role"`
+	EnforceOrg               int64   `json:"enforce_org"`
+	IsDefault                int64   `json:"is_default"`
+	AuthGoogle               int64   `json:"auth_google"`
+	AuthMicrosoft            int64   `json:"auth_microsoft"`
+	AuthMagicLink            int64   `json:"auth_magic_link"`
+	AuthPassword             int64   `json:"auth_password"`
+	GoogleClientID           *string `json:"google_client_id"`
+	GoogleClientSecret       *string `json:"google_client_secret"`
+	MicrosoftClientID        *string `json:"microsoft_client_id"`
+	MicrosoftClientSecret    *string `json:"microsoft_client_secret"`
+	JwtCookieName            string  `json:"jwt_cookie_name"`
+	AccessTokenTtl           string  `json:"access_token_ttl"`
+	RefreshTokenMaxAge       *string `json:"refresh_token_max_age"`
+	Active                   int64   `json:"active"`
+	UpdatedAt                string  `json:"updated_at"`
+	SubFormat                *string `json:"sub_format"`
+	AutoLink                 *int64  `json:"auto_link"`
+	GoogleClientSecretEnv    *string `json:"google_client_secret_env"`
+	MicrosoftClientSecretEnv *string `json:"microsoft_client_secret_env"`
 }
 
 // sub_format and auto_link are nullable parameters: NULL gives the column defaults
@@ -96,12 +99,14 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) er
 		arg.UpdatedAt,
 		arg.SubFormat,
 		arg.AutoLink,
+		arg.GoogleClientSecretEnv,
+		arg.MicrosoftClientSecretEnv,
 	)
 	return err
 }
 
 const getDefaultService = `-- name: GetDefaultService :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services WHERE is_default = 1 AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services WHERE is_default = 1 AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetDefaultService(ctx context.Context) (Service, error) {
@@ -142,12 +147,14 @@ func (q *Queries) GetDefaultService(ctx context.Context) (Service, error) {
 		&i.EmailFromAddress,
 		&i.SubFormat,
 		&i.AutoLink,
+		&i.GoogleClientSecretEnv,
+		&i.MicrosoftClientSecretEnv,
 	)
 	return i, err
 }
 
 const getServiceByAuthHost = `-- name: GetServiceByAuthHost :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services WHERE auth_host = ? AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services WHERE auth_host = ? AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetServiceByAuthHost(ctx context.Context, authHost *string) (Service, error) {
@@ -188,12 +195,14 @@ func (q *Queries) GetServiceByAuthHost(ctx context.Context, authHost *string) (S
 		&i.EmailFromAddress,
 		&i.SubFormat,
 		&i.AutoLink,
+		&i.GoogleClientSecretEnv,
+		&i.MicrosoftClientSecretEnv,
 	)
 	return i, err
 }
 
 const getServiceByID = `-- name: GetServiceByID :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services WHERE id = ? AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services WHERE id = ? AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetServiceByID(ctx context.Context, id string) (Service, error) {
@@ -234,12 +243,14 @@ func (q *Queries) GetServiceByID(ctx context.Context, id string) (Service, error
 		&i.EmailFromAddress,
 		&i.SubFormat,
 		&i.AutoLink,
+		&i.GoogleClientSecretEnv,
+		&i.MicrosoftClientSecretEnv,
 	)
 	return i, err
 }
 
 const listActiveServices = `-- name: ListActiveServices :many
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services WHERE active = 1 ORDER BY display_name
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services WHERE active = 1 ORDER BY display_name
 `
 
 func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
@@ -286,6 +297,8 @@ func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
 			&i.EmailFromAddress,
 			&i.SubFormat,
 			&i.AutoLink,
+			&i.GoogleClientSecretEnv,
+			&i.MicrosoftClientSecretEnv,
 		); err != nil {
 			return nil, err
 		}
@@ -301,7 +314,7 @@ func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
 }
 
 const listAllServices = `-- name: ListAllServices :many
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link FROM services ORDER BY display_name
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services ORDER BY display_name
 `
 
 func (q *Queries) ListAllServices(ctx context.Context) ([]Service, error) {
@@ -348,6 +361,8 @@ func (q *Queries) ListAllServices(ctx context.Context) ([]Service, error) {
 			&i.EmailFromAddress,
 			&i.SubFormat,
 			&i.AutoLink,
+			&i.GoogleClientSecretEnv,
+			&i.MicrosoftClientSecretEnv,
 		); err != nil {
 			return nil, err
 		}
@@ -372,45 +387,48 @@ UPDATE services SET
     google_client_id = ?, google_client_secret = ?,
     microsoft_client_id = ?, microsoft_client_secret = ?,
     jwt_cookie_name = ?, access_token_ttl = ?, refresh_token_max_age = ?,
-    active = ?, updated_at = ?, sub_format = ?, auto_link = ?
+    active = ?, updated_at = ?, sub_format = ?, auto_link = ?,
+    google_client_secret_env = ?, microsoft_client_secret_env = ?
 WHERE id = ?
 `
 
 type UpdateServiceParams struct {
-	DisplayName           string  `json:"display_name"`
-	Tagline               *string `json:"tagline"`
-	Domain                string  `json:"domain"`
-	AuthHost              *string `json:"auth_host"`
-	CallbackUrl           string  `json:"callback_url"`
-	LogoHtml              *string `json:"logo_html"`
-	BgImage               *string `json:"bg_image"`
-	BgCss                 *string `json:"bg_css"`
-	Theme                 string  `json:"theme"`
-	AccentColor           string  `json:"accent_color"`
-	EmailFromName         string  `json:"email_from_name"`
-	EmailFromAddress      *string `json:"email_from_address"`
-	AutoRegister          int64   `json:"auto_register"`
-	DefaultRole           *string `json:"default_role"`
-	DefaultOrg            *string `json:"default_org"`
-	RequireRole           *string `json:"require_role"`
-	EnforceOrg            int64   `json:"enforce_org"`
-	IsDefault             int64   `json:"is_default"`
-	AuthGoogle            int64   `json:"auth_google"`
-	AuthMicrosoft         int64   `json:"auth_microsoft"`
-	AuthMagicLink         int64   `json:"auth_magic_link"`
-	AuthPassword          int64   `json:"auth_password"`
-	GoogleClientID        *string `json:"google_client_id"`
-	GoogleClientSecret    *string `json:"google_client_secret"`
-	MicrosoftClientID     *string `json:"microsoft_client_id"`
-	MicrosoftClientSecret *string `json:"microsoft_client_secret"`
-	JwtCookieName         string  `json:"jwt_cookie_name"`
-	AccessTokenTtl        string  `json:"access_token_ttl"`
-	RefreshTokenMaxAge    *string `json:"refresh_token_max_age"`
-	Active                int64   `json:"active"`
-	UpdatedAt             string  `json:"updated_at"`
-	SubFormat             string  `json:"sub_format"`
-	AutoLink              int64   `json:"auto_link"`
-	ID                    string  `json:"id"`
+	DisplayName              string  `json:"display_name"`
+	Tagline                  *string `json:"tagline"`
+	Domain                   string  `json:"domain"`
+	AuthHost                 *string `json:"auth_host"`
+	CallbackUrl              string  `json:"callback_url"`
+	LogoHtml                 *string `json:"logo_html"`
+	BgImage                  *string `json:"bg_image"`
+	BgCss                    *string `json:"bg_css"`
+	Theme                    string  `json:"theme"`
+	AccentColor              string  `json:"accent_color"`
+	EmailFromName            string  `json:"email_from_name"`
+	EmailFromAddress         *string `json:"email_from_address"`
+	AutoRegister             int64   `json:"auto_register"`
+	DefaultRole              *string `json:"default_role"`
+	DefaultOrg               *string `json:"default_org"`
+	RequireRole              *string `json:"require_role"`
+	EnforceOrg               int64   `json:"enforce_org"`
+	IsDefault                int64   `json:"is_default"`
+	AuthGoogle               int64   `json:"auth_google"`
+	AuthMicrosoft            int64   `json:"auth_microsoft"`
+	AuthMagicLink            int64   `json:"auth_magic_link"`
+	AuthPassword             int64   `json:"auth_password"`
+	GoogleClientID           *string `json:"google_client_id"`
+	GoogleClientSecret       *string `json:"google_client_secret"`
+	MicrosoftClientID        *string `json:"microsoft_client_id"`
+	MicrosoftClientSecret    *string `json:"microsoft_client_secret"`
+	JwtCookieName            string  `json:"jwt_cookie_name"`
+	AccessTokenTtl           string  `json:"access_token_ttl"`
+	RefreshTokenMaxAge       *string `json:"refresh_token_max_age"`
+	Active                   int64   `json:"active"`
+	UpdatedAt                string  `json:"updated_at"`
+	SubFormat                string  `json:"sub_format"`
+	AutoLink                 int64   `json:"auto_link"`
+	GoogleClientSecretEnv    *string `json:"google_client_secret_env"`
+	MicrosoftClientSecretEnv *string `json:"microsoft_client_secret_env"`
+	ID                       string  `json:"id"`
 }
 
 func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) error {
@@ -448,6 +466,8 @@ func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) er
 		arg.UpdatedAt,
 		arg.SubFormat,
 		arg.AutoLink,
+		arg.GoogleClientSecretEnv,
+		arg.MicrosoftClientSecretEnv,
 		arg.ID,
 	)
 	return err

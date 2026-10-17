@@ -34,6 +34,8 @@ type MicrosoftHandlers struct {
 	fed      *federatedLogin
 	// fetchClaims er en testsøm; nil betyr ekte kodeutveksling og verifisering.
 	fetchClaims func(ctx context.Context, cfg *oauth2.Config, code string) (msClaims, error)
+	// getenv er en testsøm for klienthemmeligheter; nil betyr os.Getenv.
+	getenv func(string) string
 }
 
 func NewMicrosoftHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, aud *audit.Service) *MicrosoftHandlers {
@@ -50,7 +52,13 @@ func (h *MicrosoftHandlers) InitiateLogin(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Microsoft-innlogging ikke aktivert", http.StatusForbidden)
 		return
 	}
-	clientID, _ := msCreds(h.cfg, svc)
+	clientID := msCreds(h.cfg, svc)
+	// Tom referanse betyr at metoden er ute for tjenesten (K13); avvis ved start
+	// så brukeren ikke sendes til Microsoft for å feile etterpå.
+	if _, err := h.clientSecret(svc); err != nil {
+		h.fed.reject(w, r, providerMicrosoft, svc, rejection{Reason: "client_secret_missing"})
+		return
+	}
 	// Fix 4: handle generateNonce error rather than silently ignoring it
 	nonce, err := generateNonce()
 	if err != nil {
@@ -99,7 +107,12 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 		redirectLoginError(w, r, "", errCodeLoginFailed)
 		return
 	}
-	clientID, clientSecret := msCreds(h.cfg, svc)
+	clientID := msCreds(h.cfg, svc)
+	clientSecret, err := h.clientSecret(svc)
+	if err != nil {
+		h.fed.reject(w, r, providerMicrosoft, svc, rejection{Reason: "client_secret_missing"})
+		return
+	}
 	oauthCfg := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
@@ -212,14 +225,15 @@ func (h *MicrosoftHandlers) finishCallback(w http.ResponseWriter, r *http.Reques
 	h.fed.finish(w, r, providerMicrosoft, svc, ext)
 }
 
-func msCreds(cfg config.Config, svc *gen.Service) (id, secret string) {
+// msCreds gir klient-ID. Hemmeligheten går via clientSecret.
+func msCreds(cfg config.Config, svc *gen.Service) (id string) {
 	id = cfg.MicrosoftClientID
 	if svc.MicrosoftClientID != nil && *svc.MicrosoftClientID != "" {
 		id = *svc.MicrosoftClientID
 	}
-	secret = cfg.MicrosoftClientSecret
-	if svc.MicrosoftClientSecret != nil && *svc.MicrosoftClientSecret != "" {
-		secret = *svc.MicrosoftClientSecret
-	}
-	return
+	return id
+}
+
+func (h *MicrosoftHandlers) clientSecret(svc *gen.Service) (string, error) {
+	return resolveClientSecret(h.getenv, svc, "microsoft", svc.MicrosoftClientSecretEnv, svc.MicrosoftClientSecret, h.cfg.MicrosoftClientSecret)
 }
