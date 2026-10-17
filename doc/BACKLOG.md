@@ -43,7 +43,6 @@ Sist gjennomgått: 2026-10-17
 | Legacy token-i-URL av-bryter per tjeneste (B3) | Står i ROADMAP Fase 1, men ble ikke tatt i 008–010. Av som default for nye tjenester. Fjernes når alle klienter er på code+PKCE | ROADMAP M1, B3 |
 | CORS-allowlist per tjeneste, avvis cookie-refresh uten `Origin` | Står i ROADMAP Fase 1. I dag er allowlisten global (`KAUTH_CORS_ORIGINS`). Origin-sjekken før rotasjon finnes, men mot den globale listen | ROADMAP H7 |
 | Fase 5–6 | Fase 4 (015) er ferdig. Fase 5 er neste | ROADMAP §5 |
-| Oppgrader `golang.org/x/crypto` v0.53.0 → v0.56.0 | govulncheck melder 4 sårbarheter som koden ikke når. Oppgraderingen krever en egen `go.mod`-endring og dependency guard (018 F1) | ADN 20 |
 | Nivå 2 i `/dispatch` bruker `callback_url` rått | En kommaliste i feltet ville gitt et ugyldig mål. Ingen tjeneste i prod har kommaliste (sjekket). Se også raden om validering av `callback_url` (018 F2, security S1) | ROADMAP L3 |
 | Trekk rutebyggingen ut av `main.go` | E2E-testen bygger sin egen ruter, så den kan avvike fra `main.go`. Skal flyttes til en funksjon begge bruker (018 F4) | ADN 20 |
 | Ekstern revisjon | Bestilles når Lars vil. Pakke: [AUDIT_SCOPE.md](AUDIT_SCOPE.md) | ROADMAP Fase 6 |
