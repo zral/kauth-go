@@ -191,8 +191,13 @@ func (i *Issuer) signClaims(user gen.User, svc *gen.Service, ttl time.Duration, 
 	return Issued{Token: s, JTI: claims.ID}, nil
 }
 
+// currentKID er nøkkel-ID-en i JWT-headeren og i JWKS. Én konstant for begge,
+// slik at klienter som velger nøkkel etter kid aldri ser to ulike verdier.
+const currentKID = "kauth-1"
+
 func (i *Issuer) sign(claims Claims) (string, error) {
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tok.Header["kid"] = currentKID
 	s, err := tok.SignedString(i.privateKey)
 	if err != nil {
 		return "", fmt.Errorf("signere JWT: %w", err)
@@ -306,7 +311,7 @@ func (i *Issuer) JWKSHandler(w http.ResponseWriter, r *http.Request) {
 		"kty": "RSA",
 		"use": "sig",
 		"alg": "RS256",
-		"kid": "kauth-1",
+		"kid": currentKID,
 		"n":   base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
 		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
 	}
