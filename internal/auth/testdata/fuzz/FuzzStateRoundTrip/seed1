@@ -1,0 +1,7 @@
+go test fuzz v1
+string("a:b")
+string("ff")
+string("x-1")
+int64(1)
+uint16(5)
+byte(32)

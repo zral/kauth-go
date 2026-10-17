@@ -1,0 +1,4 @@
+go test fuzz v1
+string("https://test.spekto.live/cb?x=1")
+byte(3)
+string("y=2")

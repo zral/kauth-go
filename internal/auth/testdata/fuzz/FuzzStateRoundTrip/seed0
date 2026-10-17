@@ -1,0 +1,7 @@
+go test fuzz v1
+string("spekto")
+string("abc")
+string("gh")
+int64(7)
+uint16(0)
+byte(1)

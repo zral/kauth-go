@@ -1,0 +1,2 @@
+go test fuzz v1
+string("svc:abc:1800000000:admin")

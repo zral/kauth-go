@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  # Manuell kjøring (krever skrivetilgang til repoet) gjør at fuzz kan prøves på en branch før merge.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -44,3 +46,30 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
+
+  fuzz:
+    # Bare på push: fuzzing er ikke deterministisk og skal ikke blokkere PR-er.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: FuzzIsAllowedCallback
+        run: CGO_ENABLED=0 go test -run='^$' -fuzz='^FuzzIsAllowedCallback$' -fuzztime=30s ./internal/service
+      - name: FuzzResolveRedirectURI
+        run: CGO_ENABLED=0 go test -run='^$' -fuzz='^FuzzResolveRedirectURI$' -fuzztime=30s ./internal/service
+      - name: FuzzParseState
+        run: CGO_ENABLED=0 go test -run='^$' -fuzz='^FuzzParseState$' -fuzztime=30s ./internal/auth
+      - name: FuzzStateRoundTrip
+        run: CGO_ENABLED=0 go test -run='^$' -fuzz='^FuzzStateRoundTrip$' -fuzztime=30s ./internal/auth
+      - name: FuzzDispatchRedirectTarget
+        run: CGO_ENABLED=0 go test -run='^$' -fuzz='^FuzzDispatchRedirectTarget$' -fuzztime=30s ./internal/auth
+      - name: FuzzMaskPath
+        run: CGO_ENABLED=0 go test -run='^$' -fuzz='^FuzzMaskPath$' -fuzztime=30s ./internal/auth
