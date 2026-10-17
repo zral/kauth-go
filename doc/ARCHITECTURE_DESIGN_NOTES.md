@@ -357,7 +357,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 20 — CI på GitHub Actions uten tilgang til prod, fuzzing av sikkerhetsgrensene og restore-test (2026-10-17)
 
-**Status:** Implementert (2026-10-17, 018)
+**Status:** I prod (2026-10-17, 018; prod-binæren bygget med go1.26.9)
 → Analyse: [doc/features/018_AN_CI_FUZZ_RESTORE.md](features/018_AN_CI_FUZZ_RESTORE.md) · Plan: [doc/features/018_PL_CI_FUZZ_RESTORE.md](features/018_PL_CI_FUZZ_RESTORE.md)
 
 **Beslutning:**
