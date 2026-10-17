@@ -100,7 +100,7 @@ The fields you'll set almost every time. The example values are the Polaris row 
 | `callback_url` | `https://polaris.example.com/auth/callback` | Where the user lands after a successful login. Must match the app's callback endpoint exactly. |
 | `auth_host` | `auth.polaris.example.com` | The hostname the auth page is served on for this service, giving each service a branded URL. It has to point at kauth through Cloudflare Tunnel, and `https://<auth_host>/callback` has to be whitelisted with Google. |
 | `google_client_id` | `812403915077-example-client-id.apps.googleusercontent.com` | From Google Cloud Console. The real format is a 12-digit project number, a dash, 32 characters, then `.apps.googleusercontent.com`. Leave `NULL` to use the global client from `.env`. |
-| `google_client_secret` | `GOCSPX-example-not-a-real-secret` | Same place, prefixed `GOCSPX-` followed by 28 characters. Stored in plaintext in the database — the file permissions on `kauth.db` are the protection. |
+| `google_client_secret` | `GOCSPX-example-not-a-real-secret` | Same place, prefixed `GOCSPX-` followed by 28 characters. Legacy: prefer `google_client_secret_env` (a `KAUTH_SVC_*` environment variable name set in the admin panel) so the secret lives in `.env` and not in the database or its backups. See [doc/KEY_ROTATION.md](doc/KEY_ROTATION.md). |
 | `auth_google` | `1` | One column per sign-in path: `auth_google`, `auth_microsoft`, `auth_magic_link`, `auth_password`. Only the ones set to `1` appear on the login page. |
 | `default_role` | `user` | What new users get in the `role` claim. |
 | `default_org` | `polaris` | What new users get in the `org` claim. The app uses this for access control. |

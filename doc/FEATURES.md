@@ -179,9 +179,12 @@ TTL settes per tjeneste via `services.access_token_ttl` (ISO 8601-varighet, f.ek
 
 ### JWKS + OpenID Discovery
 
-- `GET /.well-known/jwks.json` — eksponerer den offentlige RSA-nøkkelen med `kty=RSA, use=sig, alg=RS256, kid`
+- `GET /.well-known/jwks.json` — eksponerer nøkkelringen: current først, så next og previous (bare de som er satt), hver med `kty=RSA, use=sig, alg=RS256, kid`
 - `GET /.well-known/openid-configuration` — standard discovery-dokument med `authorization_endpoint`, `token_endpoint`, `jwks_uri`, `response_types_supported`, etc.
-- Resource-servere validerer JWT mot JWKS-URL — kauth-roterte nøkler oppdages automatisk
+- Resource-servere validerer JWT mot JWKS-URL. Rotasjon oppdages **ikke** automatisk: klienter cacher JWKS (pov: 1 t) og henter ikke på nytt ved ukjent `kid`, så rotasjon følger prosedyren i [KEY_ROTATION.md](KEY_ROTATION.md)
+- **`kid`:** alle JWT-er (access, admin) har `kid` i headeren, lik current-nøkkelen (`KAUTH_SIGNING_KID`, default `kauth-1`). Klienter skal velge nøkkel etter `kid`
+- **Nøkkelring (017):** current signerer; next er bare publisert (så klienter rekker å hente den); previous er publisert og godtatt i `Verify` så tokens fra forrige nøkkel lever ut TTL-en. `Verify` velger etter `kid` blant current og previous, og prøver uten `kid` current og så previous (bare ved signaturfeil). Ukjent `kid`, `kid` = next og andre algoritmer enn RS256 avvises. Feil konfig stopper oppstarten
+- **Klienthemmeligheter (017):** Google/Microsoft-hemmeligheten per tjeneste kan ligge som navn på en miljøvariabel (`KAUTH_SVC_*`) i stedet for klartekst i databasen. Referansen vinner over kolonnen, kolonnen over global env. Tom variabel gir `login_failed` for den metoden, uten fallback. Se [KEY_ROTATION.md](KEY_ROTATION.md)
 
 ### Refresh-token-rotasjon
 

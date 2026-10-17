@@ -329,7 +329,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 19 — Nøkkelring med kid fra env, og klienthemmeligheter som env-referanse (2026-10-17)
 
-**Status:** Under arbeid (017)
+**Status:** Implementert (2026-10-17, 017)
 → Analyse: [doc/features/017_AN_NOKKELRING_HEMMELIGHETER.md](features/017_AN_NOKKELRING_HEMMELIGHETER.md) · Plan: [doc/features/017_PL_NOKKELRING_HEMMELIGHETER.md](features/017_PL_NOKKELRING_HEMMELIGHETER.md)
 
 **Beslutning:**
@@ -344,3 +344,13 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 **Konsekvens:**
 - `.env` holder flere hemmeligheter; DB og backup holder ingen klienthemmeligheter etter flyttingen.
 - De gamle kolonnene står tomme til 018.
+
+**Presiseringer fra implementeringen:**
+- **`NewIssuer` validerer på nytt.** Ringen sjekkes både i `config` og i `NewIssuer` (forsvar i dybden), med samme regler (`token.ValidKID`, `MinRSABits`, `DefaultKID`).
+- **Én kilde per nøkkel.** Både `_PEM` og `_PATH` for samme nøkkel gir oppstartsfeil; `_PEM` vinner aldri stille.
+- **Fallback uten `kid` bare ved signaturfeil.** Previous prøves bare når current gir `ErrTokenSignatureInvalid`; utløpt token, feil issuer osv. gir ikke ny prøving.
+- **Prefikset i både CHECK og kode.** `KAUTH_SVC_` håndheves av `CHECK` i migrasjon 014 og av `service.ClientSecretEnvRe` i oppslaget og oppstartssjekken, så en rad skrevet uten CHECK-vern ikke kan peke på vilkårlige variabler.
+- **Tom referanse avvises ved login-start.** Brukeren sendes ikke til Google/Microsoft for å feile etterpå (gjelder også admin-Google). Bare mellomrom regnes som tom.
+- **Warn med ratebegrensning.** Manglende hemmelighet logges som `slog.Warn` (ikke Error), maks én linje per tjeneste og metode per 5 min, aldri verdien, så uautentiserte forespørsler ikke kan fylle journald.
+- **Statusoppslag bare for `KAUTH_SVC_`.** Admin viser «satt»/«ikke satt» bare for navn med prefikset, så siden ikke er et orakel for andre miljøvariabler. Tjeneste A kan peke på Bs variabel; admin er allerede global.
+- **Nødrotasjon uten previous.** Previous godtas i `Verify`, så en kompromittert nøkkel skal ikke settes som previous. Prosedyren er ny current uten previous og revokering av alle refresh-familier (se `doc/KEY_ROTATION.md`).
