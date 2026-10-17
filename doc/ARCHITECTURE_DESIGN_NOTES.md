@@ -354,3 +354,17 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - **Warn med ratebegrensning.** Manglende hemmelighet logges som `slog.Warn` (ikke Error), maks én linje per tjeneste og metode per 5 min, aldri verdien, så uautentiserte forespørsler ikke kan fylle journald.
 - **Statusoppslag bare for `KAUTH_SVC_`.** Admin viser «satt»/«ikke satt» bare for navn med prefikset, så siden ikke er et orakel for andre miljøvariabler. Tjeneste A kan peke på Bs variabel; admin er allerede global.
 - **Nødrotasjon uten previous.** Previous godtas i `Verify`, så en kompromittert nøkkel skal ikke settes som previous. Prosedyren er ny current uten previous og revokering av alle refresh-familier (se `doc/KEY_ROTATION.md`).
+
+## ADN 20 — CI på GitHub Actions uten tilgang til prod, fuzzing av sikkerhetsgrensene og restore-test (2026-10-17)
+
+**Status:** Under arbeid (018)
+→ Analyse: [doc/features/018_AN_CI_FUZZ_RESTORE.md](features/018_AN_CI_FUZZ_RESTORE.md) · Plan: [doc/features/018_PL_CI_FUZZ_RESTORE.md](features/018_PL_CI_FUZZ_RESTORE.md)
+
+**Beslutning:**
+1. CI kjører på GitHub-hostede ubuntu-runnere med `permissions: contents: read`, actions pinnet på commit-SHA, uten secrets og uten deploy. Ingen self-hosted runner: prod og utviklingsmaskin er samme Pi, og repoet er offentlig.
+2. `-race` kjøres bare i CI, fordi ThreadSanitizer ikke virker på Pi-en.
+3. Native Go-fuzzing av redirect_uri-matching, state-parsing, `/dispatch`-mål og loggmaskering, med egenskapssjekker. Kort fuzz bare på push til master.
+4. Restore av backup prøves med et skript som aldri rører prod-DB, `.env` eller prod-porten.
+5. Ekstern revisjon og `v1.0.0` er eierens beslutninger; repoet får en revisjonspakke og et CHANGELOG-utkast.
+
+**Konsekvens:** DSF-eval og holdout-scenarier forblir private og kjøres ikke i offentlig CI.
