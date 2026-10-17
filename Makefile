@@ -1,4 +1,4 @@
-.PHONY: build testidp build-arm64 sqlc migrate-up test deploy
+.PHONY: build testidp build-arm64 sqlc migrate-up test ci deploy
 
 build:
 	CGO_ENABLED=0 go build -o bin/kauth ./cmd/kauth
@@ -17,6 +17,12 @@ migrate-up:
 
 test:
 	CGO_ENABLED=0 go test ./...
+
+# Lokal speiling av CI uten -race og uten nett.
+ci:
+	@test -z "$$(gofmt -l .)" || (echo "Ikke formatert:"; gofmt -l .; exit 1)
+	go vet ./...
+	CGO_ENABLED=0 go test ./... -count=1
 
 deploy:
 	@test -n "$(KAUTH_DEPLOY_HOST)" || (echo "KAUTH_DEPLOY_HOST må være satt (f.eks. lars@example.com)"; exit 1)

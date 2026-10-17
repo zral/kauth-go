@@ -2,6 +2,8 @@ module github.com/zral/kauth-go
 
 go 1.25.7
 
+toolchain go1.26.9
+
 require (
 	github.com/coreos/go-oidc/v3 v3.19.0
 	github.com/go-chi/chi/v5 v5.3.0

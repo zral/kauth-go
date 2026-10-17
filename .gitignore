@@ -1,5 +1,7 @@
 # Hemmeligheter
 .env
+.env.*
+!.env.example
 
 # Build-artifakter
 bin/
