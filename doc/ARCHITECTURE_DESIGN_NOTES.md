@@ -300,7 +300,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 18 — Leverandøradmin uten ny tillitsrot, og kobling bevist av brukeren via invitasjon (2026-10-16)
 
-**Status:** Implementert (2026-10-17, 016)
+**Status:** Implementert (2026-10-17, 016). I prod 2026-10-17 00:35 UTC
 → Analyse: [doc/features/016_AN_ADMIN_LEVERANDOR_KOBLING.md](features/016_AN_ADMIN_LEVERANDOR_KOBLING.md) · Plan: [doc/features/016_PL_ADMIN_LEVERANDOR_KOBLING.md](features/016_PL_ADMIN_LEVERANDOR_KOBLING.md)
 
 **Beslutning:**
