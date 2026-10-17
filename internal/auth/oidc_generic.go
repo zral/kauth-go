@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -40,6 +41,9 @@ type GenericOIDCHandlers struct {
 	idps *idp.Registry
 	aud  *audit.Service
 	fed  *federatedLogin
+	// links tar koblingsgrenen i callbacken (016). nil gjør at en state med
+	// link= avvises i stedet for å falle gjennom til vanlig innlogging.
+	links *LinkHandlers
 }
 
 func NewGenericOIDCHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, iss *token.Issuer, ref *token.RefreshService, reg *service.Registry, idps *idp.Registry, aud *audit.Service) *GenericOIDCHandlers {
@@ -47,6 +51,12 @@ func NewGenericOIDCHandlers(cfg config.Config, sqlDB *sql.DB, q *gen.Queries, is
 	completer := &loginCompleter{queries: q, issuer: iss, refresh: ref, aud: aud}
 	return &GenericOIDCHandlers{cfg: cfg, reg: reg, idps: idps, aud: aud,
 		fed: &federatedLogin{resolver: resolver, completer: completer, aud: aud}}
+}
+
+// WithLinks kobler på koblingsgrenen i callbacken.
+func (h *GenericOIDCHandlers) WithLinks(l *LinkHandlers) *GenericOIDCHandlers {
+	h.links = l
+	return h
 }
 
 // idpRedirectURL følger samme Host-regel som Google: https, unntatt med
@@ -203,16 +213,21 @@ func (h *GenericOIDCHandlers) HandleCallback(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	slug := claims.IDP
+	// En koblingsflyt som avvises før grenen skal kunne spores til invitasjonen.
+	rejectCtx := idpContext(slug)
+	if claims.Link != 0 {
+		rejectCtx += " invite=" + strconv.FormatInt(claims.Link, 10)
+	}
 	// Tjenesten og leverandøren kommer fra den signerte staten, aldri fra
 	// Host eller stien.
 	svc := h.reg.Resolve("", claims.ServiceID, "")
 	if svc == nil {
-		h.fed.auditRejected(r, providerOIDC, claims.ServiceID, rejection{Context: idpContext(slug), Reason: "unknown_service"})
+		h.fed.auditRejected(r, providerOIDC, claims.ServiceID, rejection{Context: rejectCtx, Reason: "unknown_service"})
 		redirectLoginError(w, r, "", errCodeLoginFailed)
 		return
 	}
 	reject := func(reason string) {
-		h.fed.reject(w, r, providerOIDC, svc, rejection{Context: idpContext(slug), Reason: reason})
+		h.fed.reject(w, r, providerOIDC, svc, rejection{Context: rejectCtx, Reason: reason})
 	}
 	p, assigned := providerFor(h.idps, svc.ID, slug)
 	if pathSlug != slug || !assigned {
@@ -290,6 +305,16 @@ func (h *GenericOIDCHandlers) HandleCallback(w http.ResponseWriter, r *http.Requ
 	sub := idt.Subject
 	if strings.TrimSpace(sub) == "" || len(sub) > maxSubjectLen {
 		reject("missing_sub")
+		return
+	}
+	// Koblingsflyt (016): først etter all verifisering over, og aldri via
+	// finishWithPolicy. Ingen tokens, sesjon eller redirect_uri.
+	if claims.Link != 0 {
+		if h.links == nil {
+			reject("link_unavailable")
+			return
+		}
+		h.links.finishLink(w, r, svc, p, claims.Link, sub, cl.Email)
 		return
 	}
 	email := NormalizeEmail(cl.Email)

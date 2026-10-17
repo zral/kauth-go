@@ -76,6 +76,30 @@ func (s *Service) SendLinkInvite(to, fromName, linkURL, providerName, locale, fr
 	return sendSMTP(addr, s.cfg.SMTPHost, auth, s.cfg.SMTPFrom, to, msg, s.cfg.SMTPStartTLS)
 }
 
+// SendLinkConfirmation sender kvitteringen etter en vellykket kobling (016),
+// slik at en videresendt invitasjon blir synlig for brukeren. Samme
+// transportvalg som SendLinkInvite. Mock-linjen har ingen lenke.
+func (s *Service) SendLinkConfirmation(to, fromName, providerName, locale, fromAddress string) error {
+	t := i18n.Get(locale)
+	if s.cfg.SMTPMock {
+		fmt.Printf("[MAIL MOCK] To: %s | Fra: %s (%s) | Språk: %s | Type: link-confirmation | Leverandør: %s\n", to, fromName, fromAddress, locale, providerName)
+		return nil
+	}
+	providerName = strings.NewReplacer("\r", " ", "\n", " ").Replace(providerName)
+	body := strings.ReplaceAll(t.LinkMailBody, "{provider}", providerName)
+
+	if fromAddress != "" {
+		if s.cfg.BrevoAPIKey == "" {
+			return fmt.Errorf("email_from_address=%q satt men KAUTH_BREVO_API_KEY mangler", fromAddress)
+		}
+		return sendBrevo(s.cfg.BrevoAPIKey, fromAddress, fromName, to, t.LinkMailSubject, body)
+	}
+	msg := buildMessage(s.cfg.SMTPFrom, fromName, to, t.LinkMailSubject, body)
+	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
+	auth := smtp.PlainAuth("", s.cfg.SMTPUser, s.cfg.SMTPPassword, s.cfg.SMTPHost)
+	return sendSMTP(addr, s.cfg.SMTPHost, auth, s.cfg.SMTPFrom, to, msg, s.cfg.SMTPStartTLS)
+}
+
 // buildLinkInviteBody setter inn leverandørnavn og lenke i den oversatte teksten.
 func buildLinkInviteBody(t i18n.Strings, linkURL, providerName string) string {
 	body := strings.ReplaceAll(t.LinkInviteBody, "{provider}", providerName)

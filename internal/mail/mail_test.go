@@ -313,3 +313,13 @@ func TestSendLinkInvite_FromAddressWithoutBrevoKey_Errors(t *testing.T) {
 func TestSendLinkInvite_MockModeSucceeds(t *testing.T) {
 	require.NoError(t, New(config.Config{SMTPMock: true}).SendLinkInvite("a@b.test", "N", "https://x.test/link/t", "Acme", "nb", ""))
 }
+
+func TestSendLinkConfirmation_FromAddressWithoutBrevoKey_Errors(t *testing.T) {
+	err := New(config.Config{SMTPMock: false}).SendLinkConfirmation("bruker@example.test", "Spekto", "Acme", "nb", "noreply@spekto.live")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "KAUTH_BREVO_API_KEY")
+}
+
+func TestSendLinkConfirmation_MockModeSucceeds(t *testing.T) {
+	require.NoError(t, New(config.Config{SMTPMock: true}).SendLinkConfirmation("a@b.test", "N", "Acme", "nb", ""))
+}

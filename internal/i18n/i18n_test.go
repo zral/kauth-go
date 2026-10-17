@@ -63,3 +63,14 @@ func TestLinkInviteTextPlaceholders(t *testing.T) {
 		assert.NotContains(t, s.LinkInviteBody, "%s", "locale %s", locale)
 	}
 }
+
+func TestLinkPageTextPlaceholders(t *testing.T) {
+	for locale, s := range catalog {
+		assert.Equal(t, 1, strings.Count(s.LinkConfirmHint, "{email}"), "locale %s: én {email}", locale)
+		for name, v := range map[string]string{"ConfirmTitle": s.LinkConfirmTitle, "ConfirmHint": s.LinkConfirmHint,
+			"ConfirmButton": s.LinkConfirmButton, "DoneHint": s.LinkDoneHint, "AlreadyHint": s.LinkAlreadyHint, "MailBody": s.LinkMailBody} {
+			assert.GreaterOrEqual(t, strings.Count(v, "{provider}"), 1, "locale %s: {provider} i %s", locale, name)
+		}
+		assert.NotContains(t, s.LinkMailSubject, "{provider}", "locale %s: emnet er uten leverandørnavn", locale)
+	}
+}

@@ -40,6 +40,9 @@ type gfOpts struct {
 	autoRegister int64
 	requireRole  *string
 	withDown     bool // leverandør «c» med discovery som svarer 500
+	// annen tilordner leverandør «a» også til tjenesten «annen» ("assigned"),
+	// eventuelt med tjenesten inaktiv ("inactive"). Tom lar «annen» stå uten.
+	annen string
 }
 
 // gf er en komplett generisk innloggingsflyt mot to fake-IdP-er med egne nøkler.
@@ -56,6 +59,9 @@ type gf struct {
 	c      *oidctest.IdP
 	pa, pb idp.Provider
 	svcs   []gen.Service
+	reg    *service.Registry
+	idps   *idp.Registry
+	mux    *chi.Mux
 }
 
 func newGF(t *testing.T, o gfOpts) *gf {
@@ -77,10 +83,14 @@ func newGF(t *testing.T, o gfOpts) *gf {
 			RequireRole: o.requireRole, JwtCookieName: "auth_token", AccessTokenTtl: "PT15M",
 			Active: 1, UpdatedAt: ts, AutoLink: &al,
 		}))
+		active := int64(1)
+		if id == "annen" && o.annen == "inactive" {
+			active = 0
+		}
 		svcs = append(svcs, gen.Service{
 			ID: id, DisplayName: id, Domain: dom, IsDefault: int64(1 - i), CallbackUrl: "https://" + dom + "/auth/callback",
 			Theme: "light", AutoRegister: o.autoRegister, AutoLink: o.autoLink, RequireRole: o.requireRole,
-			JwtCookieName: "auth_token", AccessTokenTtl: "PT15M", Active: 1,
+			JwtCookieName: "auth_token", AccessTokenTtl: "PT15M", Active: active,
 		})
 	}
 
@@ -89,9 +99,9 @@ func newGF(t *testing.T, o gfOpts) *gf {
 	f.a = oidctest.New(t, oidctest.Options{ClientID: "client-a", ClientSecret: "secret-a"})
 	f.b = oidctest.New(t, oidctest.Options{ClientID: "client-b"})
 	scopes := []string{"openid", "email", "profile"}
-	f.pa = idp.Provider{ID: 1, Slug: "a", DisplayName: "A", Issuer: f.a.Issuer(), ClientID: "client-a", ClientSecret: "secret-a",
+	f.pa = idp.Provider{ID: 1, Slug: "a", DisplayName: "Acme ID", Issuer: f.a.Issuer(), ClientID: "client-a", ClientSecret: "secret-a",
 		Scopes: scopes, TrustEmail: o.trustA, EmailDomains: o.domainsA}
-	f.pb = idp.Provider{ID: 2, Slug: "b", DisplayName: "B", Issuer: f.b.Issuer(), ClientID: "client-b",
+	f.pb = idp.Provider{ID: 2, Slug: "b", DisplayName: "Beta ID", Issuer: f.b.Issuer(), ClientID: "client-b",
 		Scopes: scopes, TrustEmail: true, EmailDomains: []string{"example.test"}}
 	providers := map[string]idp.Provider{"a": f.pa, "b": f.pb}
 	// «ghost» står i tilordningen men er ikke lastet (inaktiv eller ugyldig rad).
@@ -101,7 +111,11 @@ func newGF(t *testing.T, o gfOpts) *gf {
 		providers["c"] = idp.Provider{ID: 3, Slug: "c", DisplayName: "C", Issuer: f.c.Issuer(), ClientID: "client-c", Scopes: scopes}
 		assigned = append(assigned, "c")
 	}
-	idps := idp.NewRegistry(providers, map[string][]string{"klarsyn": assigned}, idp.NewHTTPClient(true), true)
+	byService := map[string][]string{"klarsyn": assigned}
+	if o.annen != "" {
+		byService["annen"] = []string{"a"}
+	}
+	idps := idp.NewRegistry(providers, byService, idp.NewHTTPClient(true), true)
 
 	f.aud = audit.NewService(q)
 	// Tømmer køen før databasen lukkes, ellers logges skrivefeil etter testen.
@@ -118,6 +132,7 @@ func newGF(t *testing.T, o gfOpts) *gf {
 	r.Get("/callback", google.HandleCallback)
 	r.Get("/ms-callback", ms.HandleCallback)
 	f.router = r
+	f.mux, f.reg, f.idps = r, reg, idps
 	return f
 }
 

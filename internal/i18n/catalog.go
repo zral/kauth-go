@@ -43,6 +43,21 @@ var catalog = map[string]Strings{
 
 		LinkInviteSubject: "Sign in with {provider}",
 		LinkInviteBody:    "Hello!\n\nAn administrator wants you to be able to sign in with your {provider} account. Open the link and sign in with {provider} to confirm:\n\n{link}\n\nThe link works once and expires in 24 hours. If you weren't expecting this, delete the email. Nothing will change.\n",
+
+		LinkConfirmTitle:  "Link {provider}",
+		LinkConfirmHint:   "You're linking {provider} to the user {email}. Press the button, then sign in with {provider}.",
+		LinkConfirmButton: "Continue to {provider}",
+		LinkConfirmWarn:   "If you don't recognize this user, don't continue.",
+		LinkInvalidTitle:  "This link doesn't work",
+		LinkInvalidHint:   "The link is invalid or has expired. Ask your administrator for a new one.",
+		LinkDoneTitle:     "Linked",
+		LinkDoneHint:      "{provider} is linked to your user, so you can use it to sign in from now on. You can close this page.",
+		LinkAlreadyTitle:  "Already linked",
+		LinkAlreadyHint:   "This {provider} account was already linked to your user. There's nothing more to do.",
+		LinkRejectedTitle: "Linking failed",
+		LinkRejectedHint:  "The account wasn't linked. Contact your administrator if you need help.",
+		LinkMailSubject:   "An account was linked to your user",
+		LinkMailBody:      "Hello!\n\nAn account at {provider} is now linked to your user. If you didn't do this, contact your administrator right away.\n",
 	},
 
 	"nb": {
@@ -85,6 +100,21 @@ var catalog = map[string]Strings{
 
 		LinkInviteSubject: "Koble {provider} til brukeren din",
 		LinkInviteBody:    "Hei!\n\nEn administrator vil at du skal kunne logge inn med {provider}. Åpne lenken og logg inn hos {provider} for å bekrefte:\n\n{link}\n\nLenken virker i 24 timer, og bare én gang. Visste du ikke om dette, kan du slette e-posten. Da skjer det ingenting.\n",
+
+		LinkConfirmTitle:  "Koble til {provider}",
+		LinkConfirmHint:   "Du kobler {provider} til brukeren {email}. Trykk på knappen og logg inn hos {provider}.",
+		LinkConfirmButton: "Fortsett til {provider}",
+		LinkConfirmWarn:   "Kjenner du ikke igjen denne brukeren, skal du ikke fortsette.",
+		LinkInvalidTitle:  "Lenken virker ikke",
+		LinkInvalidHint:   "Lenken er ugyldig eller utløpt. Be administrator om en ny.",
+		LinkDoneTitle:     "Koblet",
+		LinkDoneHint:      "{provider} er koblet til brukeren din, og du kan bruke den til å logge inn. Du kan lukke siden.",
+		LinkAlreadyTitle:  "Allerede koblet",
+		LinkAlreadyHint:   "Denne kontoen hos {provider} var allerede koblet til brukeren din. Du trenger ikke gjøre mer.",
+		LinkRejectedTitle: "Koblingen gikk ikke",
+		LinkRejectedHint:  "Kontoen ble ikke koblet. Kontakt administrator hvis du trenger hjelp.",
+		LinkMailSubject:   "En konto ble koblet til brukeren din",
+		LinkMailBody:      "Hei!\n\nEn konto hos {provider} er nå koblet til brukeren din. Var det ikke du som koblet den, kontakt administrator med en gang.\n",
 	},
 
 	"de": {
@@ -127,5 +157,20 @@ var catalog = map[string]Strings{
 
 		LinkInviteSubject: "{provider}-Konto mit Ihrem Benutzer verbinden",
 		LinkInviteBody:    "Hallo!\n\nEin Administrator möchte, dass Sie sich künftig mit {provider} anmelden können. Öffnen Sie den Link und melden Sie sich bei {provider} an, um das zu bestätigen:\n\n{link}\n\nDer Link ist 24 Stunden und nur einmal gültig. Wenn Sie das nicht erwartet haben, löschen Sie diese E-Mail. Es ändert sich nichts.\n",
+
+		LinkConfirmTitle:  "{provider} verbinden",
+		LinkConfirmHint:   "Sie verbinden {provider} mit dem Benutzer {email}. Klicken Sie auf die Schaltfläche und melden Sie sich bei {provider} an.",
+		LinkConfirmButton: "Weiter zu {provider}",
+		LinkConfirmWarn:   "Wenn Sie diesen Benutzer nicht kennen, fahren Sie nicht fort.",
+		LinkInvalidTitle:  "Der Link funktioniert nicht",
+		LinkInvalidHint:   "Der Link ist ungültig oder abgelaufen. Bitten Sie den Administrator um einen neuen.",
+		LinkDoneTitle:     "Verbunden",
+		LinkDoneHint:      "{provider} ist mit Ihrem Benutzer verbunden. Sie können sich ab jetzt damit anmelden. Sie können diese Seite schließen.",
+		LinkAlreadyTitle:  "Bereits verbunden",
+		LinkAlreadyHint:   "Dieses {provider}-Konto war bereits mit Ihrem Benutzer verbunden. Sie müssen nichts weiter tun.",
+		LinkRejectedTitle: "Verbindung fehlgeschlagen",
+		LinkRejectedHint:  "Das Konto wurde nicht verbunden. Wenden Sie sich an den Administrator, wenn Sie Hilfe brauchen.",
+		LinkMailSubject:   "Ein Konto wurde mit Ihrem Benutzer verbunden",
+		LinkMailBody:      "Hallo!\n\nEin Konto bei {provider} ist jetzt mit Ihrem Benutzer verbunden. Waren Sie das nicht, wenden Sie sich umgehend an den Administrator.\n",
 	},
 }

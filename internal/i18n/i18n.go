@@ -77,6 +77,24 @@ type Strings struct {
 	// Koblingsinvitasjon: begge har {provider}, brødteksten også nøyaktig én {link}.
 	LinkInviteSubject string
 	LinkInviteBody    string
+
+	// link-confirm.html og link-result.html (016). {provider} er leverandørens
+	// visningsnavn og {email} den maskerte adressen; begge settes inn i Go.
+	LinkConfirmTitle  string
+	LinkConfirmHint   string
+	LinkConfirmButton string
+	LinkConfirmWarn   string
+	LinkInvalidTitle  string
+	LinkInvalidHint   string
+	LinkDoneTitle     string
+	LinkDoneHint      string
+	LinkAlreadyTitle  string
+	LinkAlreadyHint   string
+	LinkRejectedTitle string
+	LinkRejectedHint  string
+	// Kvitteringsmail ved vellykket kobling. LinkMailBody har {provider}.
+	LinkMailSubject string
+	LinkMailBody    string
 }
 
 // Get returnerer katalogen for locale, eller Fallback-katalogen ved ukjent

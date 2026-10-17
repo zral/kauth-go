@@ -16,14 +16,15 @@ const (
 	maxLoggedIP   = 64
 )
 
-// maskPath normaliserer stien og skjuler alt etter et magic-login-segment.
-// Tokenet er et engangs-credential og skal aldri havne i journald, også ikke
+// maskPath normaliserer stien og skjuler alt etter et magic-login- eller
+// link-segment (koblingsinvitasjon, 016). Tokenet er et
+// engangs-credential og skal aldri havne i journald, også ikke
 // når stien ikke matcher en rute (//magic-login/X, /Magic-Login/X,
 // /./magic-login/X og %2F gir 404, men står likevel i loggen).
 func maskPath(p string) string {
 	segs := strings.Split(path.Clean("/"+p), "/")
 	for i, seg := range segs {
-		if strings.EqualFold(seg, "magic-login") && i < len(segs)-1 {
+		if (strings.EqualFold(seg, "magic-login") || strings.EqualFold(seg, "link")) && i < len(segs)-1 {
 			segs = append(segs[:i+1], "***")
 			break
 		}

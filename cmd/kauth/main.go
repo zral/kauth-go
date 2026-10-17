@@ -90,7 +90,8 @@ func main() {
 	adminSessions := admin.NewSessionStarter(issuer, auditSvc, cfg.AdminTokenTTL)
 	googleH := auth.NewGoogleHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc, adminSessions)
 	msH := auth.NewMicrosoftHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc)
-	genericH := auth.NewGenericOIDCHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, idps, auditSvc)
+	linkH := auth.NewLinkHandlers(*cfg, sqlDB, queries, registry, idps, auditSvc, tmpl, mailSvc)
+	genericH := auth.NewGenericOIDCHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, idps, auditSvc).WithLinks(linkH)
 	passwordH := auth.NewPasswordHandlers(queries, issuer, refreshSvc, registry, auditSvc, cfg.PasswordLoginEnabled).WithCORSOrigins(cfg.CORSOrigins)
 	dispatchH := &auth.DispatchHandler{Registry: registry, Issuer: issuer, Queries: queries, Audit: auditSvc, Refresh: refreshSvc, DefaultSvcID: ""}
 	meH := &auth.MeHandler{Issuer: issuer, CookieName: "auth_token"}
@@ -148,6 +149,10 @@ func main() {
 	r.Post("/magic-login", magicH.RequestLink)
 	r.Get("/magic-login/{token}", magicH.ShowConfirm)
 	r.Post("/magic-login/{token}", magicH.Redeem)
+
+	// ── Koblingsinvitasjon (016): GET viser bekreftelse, POST er samme origin ──
+	r.Get("/link/{token}", linkH.ShowConfirm)
+	r.With(fetchmeta.Middleware).Post("/link/{token}", linkH.StartLink)
 
 	// ── Token-endepunkt: refresh_token + authorization_code — CORS kun her ───
 	r.With(auth.CORSMiddleware(cfg.CORSOrigins)).Post("/token", passwordH.Token)
@@ -242,7 +247,7 @@ func main() {
 	// Felles avslutning for signal og server-feil: sendinger, så audit, så DB.
 	drain := func() {
 		// Pågående magic-link-sendinger får en frist, ellers tapes de ved SIGTERM.
-		waitSends(5*time.Second, magicH.WaitForSends, adminAuthH.WaitForSends, adminUsersH.WaitForSends)
+		waitSends(5*time.Second, magicH.WaitForSends, linkH.WaitForSends, adminAuthH.WaitForSends, adminUsersH.WaitForSends)
 		// Audit tømmes før databasen lukkes, ellers tapes køede hendelser.
 		auditCtx, auditCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer auditCancel()

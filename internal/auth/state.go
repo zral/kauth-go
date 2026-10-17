@@ -19,6 +19,10 @@ const statePurposeAdmin = "admin"
 // statePrefixIDP innleder slug-suffikset for generiske leverandører (PD6).
 const statePrefixIDP = "idp="
 
+// statePrefixLink innleder invitasjons-id for en koblingsflyt (016). Står alltid
+// helt til høyre, rett etter idp=.
+const statePrefixLink = "link="
+
 // stateSlugRe er samme mønster som idp.Provider.Slug. Det har ingen ":", så
 // suffikset kan leses entydig fra høyre.
 var stateSlugRe = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
@@ -41,6 +45,9 @@ type stateClaims struct {
 	Admin     bool
 	// IDP er slug for en generisk leverandør. Aldri sammen med Admin.
 	IDP string
+	// Link er id til koblingsinvitasjonen (016). Bare sammen med IDP, aldri
+	// Admin. 0 betyr vanlig innlogging.
+	Link int64
 }
 
 // SignState lager en HMAC-SHA256-signert state for en vanlig innlogging.
@@ -66,6 +73,14 @@ func signIDPState(secret []byte, serviceID, nonce, slug string) string {
 	return signStatePayload(secret, serviceID+":"+nonce+":"+issuedAt()+":"+statePrefixIDP+slug)
 }
 
+// signLinkState er signIDPState for en koblingsinvitasjon. Invitasjons-id står
+// i den signerte payloaden, så en state for invitasjon A kan ikke brukes til B
+// og vanlig innlogging kan aldri produsere den.
+// payload = "serviceID:nonce:iat:idp=<slug>:link=<inviteID>"
+func signLinkState(secret []byte, serviceID, nonce, slug string, inviteID int64) string {
+	return signStatePayload(secret, serviceID+":"+nonce+":"+issuedAt()+":"+statePrefixIDP+slug+":"+statePrefixLink+strconv.FormatInt(inviteID, 10))
+}
+
 func issuedAt() string {
 	return strconv.FormatInt(now().Unix(), 10)
 }
@@ -80,7 +95,7 @@ func signStatePayload(secret []byte, payload string) string {
 // gjenbrukes i en flyt som ikke kjenner til formålet.
 func VerifyState(secret []byte, state string) (serviceID string, ok bool) {
 	c, ok := parseState(secret, state)
-	if !ok || c.Admin || c.IDP != "" {
+	if !ok || c.Admin || c.IDP != "" || c.Link != 0 {
 		return "", false
 	}
 	return c.ServiceID, true
@@ -107,6 +122,20 @@ func parseState(secret []byte, state string) (stateClaims, bool) {
 		return stateClaims{}, false
 	}
 	var c stateClaims
+	// Link-suffikset leses aller først og krever idp= rett foran seg. Id-en må
+	// være rene sifre og > 0; ParseInt alene godtar f.eks. "+5".
+	if i := strings.LastIndex(payload, ":"); i >= 0 && strings.HasPrefix(payload[i+1:], statePrefixLink) {
+		digits := payload[i+1+len(statePrefixLink):]
+		id, err := strconv.ParseInt(digits, 10, 64)
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != digits {
+			return stateClaims{}, false
+		}
+		rest := payload[:i]
+		if j := strings.LastIndex(rest, ":"); j < 0 || !strings.HasPrefix(rest[j+1:], statePrefixIDP) {
+			return stateClaims{}, false
+		}
+		payload, c.Link = rest, id
+	}
 	// IDP-suffikset leses først. Etter det står bare serviceID:nonce:iat igjen,
 	// så et ":admin" foran (admin sammen med IDP) havner i iat-posisjonen og
 	// avvises.
