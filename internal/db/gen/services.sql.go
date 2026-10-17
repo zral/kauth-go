@@ -16,10 +16,12 @@ INSERT INTO services (id, display_name, tagline, domain, auth_host, callback_url
     auth_google, auth_microsoft, auth_magic_link, auth_password,
     google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret,
     jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at,
-    sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env)
+    sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env,
+    auth_github, github_client_id, github_client_secret_env)
 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
     COALESCE(CAST(?33 AS TEXT), 'email'), COALESCE(CAST(?34 AS INTEGER), 1),
-    ?35, ?36)
+    ?35, ?36,
+    ?37, ?38, ?39)
 `
 
 type CreateServiceParams struct {
@@ -59,6 +61,9 @@ type CreateServiceParams struct {
 	AutoLink                 *int64  `json:"auto_link"`
 	GoogleClientSecretEnv    *string `json:"google_client_secret_env"`
 	MicrosoftClientSecretEnv *string `json:"microsoft_client_secret_env"`
+	AuthGithub               int64   `json:"auth_github"`
+	GithubClientID           *string `json:"github_client_id"`
+	GithubClientSecretEnv    *string `json:"github_client_secret_env"`
 }
 
 // sub_format and auto_link are nullable parameters: NULL gives the column defaults
@@ -101,12 +106,15 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) er
 		arg.AutoLink,
 		arg.GoogleClientSecretEnv,
 		arg.MicrosoftClientSecretEnv,
+		arg.AuthGithub,
+		arg.GithubClientID,
+		arg.GithubClientSecretEnv,
 	)
 	return err
 }
 
 const getDefaultService = `-- name: GetDefaultService :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services WHERE is_default = 1 AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env, auth_github, github_client_id, github_client_secret_env FROM services WHERE is_default = 1 AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetDefaultService(ctx context.Context) (Service, error) {
@@ -149,12 +157,15 @@ func (q *Queries) GetDefaultService(ctx context.Context) (Service, error) {
 		&i.AutoLink,
 		&i.GoogleClientSecretEnv,
 		&i.MicrosoftClientSecretEnv,
+		&i.AuthGithub,
+		&i.GithubClientID,
+		&i.GithubClientSecretEnv,
 	)
 	return i, err
 }
 
 const getServiceByAuthHost = `-- name: GetServiceByAuthHost :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services WHERE auth_host = ? AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env, auth_github, github_client_id, github_client_secret_env FROM services WHERE auth_host = ? AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetServiceByAuthHost(ctx context.Context, authHost *string) (Service, error) {
@@ -197,12 +208,15 @@ func (q *Queries) GetServiceByAuthHost(ctx context.Context, authHost *string) (S
 		&i.AutoLink,
 		&i.GoogleClientSecretEnv,
 		&i.MicrosoftClientSecretEnv,
+		&i.AuthGithub,
+		&i.GithubClientID,
+		&i.GithubClientSecretEnv,
 	)
 	return i, err
 }
 
 const getServiceByID = `-- name: GetServiceByID :one
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services WHERE id = ? AND active = 1 LIMIT 1
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env, auth_github, github_client_id, github_client_secret_env FROM services WHERE id = ? AND active = 1 LIMIT 1
 `
 
 func (q *Queries) GetServiceByID(ctx context.Context, id string) (Service, error) {
@@ -245,12 +259,15 @@ func (q *Queries) GetServiceByID(ctx context.Context, id string) (Service, error
 		&i.AutoLink,
 		&i.GoogleClientSecretEnv,
 		&i.MicrosoftClientSecretEnv,
+		&i.AuthGithub,
+		&i.GithubClientID,
+		&i.GithubClientSecretEnv,
 	)
 	return i, err
 }
 
 const listActiveServices = `-- name: ListActiveServices :many
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services WHERE active = 1 ORDER BY display_name
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env, auth_github, github_client_id, github_client_secret_env FROM services WHERE active = 1 ORDER BY display_name
 `
 
 func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
@@ -299,6 +316,9 @@ func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
 			&i.AutoLink,
 			&i.GoogleClientSecretEnv,
 			&i.MicrosoftClientSecretEnv,
+			&i.AuthGithub,
+			&i.GithubClientID,
+			&i.GithubClientSecretEnv,
 		); err != nil {
 			return nil, err
 		}
@@ -314,7 +334,7 @@ func (q *Queries) ListActiveServices(ctx context.Context) ([]Service, error) {
 }
 
 const listAllServices = `-- name: ListAllServices :many
-SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env FROM services ORDER BY display_name
+SELECT id, display_name, tagline, domain, auth_host, callback_url, logo_html, bg_image, bg_css, theme, accent_color, email_from_name, auto_register, default_role, default_org, require_role, enforce_org, is_default, auth_google, auth_microsoft, auth_magic_link, auth_password, google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at, email_from_address, sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env, auth_github, github_client_id, github_client_secret_env FROM services ORDER BY display_name
 `
 
 func (q *Queries) ListAllServices(ctx context.Context) ([]Service, error) {
@@ -363,6 +383,9 @@ func (q *Queries) ListAllServices(ctx context.Context) ([]Service, error) {
 			&i.AutoLink,
 			&i.GoogleClientSecretEnv,
 			&i.MicrosoftClientSecretEnv,
+			&i.AuthGithub,
+			&i.GithubClientID,
+			&i.GithubClientSecretEnv,
 		); err != nil {
 			return nil, err
 		}
@@ -388,7 +411,8 @@ UPDATE services SET
     microsoft_client_id = ?, microsoft_client_secret = ?,
     jwt_cookie_name = ?, access_token_ttl = ?, refresh_token_max_age = ?,
     active = ?, updated_at = ?, sub_format = ?, auto_link = ?,
-    google_client_secret_env = ?, microsoft_client_secret_env = ?
+    google_client_secret_env = ?, microsoft_client_secret_env = ?,
+    auth_github = ?, github_client_id = ?, github_client_secret_env = ?
 WHERE id = ?
 `
 
@@ -428,6 +452,9 @@ type UpdateServiceParams struct {
 	AutoLink                 int64   `json:"auto_link"`
 	GoogleClientSecretEnv    *string `json:"google_client_secret_env"`
 	MicrosoftClientSecretEnv *string `json:"microsoft_client_secret_env"`
+	AuthGithub               int64   `json:"auth_github"`
+	GithubClientID           *string `json:"github_client_id"`
+	GithubClientSecretEnv    *string `json:"github_client_secret_env"`
 	ID                       string  `json:"id"`
 }
 
@@ -468,6 +495,9 @@ func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) er
 		arg.AutoLink,
 		arg.GoogleClientSecretEnv,
 		arg.MicrosoftClientSecretEnv,
+		arg.AuthGithub,
+		arg.GithubClientID,
+		arg.GithubClientSecretEnv,
 		arg.ID,
 	)
 	return err

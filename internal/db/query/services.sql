@@ -22,10 +22,12 @@ INSERT INTO services (id, display_name, tagline, domain, auth_host, callback_url
     auth_google, auth_microsoft, auth_magic_link, auth_password,
     google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret,
     jwt_cookie_name, access_token_ttl, refresh_token_max_age, active, updated_at,
-    sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env)
+    sub_format, auto_link, google_client_secret_env, microsoft_client_secret_env,
+    auth_github, github_client_id, github_client_secret_env)
 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
     COALESCE(CAST(sqlc.narg('sub_format') AS TEXT), 'email'), COALESCE(CAST(sqlc.narg('auto_link') AS INTEGER), 1),
-    sqlc.narg('google_client_secret_env'), sqlc.narg('microsoft_client_secret_env'));
+    sqlc.narg('google_client_secret_env'), sqlc.narg('microsoft_client_secret_env'),
+    sqlc.arg('auth_github'), sqlc.narg('github_client_id'), sqlc.narg('github_client_secret_env'));
 
 -- name: UpdateService :exec
 UPDATE services SET
@@ -38,5 +40,6 @@ UPDATE services SET
     microsoft_client_id = ?, microsoft_client_secret = ?,
     jwt_cookie_name = ?, access_token_ttl = ?, refresh_token_max_age = ?,
     active = ?, updated_at = ?, sub_format = ?, auto_link = ?,
-    google_client_secret_env = ?, microsoft_client_secret_env = ?
+    google_client_secret_env = ?, microsoft_client_secret_env = ?,
+    auth_github = ?, github_client_id = ?, github_client_secret_env = ?
 WHERE id = ?;

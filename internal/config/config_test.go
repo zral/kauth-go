@@ -235,3 +235,60 @@ func TestLoad_OIDCAllowInsecure_KreverInsecureCookies(t *testing.T) {
 	_, err = Load()
 	require.NoError(t, err)
 }
+
+func TestLoad_GitHub(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KAUTH_GITHUB_CLIENT_ID", "cid")
+	t.Setenv("KAUTH_GITHUB_CLIENT_SECRET", "sec")
+	c, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "cid", c.GitHubClientID)
+	require.Equal(t, "sec", c.GitHubClientSecret)
+	require.Equal(t, "https://github.com", c.GitHubBaseURL)
+	require.Equal(t, "https://api.github.com", c.GitHubAPIURL)
+
+	// Eksplisitt default (også med avsluttende skråstrek) er greit uten insecure.
+	t.Setenv("KAUTH_GITHUB_BASE_URL", "https://github.com/")
+	t.Setenv("KAUTH_GITHUB_API_URL", "https://api.github.com")
+	c, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com", c.GitHubBaseURL)
+}
+
+func TestLoad_GitHubURL_OverstyringKreverInsecure(t *testing.T) {
+	for _, name := range []string{"KAUTH_GITHUB_BASE_URL", "KAUTH_GITHUB_API_URL"} {
+		t.Run(name, func(t *testing.T) { githubOverride(t, name) })
+	}
+}
+
+func githubOverride(t *testing.T, name string) {
+	setMinimalEnv(t)
+	t.Setenv(name, "http://127.0.0.1:9000/")
+	_, err := Load()
+	require.ErrorContains(t, err, name)
+
+	t.Setenv("KAUTH_OIDC_ALLOW_INSECURE", "true")
+	t.Setenv("KAUTH_INSECURE_COOKIES", "true")
+	c, err := Load()
+	require.NoError(t, err)
+	got := c.GitHubBaseURL
+	if name == "KAUTH_GITHUB_API_URL" {
+		got = c.GitHubAPIURL
+	}
+	require.Equal(t, "http://127.0.0.1:9000", got)
+}
+
+func TestLoad_GitHubURL_Ugyldig(t *testing.T) {
+	for _, v := range []string{
+		"github.com", "/relativ", "https://", "ftp://x.test", "https://u:p@x.test",
+		"https://x.test/?a=b", "https://x.test?", "https://x.test/#f", "https://x.test#", "://x",
+	} {
+		setMinimalEnv(t)
+		t.Setenv("KAUTH_OIDC_ALLOW_INSECURE", "true")
+		t.Setenv("KAUTH_INSECURE_COOKIES", "true")
+		t.Setenv("KAUTH_GITHUB_BASE_URL", v)
+		_, err := Load()
+		require.ErrorContains(t, err, "KAUTH_GITHUB_BASE_URL", v)
+		require.NotContains(t, err.Error(), "p@x.test", "verdien skal ikke gjengis")
+	}
+}

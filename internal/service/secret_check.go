@@ -7,7 +7,7 @@ import (
 )
 
 // ClientSecretEnvRe er den eneste godkjente formen på en env-referanse for
-// klienthemmeligheter. Den speiler CHECK i migrasjon 014; koden sjekker selv
+// klienthemmeligheter. Den speiler CHECK i migrasjon 014 og 015; koden sjekker selv
 // fordi en rad kan ha kommet inn forbi databasen, og et navn utenfor prefikset
 // skal aldri slås opp (KAUTH_PRIVATE_KEY_PEM e.l.).
 var ClientSecretEnvRe = regexp.MustCompile(`^KAUTH_SVC_[A-Z0-9_]+$`)
@@ -37,6 +37,8 @@ func (r *Registry) CheckClientSecrets(getenv func(string) string) {
 		}{
 			{"google", s.GoogleClientSecretEnv, s.GoogleClientSecret},
 			{"microsoft", s.MicrosoftClientSecretEnv, s.MicrosoftClientSecret},
+			// GitHub er ny i 019 og har aldri hatt klartekstkolonne.
+			{"github", s.GithubClientSecretEnv, nil},
 		} {
 			if m.envRef != nil && *m.envRef != "" {
 				if !ClientSecretEnvRe.MatchString(*m.envRef) || strings.TrimSpace(getenv(*m.envRef)) == "" {

@@ -387,6 +387,8 @@ func buildCreateParams(r *http.Request, id, now string) gen.CreateServiceParams 
 
 		GoogleClientSecretEnv:    googleEnv,
 		MicrosoftClientSecretEnv: microsoftEnv,
+		// GitHub-feltene har ikke skjema før 019 F4: ny tjeneste starter av.
+		AuthGithub: 0,
 	}
 }
 
@@ -432,11 +434,15 @@ func buildUpdateParams(r *http.Request, existing gen.Service, now string) gen.Up
 		// Mangler feltet i skjemaet beholdes lagret referanse; tomt felt gir NULL.
 		GoogleClientSecretEnv:    googleEnv,
 		MicrosoftClientSecretEnv: microsoftEnv,
-		JwtCookieName:            cp.JwtCookieName,
-		AccessTokenTtl:           cp.AccessTokenTtl,
-		RefreshTokenMaxAge:       cp.RefreshTokenMaxAge,
-		Active:                   cp.Active,
-		UpdatedAt:                now,
+		// Uten skjemafelt (F4) skal redigering aldri nulle GitHub-konfig.
+		AuthGithub:            existing.AuthGithub,
+		GithubClientID:        existing.GithubClientID,
+		GithubClientSecretEnv: existing.GithubClientSecretEnv,
+		JwtCookieName:         cp.JwtCookieName,
+		AccessTokenTtl:        cp.AccessTokenTtl,
+		RefreshTokenMaxAge:    cp.RefreshTokenMaxAge,
+		Active:                cp.Active,
+		UpdatedAt:             now,
 		// Et skjema uten feltene (eldre side, skript) skal aldri endre dem: lagret verdi beholdes.
 		SubFormat: valueOr(cp.SubFormat, existing.SubFormat),
 		AutoLink:  valueOr(cp.AutoLink, existing.AutoLink),

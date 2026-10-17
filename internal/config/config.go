@@ -60,6 +60,14 @@ type Config struct {
 	MicrosoftClientID     string
 	MicrosoftClientSecret string
 
+	// GitHub (019). Id og hemmelighet er global fallback og valgfrie. Base- og
+	// API-URL kan bare overstyres i insecure-modus (eval/test), så en kopiert
+	// .env ikke kan peke innloggingen mot en annen server i prod.
+	GitHubClientID     string
+	GitHubClientSecret string
+	GitHubBaseURL      string
+	GitHubAPIURL       string
+
 	AccessTokenTTL time.Duration
 	AdminTokenTTL  time.Duration
 
@@ -196,6 +204,14 @@ func Load() (*Config, error) {
 	c.GoogleClientSecret = os.Getenv("KAUTH_GOOGLE_CLIENT_SECRET")
 	c.MicrosoftClientID = os.Getenv("KAUTH_MICROSOFT_CLIENT_ID")
 	c.MicrosoftClientSecret = os.Getenv("KAUTH_MICROSOFT_CLIENT_SECRET")
+
+	c.GitHubClientID = os.Getenv("KAUTH_GITHUB_CLIENT_ID")
+	c.GitHubClientSecret = os.Getenv("KAUTH_GITHUB_CLIENT_SECRET")
+	var ghErrs []string
+	c.GitHubBaseURL, ghErrs = githubURL("KAUTH_GITHUB_BASE_URL", "https://github.com", c.OIDCAllowInsecure)
+	errs = append(errs, ghErrs...)
+	c.GitHubAPIURL, ghErrs = githubURL("KAUTH_GITHUB_API_URL", "https://api.github.com", c.OIDCAllowInsecure)
+	errs = append(errs, ghErrs...)
 
 	accessTTL := optional("KAUTH_ACCESS_TOKEN_TTL", "PT15M")
 	d, err := parseISO8601(accessTTL)
@@ -385,4 +401,24 @@ func normalizeCORSOrigin(raw string, allowHTTP bool) (string, error) {
 		return "", fmt.Errorf("%q må være ren origin (scheme://vert[:port], uten sti, query, fragment eller userinfo)", raw)
 	}
 	return strings.ToLower(scheme + "://" + u.Host), nil
+}
+
+// githubURL leser en GitHub-endepunkt-URL. Avvikelse fra default krever
+// allow-insecure fordi klienthemmeligheten og autorisasjonskoden sendes dit.
+// Feilteksten navngir variabelen, men gjengir ikke verdien (kan ha brukerinfo).
+func githubURL(name, def string, allowInsecure bool) (string, []string) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return def, nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") ||
+		u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
+		return def, []string{name + " må være en absolutt http(s)-URL uten query, fragment eller brukerinfo"}
+	}
+	norm := strings.TrimRight(raw, "/")
+	if norm != def && !allowInsecure {
+		return def, []string{name + " kan bare overstyres med KAUTH_OIDC_ALLOW_INSECURE=true"}
+	}
+	return norm, nil
 }

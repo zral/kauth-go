@@ -598,3 +598,21 @@ func TestServiceSave_InvalidateFailure_ShowsWarning(t *testing.T) {
 	assert.NotContains(t, get("?warn=%3Cscript%3Eannet"), "<script>annet")
 	assert.NotContains(t, get(""), msg)
 }
+
+func TestBuildUpdateParams_BevarerGitHubFelt(t *testing.T) {
+	existing := gen.Service{
+		ID:                    "s1",
+		AuthGithub:            1,
+		GithubClientID:        sp("Iv1.abc"),
+		GithubClientSecretEnv: sp("KAUTH_SVC_S1_GH"),
+	}
+	r := httptest.NewRequest(http.MethodPost, "/admin/services/s1", nil)
+	r.PostForm = url.Values{"display_name": {"S1"}}
+	p := buildUpdateParams(r, existing, "2026-01-01T00:00:00Z")
+	require.Equal(t, int64(1), p.AuthGithub)
+	require.Equal(t, "Iv1.abc", *p.GithubClientID)
+	require.Equal(t, "KAUTH_SVC_S1_GH", *p.GithubClientSecretEnv)
+
+	cp := buildCreateParams(r, "s1", "2026-01-01T00:00:00Z")
+	require.Equal(t, int64(0), cp.AuthGithub)
+}

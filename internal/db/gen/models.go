@@ -128,6 +128,9 @@ type Service struct {
 	AutoLink                 int64   `json:"auto_link"`
 	GoogleClientSecretEnv    *string `json:"google_client_secret_env"`
 	MicrosoftClientSecretEnv *string `json:"microsoft_client_secret_env"`
+	AuthGithub               int64   `json:"auth_github"`
+	GithubClientID           *string `json:"github_client_id"`
+	GithubClientSecretEnv    *string `json:"github_client_secret_env"`
 }
 
 type ServiceIdentityProvider struct {
