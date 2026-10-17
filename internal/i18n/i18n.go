@@ -33,6 +33,8 @@ type Strings struct {
 	ContinueWithGitHub    string
 	ContinueWith          string
 	SignInWithEmailLink   string
+	// WhatIs innleder lenken til tjenestens om-side («Hva er Vinkjeller?»).
+	WhatIs string
 
 	// magic-login.html
 	MagicPageTitle  string

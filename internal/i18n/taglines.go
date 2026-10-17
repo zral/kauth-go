@@ -33,9 +33,9 @@ var taglines = map[string]map[string]string{
 		"de": "Einblicke, die Vorsprung schaffen",
 	},
 	"vinkjeller": {
-		"nb": "Din personlige vinsamling",
-		"en": "Your personal wine collection",
-		"de": "Ihre persönliche Weinsammlung",
+		"nb": "Din egen kjellermester",
+		"en": "Your own cellar master",
+		"de": "Ihr eigener Kellermeister",
 	},
 }
 

@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.T.MagicPageTitle}} – {{.Service.DisplayName}}</title>
-    {{$isSpekto := or (eq .Service.ID "spekto") (eq .Service.ID "spekto-dev")}}
+    {{$isSpekto := or (eq .Service.ID "spekto") (eq .Service.ID "spekto-dev")}}{{$isVinkjeller := eq .Service.ID "vinkjeller"}}{{if $isVinkjeller}}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">{{end}}
     {{if $isSpekto}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -161,6 +164,45 @@
         .lang a:hover { color: #0f172a; }
         .lang .active { color: #0f172a; font-weight: 600; text-shadow: 0 1px 3px rgba(255,255,255,.9); }
         .lang .sep { color: #94a3b8; }
+        {{end}}
+        {{- if $isVinkjeller}}
+        /* Vinkjeller (020): samme uttrykk som appens egen startskjerm — bildet i
+           full styrke under en gradient nedenfra, innholdet nederst. Overstyrer
+           det mørke temaet her i stedet for å grene hver regel over. */
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            align-items: flex-end; background: #000;
+        }
+        body::before {
+            {{if .BeforeBgCSS}}background: {{.BeforeBgCSS}};{{end}}
+            opacity: 1; inset: 0; width: auto; height: auto;
+            transform: none; border-radius: 0; filter: none;
+        }
+        body::after {
+            content: ''; position: fixed; inset: 0; pointer-events: none;
+            background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,.4) 50%, rgba(0,0,0,.2));
+        }
+        .card { z-index: 1; padding: 2.5rem 1.5rem 4rem; max-width: 384px; margin: 0 auto; }
+        .logo { margin-bottom: 2rem; }
+        .logo h1 {
+            font-family: 'Space Grotesk', system-ui, sans-serif;
+            font-size: 2.25rem; font-weight: 700; color: #fff; text-shadow: none;
+        }
+        .logo p { color: rgba(255,255,255,.6); font-size: .875rem; margin-top: .5rem; text-shadow: none; }
+        .lang { position: static; margin-top: 1rem; }
+        .lang a { color: rgba(255,255,255,.6); }
+        .lang a:hover, .lang .active { color: rgba(255,255,255,.9); }
+        .lang .sep { color: rgba(255,255,255,.2); }
+        input[type="email"] {
+            font-family: 'DM Sans', sans-serif; border-radius: 12px;
+            background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2);
+        }
+        input::placeholder { color: rgba(255,255,255,.5); }
+        input:focus { border-color: rgba(255,255,255,.5); box-shadow: 0 0 0 3px rgba(155,35,53,.35); }
+        .btn { font-family: 'DM Sans', sans-serif; border-radius: 12px; background: #9b2335; color: #fff; }
+        .btn:hover { background: #b02a3e; }
+        .back { color: rgba(255,255,255,.6); }
+        .back:hover { color: rgba(255,255,255,.9); }
         {{end}}
     </style>
 </head>

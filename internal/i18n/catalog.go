@@ -14,6 +14,7 @@ var catalog = map[string]Strings{
 		ContinueWithGitHub:    "Continue with GitHub",
 		ContinueWith:          "Continue with",
 		SignInWithEmailLink:   "Sign in with an email link",
+		WhatIs:                "What is",
 
 		MagicPageTitle:    "Email sign-in",
 		MagicSubmit:       "Send sign-in link",
@@ -72,6 +73,7 @@ var catalog = map[string]Strings{
 		ContinueWithGitHub:    "Fortsett med GitHub",
 		ContinueWith:          "Fortsett med",
 		SignInWithEmailLink:   "Logg inn med e-postlenke",
+		WhatIs:                "Hva er",
 
 		MagicPageTitle:    "E-postinnlogging",
 		MagicSubmit:       "Send innloggingslenke",
@@ -130,6 +132,7 @@ var catalog = map[string]Strings{
 		ContinueWithGitHub:    "Weiter mit GitHub",
 		ContinueWith:          "Weiter mit",
 		SignInWithEmailLink:   "Mit E-Mail-Link anmelden",
+		WhatIs:                "Was ist",
 
 		MagicPageTitle:    "E-Mail-Anmeldung",
 		MagicSubmit:       "Anmeldelink senden",
