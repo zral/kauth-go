@@ -326,3 +326,21 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - **Felles tidsformat.** Alle tidsstempler i `identity_link_invites` skrives som `%Y-%m-%dT%H:%M:%SZ` (UTC, fast bredde), fordi de sammenlignes som tekst.
 - **Språkvalg (PD13).** Invitasjonsmailen følger admin-requestens `Accept-Language`, siden verken tjenester eller brukere har språkfelt. Bekreftelsessiden har språkvelger, men valget overlever ikke turen via leverandøren.
 - **Ugyldig lenke.** Alle avslag på `GET`/`POST /link/{token}` gir samme 200-side. Sidene sender `Referrer-Policy: no-referrer` og `Cache-Control: no-store`, og tokenet maskeres i request-loggen.
+
+## ADN 19 — Nøkkelring med kid fra env, og klienthemmeligheter som env-referanse (2026-10-17)
+
+**Status:** Under arbeid (017)
+→ Analyse: [doc/features/017_AN_NOKKELRING_HEMMELIGHETER.md](features/017_AN_NOKKELRING_HEMMELIGHETER.md) · Plan: [doc/features/017_PL_NOKKELRING_HEMMELIGHETER.md](features/017_PL_NOKKELRING_HEMMELIGHETER.md)
+
+**Beslutning:**
+1. Alle JWT-er får `kid` i headeren. Uten ny konfig er `kid` `kauth-1` og JWKS har én nøkkel, som før.
+2. Nøkkelringen er current (signerer), next (bare publisert) og previous (publisert og godtatt), lest fra env ved oppstart. JWKS lister current først. Rotasjon er tre restarter etter en dokumentert prosedyre, uten admin-UI og uten nøkler i DB.
+3. `Verify` velger nøkkel etter `kid` blant current og previous, og prøver current og så previous når `kid` mangler. `kid` for next godtas ikke.
+4. Klienthemmeligheter per tjeneste lagres som navn på en env-variabel med prefikset `KAUTH_SVC_`, samme mønster som `KAUTH_IDP_` i ADN 17. En satt, men tom variabel slår ut bare den metoden for den tjenesten, uten fallback til global hemmelighet.
+5. Ingen kryptering i hvile: den ville innført en hovednøkkel som kan gå tapt, på en boks der `.env` ligger ved siden av DB-en uansett.
+
+**Begrunnelse:** Rotasjon i dag gjør alle tokens ugyldige hos alle tjenester samtidig. Klienten pov bruker `keys[0]` når `kid` mangler og henter ikke JWKS på nytt ved ukjent `kid`, så `kid` må komme først, current må stå først, og next må være publisert lenger enn klientenes cache før den tas i bruk.
+
+**Konsekvens:**
+- `.env` holder flere hemmeligheter; DB og backup holder ingen klienthemmeligheter etter flyttingen.
+- De gamle kolonnene står tomme til 018.
