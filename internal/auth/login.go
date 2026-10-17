@@ -45,6 +45,9 @@ type LoginPageData struct {
 	// Providers er tjenestens lastede generiske OIDC-leverandører i
 	// tilordningsrekkefølge. Tom liste gir samme side som før 015.
 	Providers []LoginProvider
+	// GitHubEnabled viser GitHub-knappen (019). Egen bool slik at malen ikke
+	// trenger å kjenne kolonnen, og siden er uendret når den er false.
+	GitHubEnabled bool
 }
 
 // buildBgCSS beregner CSS background-verdier for BodyBgCSS og BeforeBgCSS.
@@ -177,6 +180,7 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 
 		PasswordLoginEnabled: h.PasswordLoginEnabled,
 		Providers:            h.loginProviders(svc.ID),
+		GitHubEnabled:        svc.AuthGithub == 1,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

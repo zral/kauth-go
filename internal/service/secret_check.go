@@ -49,5 +49,16 @@ func (r *Registry) CheckClientSecrets(getenv func(string) string) {
 				slog.Warn("tjeneste: klienthemmelighet i klartekst i DB", "service", s.ID, "method", m.name)
 			}
 		}
+		// Uten egen referanse faller GitHub tilbake på den globale verdien. Er
+		// den også tom, feiler metoden for tjenesten først ved første
+		// innloggingsforsøk, så varselet gir driften beskjed på forhånd.
+		if s.AuthGithub == 1 {
+			if (s.GithubClientSecretEnv == nil || *s.GithubClientSecretEnv == "") && strings.TrimSpace(getenv("KAUTH_GITHUB_CLIENT_SECRET")) == "" {
+				slog.Warn("tjeneste: klienthemmelighet mangler", "service", s.ID, "method", "github", "env", "KAUTH_GITHUB_CLIENT_SECRET")
+			}
+			if (s.GithubClientID == nil || *s.GithubClientID == "") && getenv("KAUTH_GITHUB_CLIENT_ID") == "" {
+				slog.Warn("tjeneste: klient-ID mangler", "service", s.ID, "method", "github", "env", "KAUTH_GITHUB_CLIENT_ID")
+			}
+		}
 	}
 }

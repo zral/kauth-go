@@ -49,8 +49,9 @@ type linkPolicy struct {
 	// EmailUntrusted er invertert i forhold til PD7 med vilje: nullverdien
 	// betyr tillit fordi admin-stiens linkPolicy{} og alle eksisterende
 	// kallere (Google, Microsoft, tester) er bygget på det. Bare generisk
-	// OIDC setter feltet, og den går alltid via finishWithPolicy; finish uten
-	// policy avviser oidc (fail-closed), så glemt policy aldri gir tillit.
+	// OIDC og GitHub setter feltet, og de går alltid via finishWithPolicy;
+	// finish uten policy avviser begge (fail-closed), så glemt policy aldri
+	// gir tillit.
 	EmailUntrusted          bool
 	DefaultRole, DefaultOrg string
 }

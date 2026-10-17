@@ -69,3 +69,17 @@ func TestGenericRoutesMounted_NotChi404(t *testing.T) {
 	w := f.serve(req)
 	assert.NotEqual(t, http.StatusNotFound, w.Code)
 }
+
+func TestLoginTemplate_GitHubBeforeProviders(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+	data := testPageData(t, "light", "nb", "/login?service=test")
+	data.Providers = []LoginProvider{{"acme", "Acme SSO"}}
+	data.GitHubEnabled = true
+	var out strings.Builder
+	require.NoError(t, tmpl.ExecuteTemplate(&out, "login.html", data))
+	gh := strings.Index(out.String(), "/github-login")
+	idp := strings.Index(out.String(), "/idp/")
+	require.True(t, gh > 0 && gh < idp, "GitHub før generiske leverandører")
+	require.Contains(t, out.String(), "getElementById('github-btn')")
+}

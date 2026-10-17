@@ -11,6 +11,7 @@ var catalog = map[string]Strings{
 
 		ContinueWithGoogle:    "Continue with Google",
 		ContinueWithMicrosoft: "Continue with Microsoft",
+		ContinueWithGitHub:    "Continue with GitHub",
 		ContinueWith:          "Continue with",
 		SignInWithEmailLink:   "Sign in with an email link",
 
@@ -68,6 +69,7 @@ var catalog = map[string]Strings{
 
 		ContinueWithGoogle:    "Fortsett med Google",
 		ContinueWithMicrosoft: "Fortsett med Microsoft",
+		ContinueWithGitHub:    "Fortsett med GitHub",
 		ContinueWith:          "Fortsett med",
 		SignInWithEmailLink:   "Logg inn med e-postlenke",
 
@@ -125,6 +127,7 @@ var catalog = map[string]Strings{
 
 		ContinueWithGoogle:    "Mit Google fortfahren",
 		ContinueWithMicrosoft: "Mit Microsoft fortfahren",
+		ContinueWithGitHub:    "Weiter mit GitHub",
 		ContinueWith:          "Weiter mit",
 		SignInWithEmailLink:   "Mit E-Mail-Link anmelden",
 

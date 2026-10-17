@@ -91,6 +91,7 @@ func main() {
 	adminSessions := admin.NewSessionStarter(issuer, auditSvc, cfg.AdminTokenTTL)
 	googleH := auth.NewGoogleHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc, adminSessions)
 	msH := auth.NewMicrosoftHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc)
+	ghH := auth.NewGitHubHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, auditSvc)
 	linkH := auth.NewLinkHandlers(*cfg, sqlDB, queries, registry, idps, auditSvc, tmpl, mailSvc)
 	genericH := auth.NewGenericOIDCHandlers(*cfg, sqlDB, queries, issuer, refreshSvc, registry, idps, auditSvc).WithLinks(linkH)
 	passwordH := auth.NewPasswordHandlers(queries, issuer, refreshSvc, registry, auditSvc, cfg.PasswordLoginEnabled).WithCORSOrigins(cfg.CORSOrigins)
@@ -140,6 +141,10 @@ func main() {
 	r.Get("/ms-oidc-login", msH.InitiateLogin)
 	r.Get("/ms-social-login", msH.InitiateLogin)
 	r.Get("/ms-callback", msH.HandleCallback)
+
+	// ── GitHub (019) ──────────────────────────────────────────────────────────
+	r.Get("/github-login", ghH.InitiateLogin)
+	r.Get("/github-callback", ghH.HandleCallback)
 
 	// ── Generisk OIDC (015) ───────────────────────────────────────────────────
 	r.Get("/idp/{slug}/login", genericH.HandleLogin)

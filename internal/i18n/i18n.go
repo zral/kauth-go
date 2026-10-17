@@ -30,6 +30,7 @@ type Strings struct {
 	// login.html
 	ContinueWithGoogle    string
 	ContinueWithMicrosoft string
+	ContinueWithGitHub    string
 	ContinueWith          string
 	SignInWithEmailLink   string
 

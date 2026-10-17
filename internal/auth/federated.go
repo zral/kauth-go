@@ -9,8 +9,8 @@ import (
 	"github.com/zral/kauth-go/internal/db/gen"
 )
 
-// federatedProvider er det som skiller Google og Microsoft i den felles
-// stien etter at leverandøren har verifisert id_token. Bevisst en struct og
+// federatedProvider er det som skiller leverandørene (Google, Microsoft,
+// generisk OIDC, GitHub) i den felles stien etter at identiteten er verifisert. Bevisst en struct og
 // ikke et interface: leverandørene deler ingen flyt, bare avslutningen.
 type federatedProvider struct {
 	login        loginMethod
@@ -77,10 +77,10 @@ func (f *federatedLogin) reject(w http.ResponseWriter, r *http.Request, p federa
 // identitet og utsteder tokens. Policyavslag og manglende konto gir
 // access_denied uten å si hvilket; alt annet som feiler gir login_failed.
 func (f *federatedLogin) finish(w http.ResponseWriter, r *http.Request, p federatedProvider, svc *gen.Service, ext externalIdentity) {
-	// Fail-closed: generisk OIDC må alltid avgjøre e-posttillit selv via
-	// finishWithPolicy. policyFor gir tillit, så et kall hit ville gitt stille
-	// tillit til en leverandør som ikke har fått det.
-	if p.login.AuthMethod == loginOIDC.AuthMethod {
+	// Fail-closed: generisk OIDC og GitHub må alltid avgjøre e-posttillit selv
+	// via finishWithPolicy. policyFor gir tillit, så et kall hit ville gitt
+	// stille tillit til en leverandør som ikke har fått det.
+	if p.login.AuthMethod == loginOIDC.AuthMethod || p.login.AuthMethod == loginGitHub.AuthMethod {
 		slog.Error("oidc: finish kalt uten eksplisitt policy")
 		f.auditRejected(r, p, svc.ID, rejection{Email: ext.Email, Reason: "internal"})
 		redirectLoginError(w, r, svc.ID, errCodeLoginFailed)
