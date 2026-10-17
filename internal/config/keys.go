@@ -99,6 +99,16 @@ func (c *Config) loadKeyRing() []string {
 	if c.PreviousKID, k = load("PREVIOUS"); k != nil && c.PreviousKID != "" {
 		c.PreviousKey = k
 	}
+	same := func(a, b *rsa.PublicKey) bool { return a != nil && b != nil && a.E == b.E && a.N.Cmp(b.N) == 0 }
+	if same(c.NextKey, c.PublicKey) {
+		errs = append(errs, "KAUTH_NEXT_PUBLIC_KEY har samme nøkkelmateriale som KAUTH_PUBLIC_KEY")
+	}
+	if same(c.PreviousKey, c.PublicKey) {
+		errs = append(errs, "KAUTH_PREVIOUS_PUBLIC_KEY har samme nøkkelmateriale som KAUTH_PUBLIC_KEY")
+	}
+	if same(c.NextKey, c.PreviousKey) {
+		errs = append(errs, "KAUTH_NEXT_PUBLIC_KEY og KAUTH_PREVIOUS_PUBLIC_KEY har samme nøkkelmateriale")
+	}
 	// Ikke la en halvkonfigurert ring slippe videre som om ingenting var satt.
 	if len(errs) > 0 {
 		c.NextKey, c.PreviousKey = nil, nil

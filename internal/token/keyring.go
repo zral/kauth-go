@@ -61,6 +61,10 @@ func checkPub(name, kid string, pub *rsa.PublicKey) error {
 	return nil
 }
 
+func sameKey(a, b *rsa.PublicKey) bool {
+	return a.E == b.E && a.N.Cmp(b.N) == 0
+}
+
 // Validate sjekker format, styrke, unike kid-er og at current-nøklene hører sammen.
 func (r KeyRing) Validate() error {
 	c := r.Current
@@ -88,6 +92,12 @@ func (r KeyRing) Validate() error {
 			return fmt.Errorf("%s: kid %q er ikke unik", e.name, e.k.KID)
 		}
 		seen[e.k.KID] = true
+		if sameKey(e.k.Public, c.Public) {
+			return fmt.Errorf("%s: samme nøkkelmateriale som current", e.name)
+		}
+	}
+	if r.Next != nil && r.Previous != nil && sameKey(r.Next.Public, r.Previous.Public) {
+		return errors.New("next og previous: samme nøkkelmateriale")
 	}
 	return nil
 }

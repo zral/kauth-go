@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"slices"
@@ -46,6 +47,15 @@ func NewIssuer(ring KeyRing, issuer string, defaultTTL, adminTTL time.Duration) 
 	if err := ring.Validate(); err != nil {
 		return nil, fmt.Errorf("nøkkelring: %w", err)
 	}
+	next, prev := "", ""
+	if ring.Next != nil {
+		next = ring.Next.KID
+	}
+	if ring.Previous != nil {
+		prev = ring.Previous.KID
+	}
+	// Bare kid-er: nøkkelmateriale skal aldri i loggen.
+	slog.Info("token: nøkkelring lastet", "current", ring.Current.KID, "next", next, "previous", prev)
 	return newIssuer(ring, issuer, defaultTTL, adminTTL)
 }
 

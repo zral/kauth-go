@@ -75,6 +75,13 @@ func TestLoad_KeyRing(t *testing.T) {
 			"KAUTH_PREVIOUS_PUBLIC_KEY_PEM": b64(pubPEM(t, &prev.PublicKey)), "KAUTH_PREVIOUS_PUBLIC_KEY_PATH": "/x.pem", "KAUTH_PREVIOUS_KID": "p"}, "KAUTH_PREVIOUS_PUBLIC_KEY_PEM og KAUTH_PREVIOUS_PUBLIC_KEY_PATH"},
 		{"current privat både PEM og PATH", map[string]string{"KAUTH_PRIVATE_KEY_PATH": "/x.pem"}, "KAUTH_PRIVATE_KEY_PEM og KAUTH_PRIVATE_KEY_PATH"},
 		{"current offentlig både PEM og PATH", map[string]string{"KAUTH_PUBLIC_KEY_PATH": "/x.pem"}, "KAUTH_PUBLIC_KEY_PEM og KAUTH_PUBLIC_KEY_PATH"},
+		{"next lik current", map[string]string{
+			"KAUTH_NEXT_PUBLIC_KEY_PEM": "$CURRENT", "KAUTH_NEXT_KID": "n"}, "KAUTH_NEXT_PUBLIC_KEY har samme nøkkelmateriale"},
+		{"previous lik current", map[string]string{
+			"KAUTH_PREVIOUS_PUBLIC_KEY_PEM": "$CURRENT", "KAUTH_PREVIOUS_KID": "p"}, "KAUTH_PREVIOUS_PUBLIC_KEY har samme nøkkelmateriale"},
+		{"next lik previous", map[string]string{
+			"KAUTH_NEXT_PUBLIC_KEY_PEM": b64(pubPEM(t, &next.PublicKey)), "KAUTH_NEXT_KID": "n",
+			"KAUTH_PREVIOUS_PUBLIC_KEY_PEM": b64(pubPEM(t, &next.PublicKey)), "KAUTH_PREVIOUS_KID": "p"}, "KAUTH_NEXT_PUBLIC_KEY og KAUTH_PREVIOUS_PUBLIC_KEY har samme"},
 		{"svak current", map[string]string{
 			"KAUTH_PRIVATE_KEY_PEM": b64(string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(weak)}))),
 			"KAUTH_PUBLIC_KEY_PEM":  b64(pubPEM(t, &weak.PublicKey))}, "KAUTH_PRIVATE_KEY"},
@@ -83,6 +90,9 @@ func TestLoad_KeyRing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			setMinimalEnv(t)
 			for k, v := range tc.env {
+				if v == "$CURRENT" {
+					v = os.Getenv("KAUTH_PUBLIC_KEY_PEM")
+				}
 				t.Setenv(k, v)
 			}
 			c, err := Load()

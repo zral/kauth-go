@@ -1,6 +1,7 @@
 package token_test
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
@@ -10,6 +11,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"log/slog"
 	"math/big"
 	"net/http/httptest"
 	"strings"
@@ -90,6 +92,9 @@ func TestKeyRing_Validate(t *testing.T) {
 		{"ugyldig next-kid", func(r *token.KeyRing) { r.Next = pubOf("a b", other) }, false},
 		{"next-kid lik current", func(r *token.KeyRing) { r.Next = pubOf("kauth-1", other) }, false},
 		{"previous-kid lik next", func(r *token.KeyRing) { r.Next = pubOf("x", other); r.Previous = pubOf("x", third) }, false},
+		{"next lik current", func(r *token.KeyRing) { r.Next = pubOf("n", cur) }, false},
+		{"previous lik current", func(r *token.KeyRing) { r.Previous = pubOf("p", cur) }, false},
+		{"next lik previous", func(r *token.KeyRing) { r.Next = pubOf("n", other); r.Previous = pubOf("p", other) }, false},
 		{"svak next", func(r *token.KeyRing) { r.Next = pubOf("n", weak) }, false},
 		{"svak previous", func(r *token.KeyRing) { r.Previous = pubOf("p", weak) }, false},
 		{"offentlig current tilhører ikke privat", func(r *token.KeyRing) { r.Current.Public = &other.PublicKey }, false},
@@ -323,6 +328,30 @@ func TestVerify_RejectsPSAndHMACWithPublicKeyAsSecret(t *testing.T) {
 	for name, tok := range map[string]string{"PS256": psTok, "HS256 med offentlig PEM som hemmelighet": hsTok} {
 		if _, err := iss.Verify(tok, token.ExpectAccess); err == nil {
 			t.Errorf("%s ble godtatt", name)
+		}
+	}
+}
+
+func TestNewIssuer_LogsKidsNotKeyMaterial(t *testing.T) {
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	cur, next := genKey(t), genKey(t)
+	ring := token.NewSingleKeyRing(cur)
+	ring.Next = pubOf("kauth-2", next)
+	ringIssuerOf(t, ring)
+
+	out := buf.String()
+	for _, want := range []string{"nøkkelring lastet", "current=kauth-1", "next=kauth-2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("loggen mangler %q: %s", want, out)
+		}
+	}
+	for _, secret := range []string{cur.N.String(), base64.RawURLEncoding.EncodeToString(cur.N.Bytes()), next.N.String()[:40]} {
+		if strings.Contains(out, secret) {
+			t.Error("loggen inneholder nøkkelmateriale")
 		}
 	}
 }
