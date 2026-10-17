@@ -47,6 +47,21 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
 
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: E2E (innlogging, kode, token, refresh, gjenbruk)
+        run: CGO_ENABLED=0 go test -tags e2e ./internal/e2e/... -count=1
+
   fuzz:
     # Bare på push: fuzzing er ikke deterministisk og skal ikke blokkere PR-er.
     if: github.event_name != 'pull_request'
@@ -73,3 +88,9 @@ jobs:
         run: CGO_ENABLED=0 go test -run='^$' -fuzz='^FuzzDispatchRedirectTarget$' -fuzztime=30s ./internal/auth
       - name: FuzzMaskPath
         run: CGO_ENABLED=0 go test -run='^$' -fuzz='^FuzzMaskPath$' -fuzztime=30s ./internal/auth
+      - name: Lagre fuzz-korpus ved feil
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-korpus
+          path: "**/testdata/fuzz/**"
