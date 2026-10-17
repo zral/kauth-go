@@ -1,2 +1,5 @@
 go test fuzz v1
-string("/Magic-Login/X")
+string("/./x")
+byte(3)
+byte(255)
+string("tok_en-value")

@@ -1,2 +1,5 @@
 go test fuzz v1
-string("//magic-login/X")
+string("/a/..")
+byte(2)
+byte(5)
+string("0123456789ab")

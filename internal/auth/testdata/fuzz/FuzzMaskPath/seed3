@@ -1,2 +1,5 @@
 go test fuzz v1
-string("/./magic-login/X/extra")
+string("..")
+byte(4)
+byte(1)
+string("Zz9Zz9Zz9Zz9")

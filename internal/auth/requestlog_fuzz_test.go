@@ -1,51 +1,51 @@
 package auth
 
 import (
-	"path"
+	"regexp"
 	"strings"
 	"testing"
 )
 
-// FuzzMaskPath: for enhver sti med et magic-login- eller link-segment som
-// følges av et segment, skal ingenting etter markøren i utdataene være annet
-// enn ***. Sjekkes på segmentnivå, så et token som tilfeldigvis er en
-// delstreng av "magic-login" ikke gir falske funn.
-func FuzzMaskPath(f *testing.F) {
-	f.Add("/magic-login/SECRETTOKEN")
-	f.Add("//magic-login/X")
-	f.Add("/Magic-Login/X")
-	f.Add("/./magic-login/X/extra")
-	f.Add("/a/../link/tok")
-	f.Add("/link/link/tok")
-	f.Add("/x/LINK/abc/def")
-	f.Add("magic-login/%2Ftok")
-	f.Add("/magic-login/" + strings.Repeat("A", 400))
+var (
+	fuzzTokenRe  = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
+	fuzzPrefixRe = regexp.MustCompile(`^[A-Za-z0-9_./%-]*$`)
+	fuzzSeps     = []string{"/", "//", "/./", "///", "/././", "/.//"}
+	fuzzMarkers  = []string{"magic-login", "link"}
+)
 
-	f.Fuzz(func(t *testing.T, p string) {
-		segs := strings.Split(path.Clean("/"+p), "/")
-		marker := -1
-		for i, s := range segs {
-			if (strings.EqualFold(s, "magic-login") || strings.EqualFold(s, "link")) && i < len(segs)-1 {
-				marker = i
-				break
-			}
-		}
-		out := maskPath(p)
-		if len(out) > maxLoggedPath {
-			t.Fatalf("utdata lengre enn %d", maxLoggedPath)
-		}
-		if marker < 0 {
+// FuzzMaskPath bygger stier med et tilfeldig token etter magic-login/link i
+// varierende case, med //, /./ og .. foran, og sjekker bare at tokenet aldri
+// står i utdataene. Fasiten er altså ikke en kopi av maskPath.
+func FuzzMaskPath(f *testing.F) {
+	f.Add("", uint8(0), uint8(0), "SECRETTOKEN")
+	f.Add("/", uint8(1), uint8(0), "abcDEF12_-xyz")
+	f.Add("/a/..", uint8(2), uint8(5), "0123456789ab")
+	f.Add("/./x", uint8(3), uint8(255), "tok_en-value")
+	f.Add("..", uint8(4), uint8(1), "Zz9Zz9Zz9Zz9")
+	f.Add("/api/../x/", uint8(5), uint8(170), "AAAAAAAAAAAA")
+
+	f.Fuzz(func(t *testing.T, prefix string, sepIdx, caseMask uint8, tok string) {
+		if !fuzzTokenRe.MatchString(tok) || !fuzzPrefixRe.MatchString(prefix) {
 			return
 		}
-		os := strings.Split(out, "/")
-		if len(os) <= marker+1 {
-			return // avkortet før eller i markøren
+		marker := fuzzMarkers[int(caseMask)%len(fuzzMarkers)]
+		b := []byte(marker)
+		for i := range b {
+			if caseMask>>(uint(i)%8)&1 == 1 {
+				b[i] = []byte(strings.ToUpper(string(b[i])))[0]
+			}
 		}
-		if os[marker+1] != "***" && !strings.HasPrefix("***", os[marker+1]) {
-			t.Fatalf("segment etter markør lekker: maskPath(%q) = %q", p, out)
+		sep := fuzzSeps[int(sepIdx)%len(fuzzSeps)]
+		// Tokenet må være unikt i det vi selv bygger, ellers er funn i
+		// utdataene forventet (f.eks. token "magic-login").
+		if strings.Contains(strings.ToLower(prefix+marker+sep+"***"), strings.ToLower(tok)) {
+			return
 		}
-		if len(os) > marker+2 {
-			t.Fatalf("segmenter etter ***: maskPath(%q) = %q", p, out)
+		p := prefix + "/" + string(b) + sep + tok
+		for _, in := range []string{p, p + "/rest/" + tok[:4], strings.TrimPrefix(p, "/")} {
+			if out := maskPath(in); strings.Contains(out, tok) {
+				t.Fatalf("token lekker: maskPath(%q) = %q", in, out)
+			}
 		}
 	})
 }

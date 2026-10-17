@@ -1,2 +1,4 @@
 go test fuzz v1
 string("%22https%3A%2F%2Fapp.spekto.live%2Fcb%22")
+byte(2)
+string("y")

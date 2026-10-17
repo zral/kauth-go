@@ -1,4 +1,4 @@
 go test fuzz v1
-string("https://app.spekto.live/cb")
-byte(4)
-string("evil.example")
+string("https://evil.example/cb")
+byte(0)
+string("user")

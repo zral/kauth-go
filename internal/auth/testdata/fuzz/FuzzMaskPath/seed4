@@ -1,2 +1,5 @@
 go test fuzz v1
-string("/a/../LINK/tok")
+string("/api/../x/")
+byte(5)
+byte(170)
+string("AAAAAAAAAAAA")

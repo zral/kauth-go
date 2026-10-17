@@ -1,2 +1,5 @@
 go test fuzz v1
-string("/magic-login/SECRET")
+string("")
+byte(0)
+byte(0)
+string("SECRETTOKEN")
