@@ -14,6 +14,8 @@ We aim to acknowledge receipt within 72 hours. Actual response and fix time depe
 
 kauth has no formal releases yet. `master` is the only supported branch, and fixes land there. If you're running an older commit, move to a recent `master` for security updates.
 
+Every push to `master` and every pull request runs CI on GitHub Actions: gofmt, `go vet`, tests, tests with `-race`, `govulncheck` and an end-to-end test of the sign-in flow. Pushes to `master` (and manual runs) also run short fuzz tests of the security boundaries (redirect_uri matching, state parsing, `/dispatch` targets, log masking). The toolchain is Go 1.26.9 (`toolchain go1.26.9` in `go.mod`); Go 1.25 is no longer supported upstream and had 32 reachable standard-library vulnerabilities.
+
 ## In scope
 
 - Authentication and authorisation flows (OIDC, magic link, password, refresh-token rotation)

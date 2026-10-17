@@ -4,6 +4,8 @@
     <p><a href="README.md">English</a> · <strong>Norsk</strong></p>
 </div>
 
+[![CI](https://github.com/zral/kauth-go/actions/workflows/ci.yml/badge.svg)](https://github.com/zral/kauth-go/actions/workflows/ci.yml)
+
 ![Login-side](doc/login-hero.png)
 
 OIDC-identitetsprovider i Go. Tanken er at små organisasjoner skal slippe å sette opp en Keycloak eller Zitadel for å få sentral innlogging på et par tjenester.
@@ -57,6 +59,19 @@ openssl rsa -pubout -in secrets/privateKey.pem -out secrets/publicKey.pem
 Migrasjoner kjører automatisk ved oppstart.
 
 Innloggingssiden viser bare kjente feilkoder (`login_failed`, `access_denied`) som generiske meldinger; intern feiltekst vises aldri.
+
+## Tester, CI og restore-sjekk
+
+```bash
+make ci            # gofmt, go vet og tester, uten nett og uten -race (lokal speiling av CI)
+make fuzz          # 10 s per fuzzmål (CI kjører 30 s)
+make restore-test BACKUP=/sti/til/kauth-backup.db
+go test -tags e2e ./internal/e2e/...   # innlogging, kode, token, refresh-gjenbruk, bare loopback
+```
+
+- CI (`.github/workflows/ci.yml`) kjører på push til `master`, på pull requests og ved manuell kjøring. Fuzz kjører på alt unntatt pull requests. `-race` og `govulncheck` kjøres bare i CI, siden ThreadSanitizer ikke virker på Raspberry Pi.
+- `restore-test` restaurerer en backup til en midlertidig mappe, starter kauth på port 8097 og sjekker discovery, JWKS, `/login` og radantall. Den nekter prod-databasen og port 8083, og rydder etter seg.
+- `go.mod` har `toolchain go1.26.9`. Go 1.25 er ikke støttet og har nåbare sårbarheter i standardbiblioteket. Med `GOTOOLCHAIN=local` og eldre Go ignoreres linjen, og du bygger med sårbart bibliotek.
 
 ## Onboarde en ny tjeneste
 

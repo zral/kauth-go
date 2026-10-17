@@ -14,6 +14,7 @@ En komplett oversikt over hva kauth gjør og hvordan. README-en gir overordnet m
 - [Cross-host login-flyt](#cross-host-login-flyt)
 - [Audit-logg](#audit-logg)
 - [Bakgrunnsjobber](#bakgrunnsjobber)
+- [CI, fuzzing, E2E og restore-test](#ci-fuzzing-e2e-og-restore-test)
 - [Endepunkter](#endepunkter)
 - [Datamodell](#datamodell)
 - [Drift og kjøremiljø](#drift-og-kjøremiljø)
@@ -586,6 +587,41 @@ Goroutiner med 1 times tick, kjører umiddelbart ved oppstart:
 - **Koblingsinvitasjoner** — sletter rader i `identity_link_invites` som utløp for mer enn 7 døgn siden (brukte og ubrukte)
 
 Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
+
+## CI, fuzzing, E2E og restore-test
+
+Levert i 018 ([ADN 20](ARCHITECTURE_DESIGN_NOTES.md)). Workflowen ligger i `.github/workflows/ci.yml`; `make ci`, `make fuzz` og `make restore-test` speiler den lokalt.
+
+### CI
+
+- Kjører på push til `master`, på pull requests og ved `workflow_dispatch`. Jobbene `test`, `e2e` og `fuzz` går på GitHub-hostede ubuntu-runnere.
+- `permissions: contents: read`, ingen secrets, ingen deploy, ingen self-hosted runner. Actions er pinnet på full commit-SHA. Repoet er offentlig, og prod er samme boks som utviklingsmaskinen.
+- `test`: `gofmt -l` (må være tom), `go vet`, `CGO_ENABLED=0 go test` (som i prod), `go test -race` (CGO på) og `govulncheck` (pinnet versjon, installert med `go install`, ikke en modul i `go.mod`).
+- `go.mod` har `toolchain go1.26.9` etter at govulncheck fant 32 nåbare sårbarheter i standardbiblioteket med Go 1.25.7. `GOTOOLCHAIN=local` med eldre Go ignorerer linjen.
+- `make ci` = fmt, vet og test uten nett og uten `-race` (ThreadSanitizer virker ikke på Pi-en).
+
+### Fuzzing
+
+Seks native Go-fuzzmål med egenskapssjekker, ikke bare panic-sjekk:
+
+| Mål | Pakke | Egenskap |
+|---|---|---|
+| `FuzzIsAllowedCallback` | `internal/service` | En `redirect_uri` godtas bare ved eksakt treff mot registrert callback |
+| `FuzzResolveRedirectURI` | `internal/service` | Userinfo, port, `\`, tab og `%2e` endrer aldri valgt tjeneste |
+| `FuzzParseState` | `internal/auth` | Endret signatur eller payload godtas aldri |
+| `FuzzStateRoundTrip` | `internal/auth` | Signert state kan leses tilbake uendret |
+| `FuzzDispatchRedirectTarget` | `internal/auth` | `/dispatch`-målet er avvist eller eksakt en registrert callback (ingen intern-sti-gren) |
+| `FuzzMaskPath` | `internal/auth` | Magic- og koblingstokens finnes aldri i den maskerte loggstien |
+
+Korpuset ligger i `testdata/fuzz/`. CI kjører 30 s per mål på alt unntatt pull requests (også ved `workflow_dispatch`), og laster opp korpuset som artefakt ved feil. `make fuzz` kjører 10 s per mål lokalt. Fuzzingen ga ingen funn i 018.
+
+### E2E
+
+`go test -tags e2e ./internal/e2e/...` kjører innlogging mot en fake OIDC-leverandør (`internal/oidctest`), autorisasjonskode, `/token`, refresh-rotasjon og gjenbruksdeteksjon (familien revokeres). Alt går i prosess på loopback, uten nett. `main.go` eksponerer ikke ruteren, så testen bygger en egen ruter med de samme handlerne. Den kan derfor avvike fra `main.go` (se BACKLOG).
+
+### Restore-test
+
+`scripts/restore-test.sh <backup.db> [port]` (`make restore-test BACKUP=<fil>`) kopierer backupen med `sqlite3 .backup` til en `mktemp`-mappe, genererer midlertidige nøkler, starter kauth med `env -i` (uten `.env`) på port 8097 og sjekker discovery, JWKS, `/login` og radantall i `users`, `services` og `user_identities` mot kilden. Vaktene: nekter prod-DB-stien, filer i `data/` og port 8083; åpner kilden `-readonly`; krever `integrity_check = ok`. Skriver bare antall og statuskoder. Mappen og prosessen fjernes til slutt. Kjørt mot nattbackupen 2026-10-17: alle sjekker OK, migrasjon v13 → v14 ved oppstart.
 
 ## Endepunkter
 

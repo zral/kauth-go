@@ -357,7 +357,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 20 — CI på GitHub Actions uten tilgang til prod, fuzzing av sikkerhetsgrensene og restore-test (2026-10-17)
 
-**Status:** Under arbeid (018)
+**Status:** Implementert (2026-10-17, 018)
 → Analyse: [doc/features/018_AN_CI_FUZZ_RESTORE.md](features/018_AN_CI_FUZZ_RESTORE.md) · Plan: [doc/features/018_PL_CI_FUZZ_RESTORE.md](features/018_PL_CI_FUZZ_RESTORE.md)
 
 **Beslutning:**
@@ -368,3 +368,12 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 5. Ekstern revisjon og `v1.0.0` er eierens beslutninger; repoet får en revisjonspakke og et CHANGELOG-utkast.
 
 **Konsekvens:** DSF-eval og holdout-scenarier forblir private og kjøres ikke i offentlig CI.
+
+**Presiseringer fra implementeringen:**
+- **Toolchain.** govulncheck fant 32 nåbare sårbarheter i standardbiblioteket med go1.25.7. `go.mod` har `toolchain go1.26.9` (språkversjon uendret). `GOTOOLCHAIN=local` med eldre Go ignorerer linjen. Prod-binæren får rettet stdlib først ved neste deploy.
+- **Utløsere.** Workflowen har også `workflow_dispatch`, og fuzz-jobben kjører på alt unntatt `pull_request`, så den kan prøves på en branch. Hver master-commit får et fullført resultat (`cancel-in-progress` bare på PR).
+- **Orakler.** To fuzzorakler gjentok koden de testet og kunne ikke feile; de ble skrevet om til faste lister og «tokenet finnes aldri i loggstien».
+- **Dispatch.** `dispatch.go` har ingen intern-sti-gren, så målet må være en eksakt registrert callback. Det er strengere enn analysen la til grunn.
+- **Restore-testens vakter.** Nekter prod-DB-stien (også relativ), filer i `data/` og port 8083. Kilden åpnes `-readonly` og kopieres med `.backup`. Kjøres med `env -i`, uten `.env`.
+- **E2E.** `main.go` eksponerer ikke ruteren, så testen bygger en egen. Risiko: den kan avvike fra `main.go`. Tiltak står i BACKLOG (trekk ut rutebyggingen).
+- **Hemmeligheter i repoet.** `.gitignore` dekker `.env.*` (unntatt `.env.example`) etter at en `.env`-backup lå uignorert i repo-roten.

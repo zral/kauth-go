@@ -14,6 +14,8 @@ Vi prøver å bekrefte mottak innen 72 timer. Reell respons og fiks avhenger av 
 
 kauth har ingen formelle versjoner ennå. `master` er den eneste støttede grenen, og fikser kommer dit. Hvis du kjører fra en eldre commit, ta nyere `master` for sikkerhetsoppdateringer.
 
+Hver push til `master` og hver pull request kjører CI på GitHub Actions: gofmt, `go vet`, tester, tester med `-race`, `govulncheck` og en ende-til-ende-test av innloggingen. Push til `master` (og manuell kjøring) kjører i tillegg korte fuzztester av sikkerhetsgrensene (redirect_uri-matching, state-parsing, `/dispatch`-mål, loggmaskering). Toolchain er Go 1.26.9 (`toolchain go1.26.9` i `go.mod`); Go 1.25 er ikke lenger støttet oppstrøms og hadde 32 nåbare sårbarheter i standardbiblioteket.
+
 ## Hva som er i scope
 
 - Autentiserings- og autoriseringsflyter (OIDC, magic-link, passord, refresh-token-rotasjon)

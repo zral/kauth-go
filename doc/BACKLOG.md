@@ -43,6 +43,11 @@ Sist gjennomgått: 2026-10-17
 | Legacy token-i-URL av-bryter per tjeneste (B3) | Står i ROADMAP Fase 1, men ble ikke tatt i 008–010. Av som default for nye tjenester. Fjernes når alle klienter er på code+PKCE | ROADMAP M1, B3 |
 | CORS-allowlist per tjeneste, avvis cookie-refresh uten `Origin` | Står i ROADMAP Fase 1. I dag er allowlisten global (`KAUTH_CORS_ORIGINS`). Origin-sjekken før rotasjon finnes, men mot den globale listen | ROADMAP H7 |
 | Fase 5–6 | Fase 4 (015) er ferdig. Fase 5 er neste | ROADMAP §5 |
+| Oppgrader `golang.org/x/crypto` v0.53.0 → v0.56.0 | govulncheck melder 4 sårbarheter som koden ikke når. Oppgraderingen krever en egen `go.mod`-endring og dependency guard (018 F1) | ADN 20 |
+| Nivå 2 i `/dispatch` bruker `callback_url` rått | En kommaliste i feltet ville gitt et ugyldig mål. Ingen tjeneste i prod har kommaliste (sjekket). Se også raden om validering av `callback_url` (018 F2, security S1) | ROADMAP L3 |
+| Trekk rutebyggingen ut av `main.go` | E2E-testen bygger sin egen ruter, så den kan avvike fra `main.go`. Skal flyttes til en funksjon begge bruker (018 F4) | ADN 20 |
+| Ekstern revisjon | Bestilles når Lars vil. Pakke: [AUDIT_SCOPE.md](AUDIT_SCOPE.md) | ROADMAP Fase 6 |
+| `v1.0.0`-tag | Etter ekstern revisjon, satt av eier. Utkast i `CHANGELOG.md` | ROADMAP Fase 6 |
 | Upstream PKCE og discovery-/JWKS-cache for Google og Microsoft | Verken Google eller Microsoft bruker PKCE i dag (FEATURES sa det en periode). Fra 015 finnes `idp.PKCEVerifier` og en låst klient med discovery- og JWKS-cache, og begge kan gjenbrukes. Krever at Google- og MS-flytene flyttes over til den nye klienten | ADN 16, ADN 17 |
 | Callback sjekker ikke at `auth_google`/`auth_microsoft` fortsatt er på | Slås metoden av etter at innloggingen er startet, fullføres den. Vindu på inntil 10 minutter (state-levetiden). Lav (014 D16) | ADN 16 |
 | JWKS for Microsoft hentes på nytt ved hver innlogging | `oidc.NewRemoteKeySet` lages per kall. Løses sammen med raden over: bruk `idp`-registerets cache og klient (014 F3, code review S4) | ADN 16, ADN 17 |
@@ -51,13 +56,13 @@ Sist gjennomgått: 2026-10-17
 | ~~Admin-UI for generiske leverandører, tilordning og eksplisitt kobling~~ | ✔ Løst i 016: leverandørside, tilordning per tjeneste uten omstart og koblingsinvitasjon. Admin-skriv mot leverandørradene og kryptering av hemmeligheter gjenstår (017) | ROADMAP Fase 5, ADN 17, ADN 18 |
 | ~~Admin-visningen av identiteter viser bare «oidc», ikke leverandørnavnet~~ | ✔ Løst i 016 F3: navn fra `identity_providers`, «ukjent leverandør» når raden er borte | ADN 17, ADN 18 |
 | `/api/me` sjekker ikke `aud` | Et access-token for én tjeneste godtas av `/api/me` uansett `aud` (017 eval T5.9U). Vurder å kreve at `aud` er en kjent tjeneste | ADN 12 |
-| `-race` i CI | ThreadSanitizer virker ikke på Pi-en (VMA 47 bit), så samtidighetskoden i `idp`-registeret og audit-køen er bare testet med `-count=N`. Kjøres i CI i Fase 6 (015 F3) | ROADMAP Fase 6 |
+| ~~`-race` i CI~~ | ✔ Løst i 018: `go test -race` kjører i CI-jobben `test` | ROADMAP Fase 6, ADN 20 |
 | `NormalizeEmail` bretter unicode også for andre flyter | U+212A (Kelvin) blir `k`, så en adresse kan treffe en annen brukers. Generisk OIDC krever ren ASCII for tillit (015 F4, A1). Vurder samme krav for Google, Microsoft og admin-endring av e-post | ADN 17 |
 | Nyregistrering via føderert innlogging auditeres ikke som `identity_linked` | Auto-registrering skriver bruker og identitet uten audit-rad for koblingen. Gjelder alle føderte metoder (015 eval T2.11) | ADN 13 |
 | Logg ved oppstart når en tidligere avvist leverandør med tilordning blir lastet | Etter omstart kan en leverandør som før ble avvist, plutselig bli aktiv for tjenestene den er tilordnet. Oversiktssiden viser det, men loggen sier ingenting (016 F3, security S2) | ADN 18 |
 | RFC 2047-koding av e-postemne | Emnet med ikke-ASCII-tegn sendes uten koding, også i magic link. CR/LF fjernes (016 F4, security S2) | ADN 18 |
 | Språk i invitasjonsmail følger admin | Verken tjeneste eller bruker har språkfelt, så mailen følger admins `Accept-Language` (PD13). Legg til språkfelt på tjeneste eller bruker (016 F4) | ADN 18 |
-| `-race` for `ForService`-låsen i CI | Fjernet `RLock` i `ForService` fanges ikke av tester uten ThreadSanitizer, som ikke virker på Pi-en (016 F2, test T2) | ROADMAP Fase 6 |
+| ~~`-race` for `ForService`-låsen i CI~~ | ✔ Løst i 018: dekket av `-race` i CI | ROADMAP Fase 6, ADN 20 |
 | Apple Sign In | Løpende kostnad. Kommer som adapter etter Fase 4 ved dokumentert behov | ADN 7 |
 | GitHub/LinkedIn m.fl. | Kan i stor grad dekkes av generisk OIDC (Fase 4) | ROADMAP §5 |
 | Deaktivert bruker på tjeneste med auto-register gir `login_failed` i stedet for `access_denied` | Uventet feilkode, ufarlig (008 F10 S2) | — |

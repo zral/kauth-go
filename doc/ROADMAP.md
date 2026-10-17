@@ -80,7 +80,7 @@ Alvorlighet: **K** kritisk · **H** høy · **M** middels · **L** lav. «Prod»
 | L3 | `enforce_org=1` med tom `default_org` håndhever ingenting, uten varsel; admin validerer ikke `callback_url` | Admin-validering | 1 |
 | L4 | Legacy nivå 1 godtar `redirect_uri` fra *hvilken som helst* tjenestes allowlist, ikke tjenesten man logget inn mot | Begrens til innloggingstjenesten | 0 |
 | L5 | Prods discovery annonserer `response_types: code` og `authorization_endpoint: /login`, men prod har ikke code-flyten (løses av merge, H3) | — | 0 |
-| L6 | Ingen CI; `gofmt -l` ikke rent (6 filer); `govulncheck` ikke installert; én tag (`v0.1.0`) | GitHub Actions: fmt, vet, test, `-race`, govulncheck | 6 |
+| L6 (løst i 018) | Ingen CI; `gofmt -l` ikke rent (6 filer); `govulncheck` ikke installert; én tag (`v0.1.0`) | GitHub Actions: fmt, vet, test, `-race`, govulncheck | 6 |
 | L7 | bcrypt cost 10; `rand.Read`-feil ignoreres i `magic.go:150`; `Invalidate`-feil ignoreres i admin | Opprydding | 1 |
 
 ---
@@ -128,7 +128,7 @@ Alvorlighet: **K** kritisk · **H** høy · **M** middels · **L** lav. «Prod»
 | **3 — Felles føderert innlogging** | Felles utstedelse for alle fire metodene (`checkPolicy` og utstedelse ett sted); felles føderert sti for Google og MS uten leverandørregister; ingen parallelle handlere | — | 4–6 | ca. 5,8 t (16.10) | 014 ✔ (i prod 2026-10-16) |
 | **4 — Generisk OIDC** | `identity_providers` + `service_identity_providers`; discovery med eksplisitt issuer-allowlist (SSRF-vern); JWKS-cache; lokal OIDC-testleverandør for negativtester | — | 5–8 | ca. 3,7 t (16.10) | 015 ✔ (i prod 2026-10-16) |
 | **5 — Policy, admin-UX, nøkler og hemmeligheter** | Provider-admin og tilordning per tjeneste; `allow_magic_link` / `allowed_providers` / `require_federated_login`; nøkkelring med `kid`; secrets kryptert i hvile. **016 ✔ levert (ikke i prod ennå):** leverandørside, tilordning per tjeneste uten omstart og eksplisitt kobling via invitasjon. **017 ✔ levert (ikke i prod ennå):** nøkkelring med `kid` (current/next/previous) og klienthemmeligheter som `KAUTH_SVC_*`-referanse i stedet for kryptering. Policyfelter utsatt til en tjeneste ber om det | M8 ✔, M12 ✔ | 5–8 | — | 016 ✔, 017 ✔ |
-| **6 — Test, drift og release** | CI (fmt, vet, test, `-race`, govulncheck); E2E mot testleverandør; restore-test av backup; fuzzing av redirect/callback; oppdatert SECURITY.md/FEATURES.md; ekstern revisjon; `v1.0.0` | L6 | 5–8 | — | 018 |
+| **6 — Test, drift og release** | CI (fmt, vet, test, `-race`, govulncheck); E2E mot testleverandør; restore-test av backup; fuzzing av redirect/callback; oppdatert SECURITY.md/FEATURES.md; ekstern revisjon; `v1.0.0`. **018 ✔ levert (ikke i prod ennå):** CI, fuzz, E2E, restore-test, revisjonspakke ([AUDIT_SCOPE.md](AUDIT_SCOPE.md)) og CHANGELOG-utkast. Toolchain go1.26.9 retter 32 nåbare stdlib-sårbarheter. **Gjenstår (eiers beslutning):** ekstern revisjon og `v1.0.0` | L6 ✔ | 5–8 | — | 018 ✔ |
 | | **Totalt** | | **35–55** | **ca. 25 t så langt (Fase 0–4)** | |
 
 #### Estimat mot faktisk (per 2026-10-16)
