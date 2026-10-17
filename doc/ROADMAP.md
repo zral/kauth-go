@@ -127,11 +127,11 @@ Alvorlighet: **K** kritisk · **H** høy · **M** middels · **L** lav. «Prod»
 | **2 — Stabil identitet** | `user_identities(user_id, provider, issuer, subject)` unik på `(issuer, subject)`; stabil intern ID; e-postnormalisering; migrering med kollisjonsrapport; `sub_format` per tjeneste; eksplisitt kobling/frakobling og recovery (B1, B2). **011 ✔ i prod 2026-10-15:** identitetsmodell, `public_id`, `user_id` på sesjoner, `sub_format`, `auto_link`, admin-godkjent identitet og migrasjonsvakt (stopper i stedet for kollisjonsrapport). **012 ✔ i prod 2026-10-15:** frakobling, e-postendring i admin, e-postepoke på `/dispatch` nivå 0 og admin, engangsbinding av admin-Google og recovery som prosedyre. Eksplisitt kobling og innstramming av overgangsunntaket er utsatt til første tjeneste med `auto_link=0` (Fase 5). **013 ✔ i prod 2026-10-16:** e-postepoke og brukersjekk på `/dispatch` nivå 1–5 (fra eval 012, ikke i opprinnelig plan) | P-funnene, M11 ✔ (011) | 6–9 | ca. 4,9 t (14.–16.10, inkl. 013) | 011 ✔, 012 ✔, 013 ✔ |
 | **3 — Felles føderert innlogging** | Felles utstedelse for alle fire metodene (`checkPolicy` og utstedelse ett sted); felles føderert sti for Google og MS uten leverandørregister; ingen parallelle handlere | — | 4–6 | ca. 5,8 t (16.10) | 014 ✔ (i prod 2026-10-16) |
 | **4 — Generisk OIDC** | `identity_providers` + `service_identity_providers`; discovery med eksplisitt issuer-allowlist (SSRF-vern); JWKS-cache; lokal OIDC-testleverandør for negativtester | — | 5–8 | ca. 3,7 t (16.10) | 015 ✔ (i prod 2026-10-16) |
-| **5 — Policy, admin-UX, nøkler og hemmeligheter** | Provider-admin og tilordning per tjeneste; `allow_magic_link` / `allowed_providers` / `require_federated_login`; nøkkelring med `kid`; secrets kryptert i hvile. **016 ✔ levert (ikke i prod ennå):** leverandørside, tilordning per tjeneste uten omstart og eksplisitt kobling via invitasjon. **017 ✔ levert (ikke i prod ennå):** nøkkelring med `kid` (current/next/previous) og klienthemmeligheter som `KAUTH_SVC_*`-referanse i stedet for kryptering. Policyfelter utsatt til en tjeneste ber om det | M8 ✔, M12 ✔ | 5–8 | — | 016 ✔, 017 ✔ |
-| **6 — Test, drift og release** | CI (fmt, vet, test, `-race`, govulncheck); E2E mot testleverandør; restore-test av backup; fuzzing av redirect/callback; oppdatert SECURITY.md/FEATURES.md; ekstern revisjon; `v1.0.0`. **018 ✔ levert (ikke i prod ennå):** CI, fuzz, E2E, restore-test, revisjonspakke ([AUDIT_SCOPE.md](AUDIT_SCOPE.md)) og CHANGELOG-utkast. Toolchain go1.26.9 retter 32 nåbare stdlib-sårbarheter. **Gjenstår (eiers beslutning):** ekstern revisjon og `v1.0.0` | L6 ✔ | 5–8 | — | 018 ✔ |
-| | **Totalt** | | **35–55** | **ca. 25 t så langt (Fase 0–4)** | |
+| **5 — Policy, admin-UX, nøkler og hemmeligheter** | Provider-admin og tilordning per tjeneste; `allow_magic_link` / `allowed_providers` / `require_federated_login`; nøkkelring med `kid`; secrets kryptert i hvile. **016 ✔ i prod 2026-10-17:** leverandørside, tilordning per tjeneste uten omstart og eksplisitt kobling via invitasjon. **017 ✔ i prod 2026-10-17:** nøkkelring med `kid` (current/next/previous) og klienthemmeligheter som `KAUTH_SVC_*`-referanse i stedet for kryptering. Policyfelter utsatt til en tjeneste ber om det | M8 ✔, M12 ✔ | 5–8 | ca. 3,4 t (16.–17.10) | 016 ✔, 017 ✔ |
+| **6 — Test, drift og release** | CI (fmt, vet, test, `-race`, govulncheck); E2E mot testleverandør; restore-test av backup; fuzzing av redirect/callback; oppdatert SECURITY.md/FEATURES.md; ekstern revisjon; `v1.0.0`. **018 ✔ i prod 2026-10-17:** CI, fuzz, E2E, restore-test, revisjonspakke ([AUDIT_SCOPE.md](AUDIT_SCOPE.md)) og CHANGELOG-utkast. Toolchain go1.26.9 retter 32 nåbare stdlib-sårbarheter. **Gjenstår (eiers beslutning):** ekstern revisjon og `v1.0.0` | L6 ✔ | 5–8 | ca. 1,3 t (17.10, uten revisjon) | 018 ✔ |
+| | **Totalt** | | **35–55** | **ca. 29 t (Fase 0–6, uten ekstern revisjon)** | |
 
-#### Estimat mot faktisk (per 2026-10-16)
+#### Estimat mot faktisk (per 2026-10-17)
 
 Faktisk tid er aktiv tid fra lifecycle-telemetrien (`.claude/logs/lifecycle.jsonl`), med pauser over 30 min trukket fra. Den dekker analyse, plan, implementering, review, eval og utrulling. Lars' egen tid til beslutninger, manuell test og `sudo`-steg i prod ligger delvis utenfor. Kalendertid er fra første DSF-commit til «i prod» i git-loggen.
 
@@ -146,7 +146,10 @@ Faktisk tid er aktiv tid fra lifecycle-telemetrien (`.claude/logs/lifecycle.json
 | 013 | 2 (tillegg) | 41 min | 16.10 00:21 → 00:58 (0,6 t) | Fra eval 012 |
 | 014 | 3 | 350 min | 16.10 06:32 → 13:04 (6,5 t) | Refaktorering, karakteriseringstester først (F1). Lars-test gjenstår |
 | 015 | 4 | 224 min | 16.10 16:49 → 20:27 (3,6 t) | Ingen pauser, én økt. Lars-test (M1–M10) gjenstår |
-| **Sum 007–015** | **0–4** | **ca. 25 t** | **13.10 17:20 → 16.10 20:27 (3,1 døgn)** | |
+| 016 | 5 | 114 min | 16.10 23:52 → 17.10 02:35 (2,7 t) | Autonom. Testagenten i F5 tok 50 min. Manuell test med Auth0 gjenstår |
+| 017 | 5 | 87 min | 17.10 02:36 → 04:36 (2,0 t) | Autonom. Testagenten i F2 tok 33 min. Første nøkkelrotasjon gjenstår |
+| 018 | 6 | 78 min | 17.10 04:37 → 09:53 (5,3 t) | Ca. 4 t pause mellom F5 og samlet test (PR #7 og CI). Ekstern revisjon og `v1.0.0` er ikke med |
+| **Sum 007–018** | **0–6** | **ca. 29 t** | **13.10 17:20 → 17.10 09:53 (3,7 døgn)** | |
 
 Fase 0–2 var estimert til 16–25 utviklerdager (120–190 t à 7,5 t). De tok ca. 15 timer aktivt, omtrent 2 utviklerdager, altså 8–12 ganger raskere enn estimatet. Forholdet er ganske stabilt per fase: Fase 0 ca. 8–13×, Fase 1 ca. 7–11×, Fase 2 ca. 9–14×. Det som trekker kalendertiden ut, er ventetid på Lars (deploy med `sudo`, ekte innlogging, beslutninger), ikke agentarbeidet.
 
@@ -154,11 +157,17 @@ Fase 3 (014) var estimert til 4–6 dager (30–45 t) og tok ca. 5,8 timer, alts
 
 Fase 4 (015) var estimert til 5–8 dager (37,5–60 t) og tok ca. 3,7 timer, altså 10–16×. Anslaget fra Fase 3 om 5–8× for ny protokollkode slo ikke til. Analysen og planen tok bare ca. 15 minutter, fordi 014 hadde laget den felles fødererte stien som generisk OIDC kunne plugges inn i. Samlet for Fase 0–4 er estimatet 25–39 dager (188–293 t) mot ca. 25 t faktisk, altså 8–12×.
 
-**Kalibrert anslag for resten:** Fase 5–6 er estimert til 10–16 utviklerdager. Fase 5 (policy, admin-UX, nøkkelring og kryptering i hvile) består av avgrensede tillegg på eksisterende struktur, slik Fase 1–2 og 4 gjorde. Med 8–12× gir det **3–8 timer aktivt** for Fase 5. Fase 6 har ca. 3–6 timer agentarbeid (CI, fuzzing, restore-test, dokumentasjon). Ekstern revisjon og E2E mot en ekte leverandør kan ikke presses sammen, og revisjonen føres som egen kalenderpost.
+Det kalibrerte anslaget etter Fase 4 var 3–8 timer aktivt for Fase 5 og 3–6 timer for Fase 6.
+
+Fase 5 (016 og 017) var estimert til 5–8 dager (37,5–60 t). Den tok ca. 3,4 timer, altså 11–18×, nederst i det kalibrerte anslaget. Begge featurene gikk autonomt i én nattøkt uten pauser. 016 bygde admin-sidene på leverandørregisteret fra 015, og 017 byttet kryptering i hvile mot env-referanser (samme mønster som `KAUTH_IDP_*`). Det gjorde begge til avgrensede tillegg. Det som tok tid, var testagentenes mutasjonstesting: 50 min i 016 F5 og 33 min i 017 F2.
+
+Fase 6 (018) var estimert til 5–8 dager (37,5–60 t) og tok ca. 1,3 timer aktivt. Det er også under det kalibrerte anslaget på 3–6 timer. Kalendertiden ble 5,3 timer, fordi kjøringen sto i ca. 4 timer mellom F5 og den samlede testen (PR #7 og CI på GitHub). Ekstern revisjon og `v1.0.0` er ikke med. Uten dem kan ikke estimatet på 5–8 dager sammenlignes direkte. Samlet for Fase 0–5 er estimatet 30–47 dager (225–353 t) mot ca. 28 t faktisk, altså 8–13×.
+
+**Hva som gjenstår:** ekstern revisjon etter [AUDIT_SCOPE.md](AUDIT_SCOPE.md), som føres som egen kalenderpost, Lars' manuelle tester (014–018) og beslutningen om `v1.0.0`.
 
 Kodebasen før denne planen (Go-porten, 98 commits 18.06–02.10) er ikke med i tallene.
 
-#### Fordeling på aktivitet (007–015)
+#### Fordeling på aktivitet (007–018)
 
 Den aktive tiden er fordelt slik. Når en subagent kjører, går tiden til agentens type: `code-review`, `security-review`, `scope-guard` og `migration-guard` regnes som review, `test` og `scenario-test` som testing, og `product-owner` og `explore` som planlegging. Agenter uten type klassifiseres etter beskrivelsen («Impl F3», «Eval 013», «Doc-review»). Kjører flere agenter samtidig, deles tiden likt mellom dem. Uten aktive agenter går tiden til dirigentens gjeldende fase (`analyse`/`plan`, `impl`, `review`, `eval`/`test`). Planlegging omfatter analyse og plan. Testing omfatter holdout-scenarier, eval og test- og scope-agenten.
 
@@ -173,19 +182,51 @@ Den aktive tiden er fordelt slik. Når en subagent kjører, går tiden til agent
 | 013 | 3 | 14 | 9 | 15 | 0 | 41 |
 | 014 | 14 | 120 | 181 | 35 | 0 | 350 |
 | 015 | 13 | 101 | 15 | 89 | 6 | 224 |
-| **Sum (min)** | **141** | **494** | **469** | **341** | **30** | **1 475** |
-| **Timer** | **2,4** | **8,2** | **7,8** | **5,7** | **0,5** | **24,6** |
-| **Andel** | **10 %** | **33 %** | **32 %** | **23 %** | **2 %** | |
+| 016 | 4 | 43 | 33 | 33 | 1 | 114 |
+| 017 | 2 | 35 | 24 | 25 | 1 | 87 |
+| 018 | 2 | 65 | 7 | 4 | 0 | 78 |
+| **Sum (min)** | **149** | **637** | **533** | **403** | **32** | **1 754** |
+| **Timer** | **2,5** | **10,6** | **8,9** | **6,7** | **0,5** | **29,2** |
+| **Andel** | **8 %** | **36 %** | **30 %** | **23 %** | **2 %** | |
 
 **Hva tallene viser:**
 
-- **Kvalitetssikringen tar mer tid enn koden.** Review og testing utgjør 55 % av tiden, mot 33 % for implementering. Selve kodingen går fort (ofte 2–10 min per fase), mens review-runder med security-review på alle auth-differ tar lengst tid.
-- **Planleggingen er billig.** 10 % av tiden gikk med til planlegging, men den bærer mye: ROADMAP-funnene med fil:linje-bevis gjorde analysene i Fase 0–2 korte.
+- **Kvalitetssikringen tar mer tid enn koden.** Review og testing utgjør 53 % av tiden, mot 36 % for implementering. Selve kodingen går fort (ofte 2–10 min per fase), mens review-runder med security-review på alle auth-differ tar lengst tid.
+- **Planleggingen er billig.** 8 % av tiden gikk med til planlegging, men den bærer mye: ROADMAP-funnene med fil:linje-bevis gjorde analysene i Fase 0–2 korte.
 - **014 skiller seg ut.** Review tok 52 % av tiden. En ren refaktorering av fire innloggingsflyter ga mange review-runder for å vise at atferden er uendret. Det forklarer det meste av den lavere faktoren for Fase 3.
 - **015 har motsatt profil.** Testing tok 40 % av tiden og review bare 7 %. Review-agentene (code, security, scope og migration) gikk parallelt og var ferdige på ca. 2 minutter per fase. Funnene var likevel reelle, blant annet kontoovertakelse via unicode-bretting av e-post (Kelvin-tegnet) i F4. Testagentens mutasjonstesting tok 25–45 minutter i F3 og F4. Implementeringen (45 %) inkluderer en egen rework-runde i F5 og den kjørbare testleverandøren i F6.
+- **016 og 017 gikk raskest per fase.** Analyse og plan tok 2–4 minutter per feature i autonom modus. Review og testing fordelte seg som i 015: parallelle review-agenter på noen få minutter per fase, mens mutasjonstestingen tok mest tid.
+- **018 er nesten bare implementering (83 %).** CI-oppsett, fuzzmål og e2e-test er kode. Etter F2 mangler fasemarkørene, så dirigentens tid i review og test er ført på implementering. Review og testing er derfor undervurdert for 018.
 - **Deploy ser nesten gratis ut, men er det ikke.** Prod-installasjonen (`sudo`, restart, ekte innlogging) gjør Lars utenfor telemetrien. Det er den som drar ut kalendertiden.
 
 **Forbehold:** Tallene er en tilnærming. Fasemarkørene mangler noen steder. Test- og scope-agenten gjør både testing og scope-sjekk, og den er regnet som testing. Intent-capture av scenarier i analysefasen er også regnet som testing. Dirigentens egen tid mens agenter kjører, blir ført på agentene.
+
+#### Hvorfor faktisk tid avviker så mye fra estimatet
+
+Estimatet på 35–55 utviklerdager er et vanlig anslag for én erfaren utvikler. Det faktiske tallet er ca. 29 timer aktiv tid for en dirigent som styrer agenter gjennom DSF-pipelinen. Faktoren på ca. 8–13× betyr ikke at arbeidet var 8–13 ganger mindre. Arbeidet ble fordelt annerledes, og noe av det ligger utenfor tallene. Fra første 007-commit til 018 er det 120 commits og ca. 31 000 nye linjer Go, uten generert kode. Ca. 9 000 av dem er produksjonskode og ca. 22 000 er tester.
+
+**Det DSF gjør raskere:**
+
+- **Presisjonen ligger før koden.** Risikoregisteret har fil:linje-bevis, analysen har verifiserbare krav (K1–Kn) og planen har akseptansekriterier per fase. Implementeringsagenten får dermed en smal og entydig oppgave, og selve kodingen tar ofte 2–10 minutter per fase. Planleggingen utgjør bare 8 % av tiden, men det er den som gjør resten forutsigbart. En utvikler bruker mye av estimatet på å finne ut hva som skal gjøres. Her er det gjort én gang og skriftlig.
+- **Review og test går parallelt.** Code review, security review, scope guard og testagent startes samtidig etter hver fase. Det en utvikler gjør etter hverandre, går her side om side, og en review-runde er ferdig på noen få minutter.
+- **Gatene koster ikke aktiv tid.** Analyse- og plangatene stopper arbeidet til Lars har godkjent, og ventetiden er trukket fra. I autonom modus (016–018) ble gatene forhåndsgodkjent, og tre features gikk i én nattøkt uten pauser.
+- **Hver fase bygger på den forrige.** Den felles fødererte stien fra 014 gjorde 015 til en adapter. Leverandørregisteret fra 015 ga 016 det admin-sidene trengte. Env-referansen `KAUTH_IDP_*` ble mønsteret for klienthemmelighetene i 017. Estimatene ble satt før denne strukturen fantes og priset hver fase som om den startet fra null.
+
+**Det som ikke blir raskere:**
+
+- **Kvalitetssikringen er den største posten.** Review og testing tar 53 % av tiden. Testagentens mutasjonstesting kan ta 25–50 minutter i en enkelt fase, og security review kjøres på alle differ i auth, token, admin og service. Kodebasen har fått ca. 2,4 linjer test per linje produksjonskode. Det er mer verifisering enn estimatet forutsatte, ikke mindre. Det ga også reelle funn: kontoovertakelse via unicode-bretting (015), 32 nåbare stdlib-sårbarheter (018) og en domenesjekk som avviste alle domener med «t» (015).
+- **Det er dyrt å bevise at en refaktorering ikke endrer atferd.** 014 har den laveste faktoren (5–8×). Karakteriseringstester måtte skrives før koden kunne flyttes, og review tok halvparten av tiden. Agenter er raske til å skrive kode, men ikke til å overbevise en reviewer om at fire flyter oppfører seg som før.
+- **Maskinen setter grenser.** `go test -count=3` på `internal/auth` tar 5–7 minutter på Pi-en, og `-race` kan ikke kjøres lokalt (det gjøres i CI fra 018). Mutasjonskopier av repoet fylte /tmp (tmpfs, 4 GB) under 015. Når agentene er raske, blir maskinvaren flaskehalsen.
+
+**Det som ikke er med i tallene:**
+
+- **Lars' tid.** Beslutninger (PD-er), `sudo`-deploy, ekte innlogging og manuelle tester ligger utenfor telemetrien. De manuelle testene M1–Mn for 014–018 står fortsatt åpne. En utviklers estimat ville tatt med den testingen, så en del av gevinsten er utsatt arbeid og ikke spart arbeid.
+- **Kalendertid.** 3,7 døgn fra første til siste feature, mot 29 timer aktivt. Det som drar ut kalendertiden, er venting på mennesker og eksterne systemer: deploy med `sudo`, CI på GitHub (ca. 4 t i 018) og nattpauser.
+- **Redusert omfang.** I Fase 5 ble policyfeltene (`allowed_providers`, `require_federated_login`) utsatt, og 017 brukte env-referanser i stedet for kryptering i hvile. Det var bevisste valg, men de gjør Fase 5 mindre enn estimatet antok.
+- **Ekstern revisjon og `v1.0.0`** inngår i Fase 6-estimatet, men er ikke gjort.
+- **Tokenkostnad.** Telemetrien teller tokens per agent, men ikke kroner. Dyrere modeller (Opus) er brukt til review og arkitektur, og det har en pris som utviklerdager ikke fanger opp.
+
+**Konsekvens for nye estimater:** Utviklerdager sier fortsatt noe om kompleksitet, men ikke om hvor lang tid arbeidet tar i DSF. Bedre tommelfingerregler for kauth er 8–13× for tillegg på eksisterende struktur og 5–8× for refaktorering og ny protokollkode uten forarbeid. Lars' tid (beslutninger, deploy, manuell test) og ekstern ventetid bør budsjetteres for seg i kalendertid. Det er de som styrer når noe er i prod, ikke agentarbeidet.
 
 Fase 0 er en forutsetning for alt annet og bør gå før noen klient endres. Fase 1 og 2 kan delvis overlappe; Fase 3 forutsetter Fase 2.
 
