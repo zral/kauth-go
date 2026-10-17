@@ -1,4 +1,4 @@
-.PHONY: build testidp build-arm64 sqlc migrate-up test ci fuzz deploy
+.PHONY: build testidp build-arm64 sqlc migrate-up test ci fuzz deploy restore-test
 
 build:
 	CGO_ENABLED=0 go build -o bin/kauth ./cmd/kauth
@@ -38,3 +38,8 @@ deploy:
 	$(MAKE) build-arm64
 	scp bin/kauth-arm64 $(KAUTH_DEPLOY_HOST):/usr/local/bin/kauth
 	ssh $(KAUTH_DEPLOY_HOST) "sudo systemctl restart kauth"
+
+# Restaurerer en backup til tmp og verifiserer oppstart: make restore-test BACKUP=<fil>
+restore-test:
+	@test -n "$(BACKUP)" || (echo "FEIL: BACKUP mangler, bruk make restore-test BACKUP=<fil>"; exit 1)
+	bash scripts/restore-test.sh "$(BACKUP)"
