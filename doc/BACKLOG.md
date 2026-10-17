@@ -16,6 +16,7 @@ Sist gjennomgått: 2026-10-17
 | 2 | Beslutning B1–B6 | Blokkerer analyse for Fase 1–2 | ROADMAP §4 |
 | 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | ✔ I prod 2026-10-14. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
 | 4 | 011 Stabil identitet og 012 Admin-identitet (Fase 2) | ✔ 011 i prod 2026-10-15 (tag `011`). ✔ 012 i prod 2026-10-15 (tag `012`): frakobling, e-postendring, e-postepoke, admin-binding, recovery | ADN 13, ADN 14 |
+| 5 | **019 Logg inn med GitHub** (neste, autonomt) | Bestilt av eier 2026-10-17. GitHub er ikke OIDC: egen flyt på linje med Google/Microsoft. OAuth 2.0 code + state (PKCE hvis GitHub støtter det), code veksles server-til-server, bruker hentes fra `api.github.com/user` og `/user/emails`. Identitet = numerisk GitHub-ID (`provider='github'`). E-post brukes til kobling/registrering bare når verifisert og primær. Aldri admin-tilgang. Flagg `auth_github` per tjeneste, hemmelighet som env-referanse `KAUTH_SVC_*` (017-mønsteret). Apple utsatt (krever JWT-secret og `form_post`). Start: `/feature-lifecycle 019 Logg inn med GitHub — se BACKLOG #5. kjør autonomt` | ADN 13, 16, 17 |
 
 ## Senere
 
