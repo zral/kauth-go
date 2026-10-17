@@ -300,7 +300,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 18 — Leverandøradmin uten ny tillitsrot, og kobling bevist av brukeren via invitasjon (2026-10-16)
 
-**Status:** Under arbeid (016)
+**Status:** Implementert (2026-10-17, 016)
 → Analyse: [doc/features/016_AN_ADMIN_LEVERANDOR_KOBLING.md](features/016_AN_ADMIN_LEVERANDOR_KOBLING.md) · Plan: [doc/features/016_PL_ADMIN_LEVERANDOR_KOBLING.md](features/016_PL_ADMIN_LEVERANDOR_KOBLING.md)
 
 **Beslutning:**
@@ -314,3 +314,15 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 **Konsekvens:**
 - Endring av leverandørrader, allowlist og hemmeligheter er fortsatt driftsprosedyre med omstart (017 tar kryptering).
 - En videresendt invitasjon kan brukes av mottakeren. Rest-risikoen tilsvarer magic link og gjøres synlig med kvitteringsmail.
+
+**Presiseringer fra implementeringen:**
+- **Ikke-lastede tilordninger bevares.** Lagring av tilordninger erstatter bare de lastede. Tilordninger til leverandører som ikke er lastet (avvist, inaktiv, manglende hemmelighet etter omstart), står igjen og vises skrivebeskyttet med «Fjern». Ellers ville en manglende miljøvariabel slettet konfigurasjon stille. Audit fører `kept=` og `removed=`.
+- **`reloadMu`.** `ReloadAssignments` er serialisert med en mutex rundt hele omlastingen, slik at to samtidige lagringer ikke kan bytte inn en utdatert tilordning. `byService` ligger bak `RWMutex`, og `ForService` returnerer en kopi. Statusene settes i konstruktøren og skrives aldri etter at registeret er delt.
+- **Link-state.** Payloaden er `serviceID:nonce:iat:idp=<slug>:link=<inviteID>`, signert som annen state. `link=` godtas bare rett etter `idp=`, så Google, Microsoft, admin-callback og `VerifyState` avviser den uten egen kode. Vanlig innlogging lager aldri `link=`. Koblingsgrenen i `HandleCallback` kjøres først etter all eksisterende verifisering.
+- **`prompt=login`.** Link-flyten krever ny innlogging hos leverandøren. Ellers kunne en lokket lenke og stille SSO binde offerets leverandørkonto til avsenderens bruker. Bekreftelsesiden viser maskert e-post uthevet og en advarsel.
+- **`LogSync` for koblingsaudit.** `identity_linked` og `identity_link_rejected` skrives synkront, fordi en tapt køhendelse ville skjult en ny innloggingsvei.
+- **Lukket ved audit-feil.** Kan `identity_link_invited` ikke skrives, trekkes invitasjonen tilbake og ingen e-post sendes.
+- **Brenning.** Deaktivering av bruker og e-postendring brenner brukerens åpne invitasjoner i samme transaksjon (`invites_burned=`). Ny invitasjon brenner forrige for samme bruker og leverandør, i rekkefølgen burn, insert, og rulles tilbake hvis kvoten (5 per time) stopper innsettingen. `ConsumeLinkInvite` binder også `service_id`.
+- **Felles tidsformat.** Alle tidsstempler i `identity_link_invites` skrives som `%Y-%m-%dT%H:%M:%SZ` (UTC, fast bredde), fordi de sammenlignes som tekst.
+- **Språkvalg (PD13).** Invitasjonsmailen følger admin-requestens `Accept-Language`, siden verken tjenester eller brukere har språkfelt. Bekreftelsessiden har språkvelger, men valget overlever ikke turen via leverandøren.
+- **Ugyldig lenke.** Alle avslag på `GET`/`POST /link/{token}` gir samme 200-side. Sidene sender `Referrer-Policy: no-referrer` og `Cache-Control: no-store`, og tokenet maskeres i request-loggen.

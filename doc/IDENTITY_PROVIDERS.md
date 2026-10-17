@@ -185,9 +185,42 @@ Sett `trust_email=1` bare når leverandøren verifiserer e-post og eier domenene
 
 Hva brukerne opplever: med `trust_email=1` kobler eller registrerer første innlogging dem uten ekstra steg. Med `trust_email=0` får en ukjent bruker `access_denied` på login-siden til admin har koblet kontoen.
 
-## Manuell kobling ved `trust_email=0`
+## Leverandørsiden i admin
 
-Admin kobler en konto til en eksisterende bruker med `user_identities`. Du trenger tre ting:
+`/admin/providers` (bare `konge`) viser alle rader i `identity_providers`, også inaktive og avviste: navn, issuer, status (lastet, inaktiv eller avvist med årsak), om issueren står i allowlisten, `trust_email`, navnet på hemmelighetsvariabelen og om den er satt, og hvilke tjenester som bruker leverandøren. Verdien av hemmeligheten vises aldri.
+
+Siden er bare lesende. Ingen rute oppretter, endrer eller sletter leverandørrader (ADN 18). Status, aktiv og hemmelighet er et øyeblikksbilde fra siste omstart. Tilordningene leses derimot fra databasen.
+
+## Tilordne til tjeneste i admin
+
+Under `/admin/services/{id}/edit` finnes en liste over lastede leverandører med avkrysning og posisjon. Lagring erstatter tjenestens tilordninger i én transaksjon, auditeres synkront (`service_providers_updated` med `actor=`, `providers=slug:pos,…`, `kept=` og `removed=`) og gjelder straks, uten omstart. Registeret lastes om i minnet etter lagring. Feiler omlastingen, står endringen i databasen, siden sier «lagret, men ikke tatt i bruk — start kauth på nytt», og feilen logges.
+
+Tilordninger til leverandører som ikke er lastet (avvist, inaktiv eller uten hemmelighet etter en omstart) beholdes ved lagring. De vises skrivebeskyttet med en «Fjern»-avkrysning. Det er bevisst: en manglende miljøvariabel skal ikke slette konfigurasjon stille. Bare lastede leverandører kan legges til.
+
+## Koblingsinvitasjon
+
+Slik kobles en konto til en bruker uten at noen skriver inn `sub`. Brukeren viser selv at hen kontrollerer både e-postadressen og kontoen hos leverandøren.
+
+**Admin:** på `/admin/users/{id}/edit` velger admin leverandør og tjeneste (bare lastede leverandører som er tilordnet en aktiv tjeneste) og trykker «Send invitasjon». kauth sender en engangslenke `https://<tjenestens auth-vert>/link/<token>` til brukerens registrerte adresse. Aktive invitasjoner listes på samme side med «Trekk tilbake». Maks fem invitasjoner per bruker per time. En ny invitasjon for samme bruker og leverandør brenner den forrige. E-postspråket følger admins `Accept-Language`, siden verken tjenester eller brukere har språkfelt.
+
+**Brukeren:** lenken åpner en bekreftelsesside (tjenestens tema, leverandørens navn, maskert e-post som `k***@firma.no`). Siden endrer ingenting. Trykker brukeren «Fortsett», går hen til leverandøren og må logge inn på nytt (`prompt=login`, ingen stille SSO). Tilbake hos kauth bindes `(issuer, sub)` fra et id_token kauth har verifisert selv til brukeren, og siden viser en kvittering. Brukeren får også kvitteringsmail. Det gis ingen tokens, ingen sesjon og ingen redirect til tjenesten. Neste innlogging via leverandøren fungerer vanlig.
+
+**Regler:** lenken gjelder i 24 timer og kan brukes én gang. Token lagres bare som SHA-256-hash. Ugyldig, utløpt, brukt, tilbakekalt eller endret e-post gir samme generiske side («Lenken er ugyldig eller utløpt»). Deaktivering av brukeren og e-postendring brenner brukerens åpne invitasjoner (`invites_burned=` i audit). En identitet som allerede tilhører en annen bruker, avvises og invitasjonen står. Kobler brukeren samme konto en gang til, svarer siden «allerede koblet». Koblingen setter aldri `admin_ok`.
+
+**Audit:**
+
+| Type | Når | `details` |
+|---|---|---|
+| `identity_link_invited` | Admin sendte invitasjon | `id= invite= provider= service=` |
+| `identity_link_invite_revoked` | Admin trakk tilbake | `id= invite=` |
+| `identity_linked` | Koblet, `via=invite` | `via=invite invite= provider= issuer= identity_id=`, med ` already=1` når kontoen alt var koblet |
+| `identity_link_rejected` | Avvist ved start (`discovery`) eller etter retur fra leverandøren | `invite= provider= reason=` |
+
+Årsaker i `reason`: `invite_invalid`, `user_inactive`, `email_changed`, `identity_taken`, `discovery`, `internal`. Hvis auditen ikke kan skrives ved invitasjon, trekkes invitasjonen tilbake og ingen e-post sendes. Verken token, lenke eller `sub` står i audit eller logg.
+
+## Nødprosedyre: manuell kobling med `sub`
+
+Bruk koblingsinvitasjonen over. Denne prosedyren er bare for tilfeller der invitasjon ikke går, for eksempel når brukeren ikke kan motta e-post på noen adresse admin kan gå god for. Virker ikke den registrerte adressen, endre e-posten først (012) og send en invitasjon. Den omgår beviset fra brukeren, så kontroller `sub` nøye. Admin kobler en konto til en eksisterende bruker med `user_identities`. Du trenger tre ting:
 
 1. `user_id`: `SELECT id, email FROM users WHERE email = 'kari@acme.example';`
 2. `issuer`: eksakt som i `identity_providers.issuer`.
@@ -204,7 +237,7 @@ VALUES (42, 'oidc', 'https://login.acme.example', '<sub fra leverandøren>', 'ka
 
 `sub` er stabilt for én leverandør, men to leverandører kan sende samme `sub` til ulike personer. Identiteten er derfor `(issuer, subject)`, ikke `subject` alene.
 
-Admin-siden for en bruker viser identitetene, men bare som «oidc» med forkortet subject, ikke leverandørnavnet (BACKLOG). Kjenner du issueren, finner du leverandøren slik:
+Admin-siden for en bruker viser identitetene med leverandørnavn («ukjent leverandør» hvis raden er slettet) og forkortet subject. Fra SQL finner du dem slik:
 
 ```sql
 SELECT u.email, i.issuer, i.subject, i.last_used_at
@@ -229,7 +262,7 @@ Suksess er `oidc_login` med `auth_method=oidc`. De fleste avvisninger er `oidc_r
 | `nonce` | Nonce i id_token er ulik den kauth sendte |
 | `missing_sub` | `sub` mangler, er tomt eller lengre enn 255 tegn |
 | `email_missing` | `trust_email=1`, men id_token har ingen e-post. Sjekk at `email` er med i `scopes` |
-| `email_untrusted` | Ukjent identitet uten tillit til e-posten: `trust_email=0`, `email_verified` ikke sann, e-post med unicode eller mellomrom, eller domene utenfor `email_domains`. Raden har e-posten (normalisert), men ikke `sub`. Manuell kobling over løser det for `trust_email=0` |
+| `email_untrusted` | Ukjent identitet uten tillit til e-posten: `trust_email=0`, `email_verified` ikke sann, e-post med unicode eller mellomrom, eller domene utenfor `email_domains`. Raden har e-posten (normalisert), men ikke `sub`. Koblingsinvitasjon (eller nødprosedyren) løser det for `trust_email=0` |
 | `user_inactive` | Brukeren er deaktivert. Details har bare `reason=`, ikke `provider=` |
 | `user_conflict` | Auto-registrering kolliderte med en eksisterende rad. Details har bare `reason=` |
 | `internal` | Intern feil (skal ikke forekomme i drift). Details har bare `reason=`. Meld fra |
@@ -297,6 +330,6 @@ Refresh-tokens som allerede er utstedt, gjelder til de utløper eller brukeren d
 
 ## Endringer krever restart
 
-Leverandørene (rader, tilordninger, issuer-allowlist og hemmeligheter) leses én gang ved oppstart. Det gjelder alle endringer i `identity_providers`, `service_identity_providers`, `KAUTH_OIDC_ISSUERS` og `KAUTH_IDP_*`. Unntaket er `user_identities`: manuell kobling virker straks. Rekkefølge for en endring: skriv SQL og miljø, `sudo systemctl restart kauth`, `journalctl -u kauth -n 100 | grep 'idp:'`, test innlogging.
+Leverandørrader (opprettelse, endring, sletting), `KAUTH_OIDC_ISSUERS` og `KAUTH_IDP_*` endres med SQL og miljø, og leses én gang ved oppstart. Unntakene er tilordning per tjeneste (admin, virker straks), koblingsinvitasjoner og `user_identities`. Rekkefølge for en leverandørendring: skriv SQL og miljø, `sudo systemctl restart kauth`, `journalctl -u kauth -n 100 | grep 'idp:'`, sjekk `/admin/providers`, test innlogging.
 
-Det finnes ikke admin-UI for leverandørene ennå (planlagt i Fase 5, se [BACKLOG.md](BACKLOG.md)). Alt gjøres med `sqlite3` mot databasen, og det er lurt å ta en sikkerhetskopi først (`sqlite3 /home/lars/kauth-go/data/kauth.db ".backup <fil>"`).
+Kryptert lagring av hemmeligheter og admin-skriv mot leverandørradene er ikke laget (planlagt i 017, se [BACKLOG.md](BACKLOG.md)). Ta en sikkerhetskopi før SQL-endringer (`sqlite3 /home/lars/kauth-go/data/kauth.db ".backup <fil>"`).

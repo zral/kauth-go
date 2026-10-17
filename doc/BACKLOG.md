@@ -4,7 +4,7 @@
 
 **Hva dette ikke er:** en beslutningslogg. *Hvorfor* noe er bestemt står i [ARCHITECTURE_DESIGN_NOTES.md](ARCHITECTURE_DESIGN_NOTES.md). Faser, risikoregister og estimater står i [ROADMAP.md](ROADMAP.md). Ved motstrid er ADN-en fasit.
 
-Sist gjennomgått: 2026-10-16
+Sist gjennomgått: 2026-10-17
 
 ---
 
@@ -45,11 +45,15 @@ Sist gjennomgått: 2026-10-16
 | JWKS for Microsoft hentes på nytt ved hver innlogging | `oidc.NewRemoteKeySet` lages per kall. Løses sammen med raden over: bruk `idp`-registerets cache og klient (014 F3, code review S4) | ADN 16, ADN 17 |
 | Testene bruker `resolver`/`aud` direkte på `MicrosoftHandlers` | Feltene brukes bare av tester etter 014 F6. Flytt testene til `fed`, så feltene kan fjernes (014 F6, code review S1) | ADN 16 |
 | Throttling av JWKS-refetch ved ukjent `kid` | Et id_token med ukjent `kid` gir én JWKS-henting per innloggingsforsøk (1:1, ingen forsterkning), og bare leverandøren selv kan utløse det, siden bare back-channel-tokens verifiseres. Legg på en minste avstand mellom hentinger per leverandør (015 eval T6.8, F3 security M2) | ADN 17 |
-| Admin-UI for generiske leverandører, tilordning og eksplisitt kobling | I dag er leverandører og tilordninger `sqlite3`-prosedyre, og `sub` for manuell kobling må hentes hos leverandøren. Hører til Fase 5 sammen med kryptert lagring av hemmeligheter | ROADMAP Fase 5, ADN 17 |
-| Admin-visningen av identiteter viser bare «oidc», ikke leverandørnavnet | To leverandører ser like ut. Slå opp `issuer` mot `identity_providers` i visningen (015 F1, code review S4) | ADN 17 |
+| ~~Admin-UI for generiske leverandører, tilordning og eksplisitt kobling~~ | ✔ Løst i 016: leverandørside, tilordning per tjeneste uten omstart og koblingsinvitasjon. Admin-skriv mot leverandørradene og kryptering av hemmeligheter gjenstår (017) | ROADMAP Fase 5, ADN 17, ADN 18 |
+| ~~Admin-visningen av identiteter viser bare «oidc», ikke leverandørnavnet~~ | ✔ Løst i 016 F3: navn fra `identity_providers`, «ukjent leverandør» når raden er borte | ADN 17, ADN 18 |
 | `-race` i CI | ThreadSanitizer virker ikke på Pi-en (VMA 47 bit), så samtidighetskoden i `idp`-registeret og audit-køen er bare testet med `-count=N`. Kjøres i CI i Fase 6 (015 F3) | ROADMAP Fase 6 |
 | `NormalizeEmail` bretter unicode også for andre flyter | U+212A (Kelvin) blir `k`, så en adresse kan treffe en annen brukers. Generisk OIDC krever ren ASCII for tillit (015 F4, A1). Vurder samme krav for Google, Microsoft og admin-endring av e-post | ADN 17 |
 | Nyregistrering via føderert innlogging auditeres ikke som `identity_linked` | Auto-registrering skriver bruker og identitet uten audit-rad for koblingen. Gjelder alle føderte metoder (015 eval T2.11) | ADN 13 |
+| Logg ved oppstart når en tidligere avvist leverandør med tilordning blir lastet | Etter omstart kan en leverandør som før ble avvist, plutselig bli aktiv for tjenestene den er tilordnet. Oversiktssiden viser det, men loggen sier ingenting (016 F3, security S2) | ADN 18 |
+| RFC 2047-koding av e-postemne | Emnet med ikke-ASCII-tegn sendes uten koding, også i magic link. CR/LF fjernes (016 F4, security S2) | ADN 18 |
+| Språk i invitasjonsmail følger admin | Verken tjeneste eller bruker har språkfelt, så mailen følger admins `Accept-Language` (PD13). Legg til språkfelt på tjeneste eller bruker (016 F4) | ADN 18 |
+| `-race` for `ForService`-låsen i CI | Fjernet `RLock` i `ForService` fanges ikke av tester uten ThreadSanitizer, som ikke virker på Pi-en (016 F2, test T2) | ROADMAP Fase 6 |
 | Apple Sign In | Løpende kostnad. Kommer som adapter etter Fase 4 ved dokumentert behov | ADN 7 |
 | GitHub/LinkedIn m.fl. | Kan i stor grad dekkes av generisk OIDC (Fase 4) | ROADMAP §5 |
 | Deaktivert bruker på tjeneste med auto-register gir `login_failed` i stedet for `access_denied` | Uventet feilkode, ufarlig (008 F10 S2) | — |
@@ -79,7 +83,7 @@ Sist gjennomgått: 2026-10-16
 | klarsyn-web: godta `sub` som UUID, match på `email` første gang | Som over. analyse.klarsyn.net logger inn som `klarsyn` | ADN 13 |
 | univers/authgate: godta `sub` som UUID, match på `email` første gang | Som over | ADN 13 |
 | wspekto: godta `sub` som UUID, match på `email` første gang | Repoet avklares først. Som over | ADN 13 |
-| Eksplisitt kobling av en ny leverandørkonto etter fersk innlogging med en eksisterende identitet | **Utsatt til første tjeneste med `auto_link=0` / Fase 5** (012-analysen). Uten den avvises en bruker med `auto_link=0` som bytter konto (`account_not_linked`). Til da kobler admin fra den gamle identiteten (012), og neste konto kobles som første | ROADMAP Fase 2/5, ADN 13, ADN 14 |
+| Eksplisitt kobling av en ny leverandørkonto etter fersk innlogging med en eksisterende identitet | **Admin-styrt invitasjon finnes for generiske leverandører (016).** Selvbetjent kobling for Google og Microsoft er **utsatt til første tjeneste med `auto_link=0` / Fase 5** (012-analysen). Uten den avvises en bruker med `auto_link=0` som bytter konto (`account_not_linked`). Til da kobler admin fra den gamle identiteten (012), og neste konto kobles som første | ROADMAP Fase 2/5, ADN 13, ADN 14 |
 | Selvbetjening: kontoside der brukeren selv ser, kobler og kobler fra identiteter | **Utsatt til første tjeneste med `auto_link=0` / Fase 5.** kauth har ingen brukerrettet kontoside. 012 gjør dette admin-styrt | ROADMAP Fase 5, ADN 14 |
 | Varsel til gammel adresse ved e-postendring i admin | Admin går god for ny adresse (012 PB1). Et varsel, ikke en bekreftelse, ville gjort en kontoovertakelse via admin synlig for brukeren. Krever e-posttjenesten i admin og treffes av Brevo-allowlisten | ADN 14 |
 | Knapp for en annen `konge` til å åpne admin-bindingen (`admin_bound_at`) | 012 bruker en driftsprosedyre (`sqlite3`). Kommer hvis prosedyren brukes mer enn sjelden (012 D3d) | ADN 14 |

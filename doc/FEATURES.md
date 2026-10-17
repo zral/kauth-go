@@ -53,6 +53,17 @@ Innlogging mot en konfigurerbar OIDC-leverandør (015, ADN 17). Leverandørene e
 - **Audit:** `oidc_login` ved suksess (`auth_method=oidc`) og `oidc_rejected` ved avvisning, med `provider=<slug> reason=<kode>`. Årsakene er `unknown_service`, `unknown_provider`, `provider_error`, `issuer_param`, `discovery`, `code_exchange`, `id_token_missing`, `id_token`, `nonce`, `missing_sub`, `email_missing`, `email_untrusted`, `user_inactive`, `user_conflict` og `internal`. Teksten fra leverandøren havner aldri i svaret til brukeren.
 - **Testleverandør:** `cmd/kauth-testidp` (bygges med `make testidp`, ikke del av prod-binæren) brukes av eval-serveren sammen med `KAUTH_OIDC_ALLOW_INSECURE=true`.
 
+### Leverandøradmin og koblingsinvitasjon
+
+Fra 016 (ADN 18). Admin ser leverandørene, styrer tilordning per tjeneste uten omstart og kobler generiske identiteter via en invitasjon brukeren selv fullfører. Drift: [IDENTITY_PROVIDERS.md](IDENTITY_PROVIDERS.md).
+
+- **Leverandørside:** `GET /admin/providers` viser alle rader i `identity_providers` med status (lastet, inaktiv eller avvist med årsak), allowlist, `trust_email`, navnet på hemmelighetsvariabelen og om den er satt (aldri verdien), og tilordnede tjenester. Bare lesende. Ingen rute endrer leverandørrader.
+- **Tilordning:** `POST /admin/services/{id}/providers` erstatter tjenestens tilordninger i én transaksjon og laster registeret om uten omstart. Bare lastede leverandører kan legges til. Tilordninger til ikke-lastede beholdes og kan fjernes eksplisitt. Auditeres synkront som `service_providers_updated`.
+- **Identitetslisten:** brukersiden viser leverandørnavn i stedet for «oidc», og «ukjent leverandør» når raden er borte.
+- **Invitasjon:** `POST /admin/users/{id}/link-invites` sender en engangslenke (24 t, SHA-256-hash i `identity_link_invites`, maks 5 per bruker per time) til brukerens adresse. En ny invitasjon for samme bruker og leverandør brenner den forrige. `POST /admin/users/{id}/link-invites/{inviteID}/revoke` trekker tilbake. Deaktivering og e-postendring brenner åpne invitasjoner.
+- **Brukerflyt:** `GET /link/{token}` viser en bekreftelsesside med maskert e-post og endrer ingenting. `POST /link/{token}` (samme origin) sender brukeren til leverandøren med PKCE, nonce, signert state (`link=<id>`) og `prompt=login`. I `/idp/{slug}/callback` bindes `(issuer, sub)` til invitasjonens bruker i én transaksjon etter at all vanlig verifisering er gjort. `admin_ok` settes aldri, og det utstedes ingen tokens eller sesjon. Brukeren får kvitteringsside og kvitteringsmail. Ugyldige lenker gir samme generiske side. Sidene sender `Referrer-Policy: no-referrer` og `Cache-Control: no-store`.
+- **Audit:** `identity_link_invited`, `identity_link_invite_revoked`, `identity_linked` med `via=invite`, og `identity_link_rejected` med `reason=invite_invalid|user_inactive|email_changed|identity_taken|discovery|internal`. Koblingsaudit skrives synkront. Token og `sub` står aldri i audit eller logg.
+
 ### Magic-link på e-post
 
 256-bit kryptografisk tilfeldig token i en lenke, 15 minutters levetid, engangsbruk via atomisk `UPDATE WHERE used = 0`. Tokenet lagres som SHA-256-hex (`HashOpaque`), aldri i klartekst. Klartekst finnes bare i e-posten.
@@ -410,8 +421,14 @@ Skrivehandlingene (`user_created`, `user_edited`, `user_deactivated`, `service_c
 - `GET /admin/users/{id}/edit` + `POST /admin/users/{id}` — rediger navn, roller, organisasjoner. Siden viser `public_id` og en skrivebeskyttet tabell over identiteter: leverandør, tenant (Microsoft), avkortet subject, e-post sist sett, koblet, sist brukt og om identiteten er godkjent for admin. Hver rad har en frakoblingsknapp. Siden viser også når admin-Google ble bundet, og har et eget skjema for e-postendring
 - `POST /admin/users/{id}/identities/{identityID}/unlink` — koble fra en identitet (se «Frakobling»)
 - `POST /admin/users/{id}/email` — endre e-post (se «E-postendring»)
+- `POST /admin/users/{id}/link-invites` og `POST /admin/users/{id}/link-invites/{inviteID}/revoke` — send og trekk tilbake koblingsinvitasjon (se «Leverandøradmin og koblingsinvitasjon»). Brukersiden lister aktive invitasjoner
 - `POST /admin/users/{id}/deactivate` — settes `deactivated_at = now()`
 - `GET /admin/users/export` — CSV-eksport (formula-injection-beskyttet)
+
+### Leverandører
+
+- `GET /admin/providers` — skrivebeskyttet oversikt over generiske leverandører med lastestatus
+- `POST /admin/services/{id}/providers` — tilordning per tjeneste, virker uten omstart
 
 ### Audit-logg
 
@@ -545,7 +562,7 @@ Intern-sti-grenen i `/dispatch` er fjernet: på nivå 1 godtas bare en `redirect
 ## Audit-logg
 
 Lagret i `audit_events`-tabellen med felter:
-- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `oidc_login`, `oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `dispatch_subject_mismatch`, `dispatch_subject_check_skipped`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, ...
+- `event_type` — `login_success`, `login_failed`, `magic_link_login`, `google_oidc_login`, `microsoft_oidc_login`, `google_oidc_rejected`, `microsoft_oidc_rejected`, `oidc_login`, `oidc_rejected`, `admin_login`, `admin_logout`, `admin_google_login`, `refresh_token_issued`, `refresh_token_rotated`, `refresh_token_reuse`, `refresh_token_revoked_presented`, `dispatch_aud_mismatch`, `dispatch_token_stale`, `dispatch_subject_mismatch`, `dispatch_subject_check_skipped`, `user_logout`, `user_deactivated`, `service_created`, `service_edited`, `service_providers_updated`, `identity_link_invited`, `identity_link_invite_revoked`, `identity_linked`, `identity_link_rejected`, ...
 - `auth_method` — `google`, `microsoft`, `oidc`, `magic_link`, `password`, `refresh`
 - `email`, `service_id`, `ip_address`, `user_agent`
 - `success` — bool, alltid eksplisitt satt av applikasjonen
@@ -558,11 +575,12 @@ Nye event-typer fra 009: `authorization_code_invalid`, `authorization_code_misma
 
 ## Bakgrunnsjobber
 
-Tre goroutiner, alle med 1 times tick, kjører umiddelbart ved oppstart:
+Goroutiner med 1 times tick, kjører umiddelbart ved oppstart:
 
 - **`cleanMagicTokens`** — sletter brukte magic-tokens som er utløpt, og ubrukte som er eldre enn 24 timer
 - **`cleanRefreshTokens`** — sletter refresh-tokens der `expires_at` er passert OG `family_expires_at` enten er null eller passert
 - **`cleanAuditEvents`** — sletter audit-events eldre enn 90 dager
+- **Koblingsinvitasjoner** — sletter rader i `identity_link_invites` som utløp for mer enn 7 døgn siden (brukte og ubrukte)
 
 Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
 
@@ -582,6 +600,8 @@ Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
 | GET | `/ms-callback` | Microsoft OAuth callback |
 | GET | `/idp/{slug}/login` | Initier innlogging mot generisk OIDC-leverandør (`?service=<id>`) |
 | GET | `/idp/{slug}/callback` | Callback fra generisk OIDC-leverandør |
+| GET | `/link/{token}` | Bekreftelsesside for koblingsinvitasjon (endrer ingenting) |
+| POST | `/link/{token}` | Start kobling hos leverandøren (samme origin kreves) |
 | GET | `/magic-login` | Magic-link-skjema, valgfri `?service=<id>` og `?lang=<nb\|en\|de>` |
 | POST | `/magic-login` | Send magic-link |
 | GET | `/magic-login/{token}` | Bekreftelsesside (endrer ingenting) |
@@ -610,6 +630,9 @@ Alle stopper rent på `ctx.Done()` ved SIGTERM/SIGINT.
 | POST | `/admin/users[/{id}[/deactivate]]` | konge-rolle, samme origin |
 | GET | `/admin/audit[/export]` | konge-rolle |
 | GET, POST | `/admin/services[/new/{id}/edit]` | konge-rolle, POST med samme origin |
+| POST | `/admin/services/{id}/providers` | konge-rolle, samme origin |
+| GET | `/admin/providers` | konge-rolle |
+| POST | `/admin/users/{id}/link-invites[/{inviteID}/revoke]` | konge-rolle, samme origin |
 
 ## Datamodell
 
@@ -630,6 +653,10 @@ Eksterne identiteter: id, user_id (FK til `users`, `ON DELETE CASCADE`), provide
 ### `identity_providers` og `service_identity_providers`
 
 Generiske OIDC-leverandører (015): id, slug (unik), display_name, issuer (unik), client_id, client_secret_env (navnet på en `KAUTH_IDP_*`-variabel, aldri selve hemmeligheten), scopes, trust_email, email_domains, active, created_at. Tilordningen har `(service_id, provider_id)` som primærnøkkel og `position`, og slettes med tjenesten eller leverandøren. CHECK-regler i databasen speiler lastereglene som forsvar i dybden. Se [IDENTITY_PROVIDERS.md](IDENTITY_PROVIDERS.md).
+
+### `identity_link_invites`
+
+Koblingsinvitasjoner (016): id, token_hash (SHA-256 hex, unik), user_id, provider_id, service_id (alle med `ON DELETE CASCADE`), email (brukerens e-post da invitasjonen ble laget), created_by, created_at, expires_at, used_at (satt ved kobling, tilbaketrekking eller erstatning). Tidsstempler skrives i fast format `%Y-%m-%dT%H:%M:%SZ` fordi de sammenlignes som tekst.
 
 ### `magic_tokens`
 
