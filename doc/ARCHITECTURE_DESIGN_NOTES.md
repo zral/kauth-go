@@ -377,3 +377,23 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - **Restore-testens vakter.** Nekter prod-DB-stien (også relativ), filer i `data/` og port 8083. Kilden åpnes `-readonly` og kopieres med `.backup`. Kjøres med `env -i`, uten `.env`.
 - **E2E.** `main.go` eksponerer ikke ruteren, så testen bygger en egen. Risiko: den kan avvike fra `main.go`. Tiltak står i BACKLOG (trekk ut rutebyggingen).
 - **Hemmeligheter i repoet.** `.gitignore` dekker `.env.*` (unntatt `.env.example`) etter at en `.env`-backup lå uignorert i repo-roten.
+
+## ADN 21 — GitHub som egen OAuth-leverandør med faste verter, numerisk id og bare primær, verifisert e-post (2026-10-17)
+
+**Status:** Analysert — venter implementering (019)
+→ Analyse: [doc/features/019_AN_GITHUB_LOGIN.md](features/019_AN_GITHUB_LOGIN.md) · Plan: [doc/features/019_PL_GITHUB_LOGIN.md](features/019_PL_GITHUB_LOGIN.md)
+
+**Beslutning:**
+1. GitHub er en egen handler (`/github-login`, `/github-callback`) ved siden av Microsoft, med felles avslutning via `federatedLogin.finishWithPolicy` og `loginCompleter.complete`. Ikke et leverandør-interface, og ikke en rad i `identity_providers`.
+2. Identiteten er `(https://github.com, id)` med `provider='github'`. `login` brukes aldri som nøkkel og lagres ikke.
+3. Bare den primære oppføringen i `/user/emails` er kandidat. Den er betrodd når den er verifisert, ikke er en `noreply`-adresse og er ren ASCII. Uten betrodd e-post logger bare en allerede koblet identitet inn (`EmailUntrusted`, som `trust_email=0`).
+4. Code + signert state med eget formål `:github` + PKCE (S256, `idp.PKCEVerifier`). All trafikk via `idp.NewHTTPClient` mot faste verter. Overstyring av vertene bare i insecure-modus (eval).
+5. GitHub gir aldri admin-tilgang (`CHECK (provider NOT IN ('oidc','github') OR admin_ok = 0)`).
+6. `auth_github`, `github_client_id` og `github_client_secret_env` (`KAUTH_SVC_`) per tjeneste, med global fallback. Én GitHub-app per `auth_host`.
+
+**Begrunnelse:** GitHub har ingen id_token og ingen issuer å allowliste, så tilliten er kodeutvekslingen mot en fast vert. Brukernavn kan endres og gjenbrukes, og `/user.email` er ubekreftet profiltekst. Begge ville gitt kontoovertakelse.
+
+**Konsekvens:**
+- GitHub blir underleverandør for tjenester som slår det på.
+- Tjenester med egen `auth_host` trenger egen GitHub OAuth App.
+- GitHub-brukere uten verifisert primær e-post kan ikke registrere seg eller kobles på e-post. De kommer inn med magic link, eller etter at identiteten er koblet.
