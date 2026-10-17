@@ -139,6 +139,11 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateGithubClientID(r); err != nil {
+		h.renderServiceError(w, serviceFromForm(r), nil, err.Error())
+		return
+	}
+
 	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, svcID)
 	if uploadErr != "" {
 		h.renderServiceError(w, serviceFromForm(r), nil, uploadErr)
@@ -161,7 +166,11 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// det som faktisk ble lagret.
 	details := fmt.Sprintf("service_created sub_format=%s auto_link=%d",
 		valueOr(params.SubFormat, "email"), valueOr(params.AutoLink, int64(1)))
-	details += secretEnvChanges(nil, params.GoogleClientSecretEnv, nil, params.MicrosoftClientSecretEnv)
+	if params.AuthGithub == 1 {
+		details += " auth_github=1"
+	}
+	details += secretEnvChanges(nil, params.GoogleClientSecretEnv, nil, params.MicrosoftClientSecretEnv, nil, params.GithubClientSecretEnv)
+	details += githubClientIDChange(nil, params.GithubClientID)
 	if uploaded {
 		details += " bg_image_uploaded=" + uploadedPath
 	}
@@ -259,6 +268,11 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateGithubClientID(r); err != nil {
+		h.renderServiceError(w, overlayForm(*existing, r), existing, err.Error())
+		return
+	}
+
 	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, id)
 	if uploadErr != "" {
 		h.renderServiceError(w, overlayForm(*existing, r), existing, uploadErr)
@@ -277,7 +291,9 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	cacheOK := h.invalidateCache(r, id)
 
 	details := "service_edited" + identityPolicyChanges(*existing, params) +
-		secretEnvChanges(existing.GoogleClientSecretEnv, params.GoogleClientSecretEnv, existing.MicrosoftClientSecretEnv, params.MicrosoftClientSecretEnv)
+		secretEnvChanges(existing.GoogleClientSecretEnv, params.GoogleClientSecretEnv, existing.MicrosoftClientSecretEnv, params.MicrosoftClientSecretEnv,
+			existing.GithubClientSecretEnv, params.GithubClientSecretEnv) +
+		githubClientIDChange(existing.GithubClientID, params.GithubClientID)
 	if uploaded {
 		details += " bg_image_uploaded=" + uploadedPath
 	}
@@ -353,6 +369,8 @@ func handleBgImageUpload(r *http.Request, svcID string) (bool, string, string) {
 func buildCreateParams(r *http.Request, id, now string) gen.CreateServiceParams {
 	googleEnv, _ := formSecretEnv(r, "google_secret_env")
 	microsoftEnv, _ := formSecretEnv(r, "microsoft_secret_env")
+	githubEnv, _ := formSecretEnv(r, "github_secret_env")
+	githubID, _ := formOptional(r, "github_client_id")
 	return gen.CreateServiceParams{
 		ID:                 id,
 		DisplayName:        r.PostFormValue("display_name"),
@@ -387,8 +405,9 @@ func buildCreateParams(r *http.Request, id, now string) gen.CreateServiceParams 
 
 		GoogleClientSecretEnv:    googleEnv,
 		MicrosoftClientSecretEnv: microsoftEnv,
-		// GitHub-feltene har ikke skjema før 019 F4: ny tjeneste starter av.
-		AuthGithub: 0,
+		AuthGithub:               checkboxInt(r, "auth_github"),
+		GithubClientID:           githubID,
+		GithubClientSecretEnv:    githubEnv,
 	}
 }
 
@@ -398,11 +417,18 @@ func buildCreateParams(r *http.Request, id, now string) gen.CreateServiceParams 
 func buildUpdateParams(r *http.Request, existing gen.Service, now string) gen.UpdateServiceParams {
 	cp := buildCreateParams(r, existing.ID, now)
 	googleEnv, microsoftEnv := existing.GoogleClientSecretEnv, existing.MicrosoftClientSecretEnv
+	githubEnv, githubID := existing.GithubClientSecretEnv, existing.GithubClientID
 	if v, ok := formSecretEnv(r, "google_secret_env"); ok {
 		googleEnv = v
 	}
 	if v, ok := formSecretEnv(r, "microsoft_secret_env"); ok {
 		microsoftEnv = v
+	}
+	if v, ok := formSecretEnv(r, "github_secret_env"); ok {
+		githubEnv = v
+	}
+	if v, ok := formOptional(r, "github_client_id"); ok {
+		githubID = v
 	}
 	return gen.UpdateServiceParams{
 		DisplayName:           cp.DisplayName,
@@ -434,10 +460,11 @@ func buildUpdateParams(r *http.Request, existing gen.Service, now string) gen.Up
 		// Mangler feltet i skjemaet beholdes lagret referanse; tomt felt gir NULL.
 		GoogleClientSecretEnv:    googleEnv,
 		MicrosoftClientSecretEnv: microsoftEnv,
-		// Uten skjemafelt (F4) skal redigering aldri nulle GitHub-konfig.
-		AuthGithub:            existing.AuthGithub,
-		GithubClientID:        existing.GithubClientID,
-		GithubClientSecretEnv: existing.GithubClientSecretEnv,
+		// Samme prinsipp som for env-referansene: mangler feltet i skjemaet beholdes
+		// lagret client id og referanse. Avkrysningen følger de andre auth_*-boksene.
+		AuthGithub:            cp.AuthGithub,
+		GithubClientID:        githubID,
+		GithubClientSecretEnv: githubEnv,
 		JwtCookieName:         cp.JwtCookieName,
 		AccessTokenTtl:        cp.AccessTokenTtl,
 		RefreshTokenMaxAge:    cp.RefreshTokenMaxAge,
@@ -505,6 +532,9 @@ func identityPolicyChanges(old gen.Service, p gen.UpdateServiceParams) string {
 	}
 	if old.AutoLink != p.AutoLink {
 		out += fmt.Sprintf(" auto_link=%d->%d", old.AutoLink, p.AutoLink)
+	}
+	if old.AuthGithub != p.AuthGithub {
+		out += fmt.Sprintf(" auth_github=%d->%d", old.AuthGithub, p.AuthGithub)
 	}
 	return out
 }
@@ -615,6 +645,7 @@ func serviceFromForm(r *http.Request) gen.Service {
 		AuthGoogle:         checkboxInt(r, "auth_google"),
 		AuthMagicLink:      checkboxInt(r, "auth_magic_link"),
 		AuthMicrosoft:      checkboxInt(r, "auth_microsoft"),
+		AuthGithub:         checkboxInt(r, "auth_github"),
 		AuthPassword:       checkboxInt(r, "auth_password"),
 		IsDefault:          checkboxInt(r, "is_default"),
 		AutoRegister:       checkboxInt(r, "auto_register"),
@@ -623,6 +654,8 @@ func serviceFromForm(r *http.Request) gen.Service {
 	}
 	f.GoogleClientSecretEnv, _ = formSecretEnv(r, "google_secret_env")
 	f.MicrosoftClientSecretEnv, _ = formSecretEnv(r, "microsoft_secret_env")
+	f.GithubClientSecretEnv, _ = formSecretEnv(r, "github_secret_env")
+	f.GithubClientID, _ = formOptional(r, "github_client_id")
 	return f
 }
 
@@ -647,6 +680,7 @@ func overlayForm(existing gen.Service, r *http.Request) gen.Service {
 	out.DefaultRole, out.DefaultOrg, out.RequireRole, out.EnforceOrg = f.DefaultRole, f.DefaultOrg, f.RequireRole, f.EnforceOrg
 	out.Active, out.AuthGoogle, out.AuthMagicLink, out.AuthMicrosoft = f.Active, f.AuthGoogle, f.AuthMagicLink, f.AuthMicrosoft
 	out.AuthPassword, out.IsDefault, out.AutoRegister = f.AuthPassword, f.IsDefault, f.AutoRegister
+	out.AuthGithub = f.AuthGithub
 	// Ugyldig verdi vises aldri tilbake: feilsiden viser det som faktisk er lagret.
 	out.SubFormat = existing.SubFormat
 	if v := formSubFormat(r); v != nil && (*v == "email" || *v == "id") {
@@ -658,6 +692,14 @@ func overlayForm(existing gen.Service, r *http.Request) gen.Service {
 	}
 	if _, ok := formSecretEnv(r, "microsoft_secret_env"); ok {
 		out.MicrosoftClientSecretEnv = f.MicrosoftClientSecretEnv
+	}
+	if _, ok := formSecretEnv(r, "github_secret_env"); ok {
+		out.GithubClientSecretEnv = f.GithubClientSecretEnv
+	}
+	// Tomt felt skal vises tomt, ikke som lagret verdi, ellers kommer den gamle
+	// client id-en stille tilbake når skjemaet sendes på nytt.
+	if _, ok := formOptional(r, "github_client_id"); ok {
+		out.GithubClientID = f.GithubClientID
 	}
 	return out
 }
@@ -680,6 +722,7 @@ func (h *ServicesHandler) renderServiceError(w http.ResponseWriter, svc gen.Serv
 func (h *ServicesHandler) addSecretStatus(data map[string]interface{}, shown gen.Service, stored *gen.Service) {
 	data["GoogleEnvSet"] = h.envIsSet(shown.GoogleClientSecretEnv)
 	data["MicrosoftEnvSet"] = h.envIsSet(shown.MicrosoftClientSecretEnv)
+	data["GitHubEnvSet"] = h.envIsSet(shown.GithubClientSecretEnv)
 	data["GooglePlain"] = stored != nil && stored.GoogleClientSecret != nil && *stored.GoogleClientSecret != ""
 	data["MicrosoftPlain"] = stored != nil && stored.MicrosoftClientSecret != nil && *stored.MicrosoftClientSecret != ""
 }
@@ -701,12 +744,19 @@ func formSecretEnv(r *http.Request, field string) (*string, bool) {
 	return nullableStr(vals[len(vals)-1]), true
 }
 
+// formOptional er formSecretEnv for vanlige tekstfelt: (nil, false) når feltet mangler,
+// slik at en eldre side eller et skript ikke nuller lagret verdi. Tomt felt gir NULL.
+func formOptional(r *http.Request, field string) (*string, bool) {
+	return formSecretEnv(r, field)
+}
+
 // validateSecretEnv avviser navn utenfor KAUTH_SVC_-prefikset, slik at admin ikke kan
 // peke en tjeneste mot KAUTH_PRIVATE_KEY_PEM eller andre variabler.
 func validateSecretEnv(r *http.Request) error {
 	for _, f := range []struct{ field, label string }{
 		{"google_secret_env", "Google"},
 		{"microsoft_secret_env", "Microsoft"},
+		{"github_secret_env", "GitHub"},
 	} {
 		v, ok := formSecretEnv(r, f.field)
 		if ok && v != nil && (len(*v) > 64 || !service.ClientSecretEnvRe.MatchString(*v)) {
@@ -716,8 +766,35 @@ func validateSecretEnv(r *http.Request) error {
 	return nil
 }
 
+// githubClientIDRe holder client id til det GitHub utsteder (f.eks. Iv1.abc123,
+// Ov23li…), slik at feltet ikke kan bære vilkårlig tekst inn i authorize-URL-en.
+var githubClientIDRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+
+func validateGithubClientID(r *http.Request) error {
+	v, ok := formOptional(r, "github_client_id")
+	if ok && v != nil && !githubClientIDRe.MatchString(*v) {
+		return errors.New("GitHub client ID kan bare inneholde bokstaver, tall, punktum, bindestrek og understrek (maks 128 tegn)")
+	}
+	return nil
+}
+
+// githubClientIDChange fører bytte av GitHub-app i audit. Client id er offentlig og
+// kan logges; den avgjør hvilken OAuth-app brukerne sendes til.
+func githubClientIDChange(oldID, newID *string) string {
+	dash := func(p *string) string {
+		if p == nil {
+			return "(ingen)"
+		}
+		return *p
+	}
+	if dash(oldID) == dash(newID) {
+		return ""
+	}
+	return " github_client_id=" + dash(oldID) + "->" + dash(newID)
+}
+
 // secretEnvChanges gir audit-details for endret env-referanse. Bare navn, aldri verdier.
-func secretEnvChanges(oldG, newG, oldM, newM *string) string {
+func secretEnvChanges(oldG, newG, oldM, newM, oldGh, newGh *string) string {
 	dash := func(p *string) string {
 		if p == nil {
 			return "(ingen)"
@@ -730,6 +807,9 @@ func secretEnvChanges(oldG, newG, oldM, newM *string) string {
 	}
 	if dash(oldM) != dash(newM) {
 		out += " microsoft_secret_env=" + dash(oldM) + "->" + dash(newM)
+	}
+	if dash(oldGh) != dash(newGh) {
+		out += " github_secret_env=" + dash(oldGh) + "->" + dash(newGh)
 	}
 	return out
 }

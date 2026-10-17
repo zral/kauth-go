@@ -99,6 +99,10 @@
             <label for="auth_microsoft">Microsoft OIDC</label>
         </div>
         <div class="checkbox-row">
+            <input type="checkbox" id="auth_github" name="auth_github" value="1" {{if eq .Service.AuthGithub 1}}checked{{end}}>
+            <label for="auth_github">GitHub</label>
+        </div>
+        <div class="checkbox-row">
             <input type="checkbox" id="auth_magic_link" name="auth_magic_link" value="1" {{if eq .Service.AuthMagicLink 1}}checked{{end}}>
             <label for="auth_magic_link">Magic link</label>
         </div>
@@ -121,6 +125,16 @@
             <input type="text" id="microsoft_secret_env" name="microsoft_secret_env" value="{{if .Service.MicrosoftClientSecretEnv}}{{.Service.MicrosoftClientSecretEnv}}{{end}}" placeholder="KAUTH_SVC_ALFA_MS_SECRET" autocomplete="off" aria-describedby="secret_env_hint microsoft_secret_status">
             <p class="hint" id="microsoft_secret_status">{{if .Service.MicrosoftClientSecretEnv}}{{if .MicrosoftEnvSet}}<span class="badge badge-green">satt</span>{{else}}<span class="badge badge-red">ikke satt</span>{{end}}{{else}}<span class="badge badge-grey">Ingen referanse</span>{{end}}{{if .MicrosoftPlain}} Hemmelighet ligger i databasen; flytt den til en miljøvariabel.{{end}}</p>
             {{if and .Service.MicrosoftClientSecretEnv (not .MicrosoftEnvSet)}}<div class="warn" role="alert">Microsoft-innlogging er ute av drift for denne tjenesten til {{.Service.MicrosoftClientSecretEnv}} er satt i .env og kauth er startet på nytt.</div>{{end}}
+        </div>
+        <div class="form-group">
+            <label for="github_client_id">GitHub client ID</label>
+            <input type="text" id="github_client_id" name="github_client_id" value="{{if .Service.GithubClientID}}{{.Service.GithubClientID}}{{end}}" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label for="github_secret_env">Miljøvariabel for GitHub-klienthemmelighet</label>
+            <input type="text" id="github_secret_env" name="github_secret_env" value="{{if .Service.GithubClientSecretEnv}}{{.Service.GithubClientSecretEnv}}{{end}}" placeholder="KAUTH_SVC_ALFA_GITHUB_SECRET" autocomplete="off" aria-describedby="secret_env_hint github_secret_status">
+            <p class="hint" id="github_secret_status">{{if .Service.GithubClientSecretEnv}}{{if .GitHubEnvSet}}<span class="badge badge-green">satt</span>{{else}}<span class="badge badge-red">ikke satt</span>{{end}}{{else}}<span class="badge badge-grey">Ingen referanse</span>{{end}}</p>
+            {{if and .Service.GithubClientSecretEnv (not .GitHubEnvSet)}}<div class="warn" role="alert">GitHub-innlogging er ute av drift for denne tjenesten til {{.Service.GithubClientSecretEnv}} er satt i .env og kauth er startet på nytt.</div>{{end}}
         </div>
 
         <h2>Branding</h2>

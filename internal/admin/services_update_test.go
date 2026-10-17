@@ -599,7 +599,7 @@ func TestServiceSave_InvalidateFailure_ShowsWarning(t *testing.T) {
 	assert.NotContains(t, get(""), msg)
 }
 
-func TestBuildUpdateParams_BevarerGitHubFelt(t *testing.T) {
+func TestBuildUpdateParams_GitHubFeltUtenSkjemafelt(t *testing.T) {
 	existing := gen.Service{
 		ID:                    "s1",
 		AuthGithub:            1,
@@ -609,7 +609,8 @@ func TestBuildUpdateParams_BevarerGitHubFelt(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/admin/services/s1", nil)
 	r.PostForm = url.Values{"display_name": {"S1"}}
 	p := buildUpdateParams(r, existing, "2026-01-01T00:00:00Z")
-	require.Equal(t, int64(1), p.AuthGithub)
+	// Avkrysningen følger de andre auth_*-boksene: uten felt er den av.
+	require.Equal(t, int64(0), p.AuthGithub)
 	require.Equal(t, "Iv1.abc", *p.GithubClientID)
 	require.Equal(t, "KAUTH_SVC_S1_GH", *p.GithubClientSecretEnv)
 

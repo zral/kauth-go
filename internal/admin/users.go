@@ -346,6 +346,9 @@ func identityViews(in []gen.UserIdentity, names []gen.ListIdentityProviderNamesR
 				v.Tenant = i.Issuer
 			}
 		}
+		if i.Provider == "github" {
+			v.Provider = "GitHub"
+		}
 		if i.Provider == "microsoft" && strings.HasPrefix(i.Issuer, msIssuerPrefix) {
 			if tid, _, ok := strings.Cut(strings.TrimPrefix(i.Issuer, msIssuerPrefix), "/"); ok && tid != "" {
 				v.Tenant = tid
