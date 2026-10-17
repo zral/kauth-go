@@ -17,7 +17,7 @@ func NewIssuerForTest() *Issuer {
 	if err != nil {
 		panic(err)
 	}
-	iss, err := NewIssuer(key, &key.PublicKey, "https://test.example.com", 15*time.Minute, 8*time.Hour)
+	iss, err := NewIssuer(NewSingleKeyRing(key), "https://test.example.com", 15*time.Minute, 8*time.Hour)
 	if err != nil {
 		panic(err)
 	}
@@ -73,4 +73,31 @@ func MustNewPublicID() string {
 		panic(err)
 	}
 	return id
+}
+
+// NewRotatedIssuersForTest lager to Issuere med samme issuer: old signerer med
+// en eldre nøkkel (kid kauth-0), rotated har ny current (kauth-1) og old som
+// previous. Tokens fra old skal altså godtas av rotated. Panics ved feil.
+func NewRotatedIssuersForTest() (rotated, old *Issuer) {
+	oldKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+	newKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+	oldRing := NewSingleKeyRing(oldKey)
+	oldRing.Current.KID = "kauth-0"
+	old, err = NewIssuer(oldRing, "https://test.example.com", 15*time.Minute, 8*time.Hour)
+	if err != nil {
+		panic(err)
+	}
+	ring := NewSingleKeyRing(newKey)
+	ring.Previous = &PublicKey{KID: "kauth-0", Public: &oldKey.PublicKey}
+	rotated, err = NewIssuer(ring, "https://test.example.com", 15*time.Minute, 8*time.Hour)
+	if err != nil {
+		panic(err)
+	}
+	return rotated, old
 }

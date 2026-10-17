@@ -33,28 +33,27 @@ type Claims struct {
 
 // Issuer utsteder og validerer RS256 JWTs.
 type Issuer struct {
-	privateKey *rsa.PrivateKey
-	publicKey  *rsa.PublicKey
+	ring       KeyRing
 	issuer     string
 	defaultTTL time.Duration
 	adminTTL   time.Duration
 }
 
-// NewIssuer oppretter en ny Issuer. Begge nøkler og issuer er påkrevd.
-func NewIssuer(priv *rsa.PrivateKey, pub *rsa.PublicKey, issuer string, defaultTTL, adminTTL time.Duration) (*Issuer, error) {
-	if priv == nil || pub == nil {
-		return nil, fmt.Errorf("nøkler er påkrevd")
+// NewIssuer oppretter en ny Issuer. Ringen valideres på nytt her selv om
+// config allerede har gjort det: tokens signert med en feilkonfigurert ring
+// stoler alle tjenester på.
+func NewIssuer(ring KeyRing, issuer string, defaultTTL, adminTTL time.Duration) (*Issuer, error) {
+	if err := ring.Validate(); err != nil {
+		return nil, fmt.Errorf("nøkkelring: %w", err)
 	}
+	return newIssuer(ring, issuer, defaultTTL, adminTTL)
+}
+
+func newIssuer(ring KeyRing, issuer string, defaultTTL, adminTTL time.Duration) (*Issuer, error) {
 	if issuer == "" {
 		return nil, fmt.Errorf("issuer kan ikke være tom")
 	}
-	return &Issuer{
-		privateKey: priv,
-		publicKey:  pub,
-		issuer:     issuer,
-		defaultTTL: defaultTTL,
-		adminTTL:   adminTTL,
-	}, nil
+	return &Issuer{ring: ring, issuer: issuer, defaultTTL: defaultTTL, adminTTL: adminTTL}, nil
 }
 
 // ParseISO8601Duration konverterer en ISO 8601-varighetsstreng til time.Duration.
@@ -191,14 +190,12 @@ func (i *Issuer) signClaims(user gen.User, svc *gen.Service, ttl time.Duration, 
 	return Issued{Token: s, JTI: claims.ID}, nil
 }
 
-// currentKID er nøkkel-ID-en i JWT-headeren og i JWKS. Én konstant for begge,
-// slik at klienter som velger nøkkel etter kid aldri ser to ulike verdier.
-const currentKID = "kauth-1"
-
+// sign bruker alltid current: kid i headeren og JWKS er samme verdi, slik at
+// klienter som velger nøkkel etter kid aldri ser to ulike.
 func (i *Issuer) sign(claims Claims) (string, error) {
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	tok.Header["kid"] = currentKID
-	s, err := tok.SignedString(i.privateKey)
+	tok.Header["kid"] = i.ring.Current.KID
+	s, err := tok.SignedString(i.ring.Current.Private)
 	if err != nil {
 		return "", fmt.Errorf("signere JWT: %w", err)
 	}
@@ -282,18 +279,9 @@ func (i *Issuer) Verify(tokenStr string, expect Expect) (*Claims, error) {
 	if expect.TokenUse == "" {
 		return nil, fmt.Errorf("forventet token_use må oppgis")
 	}
-	claims := &Claims{}
-	tok, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("uventet signeringsmetode: %v", t.Header["alg"])
-		}
-		return i.publicKey, nil
-	}, jwt.WithIssuer(i.issuer), jwt.WithExpirationRequired(), jwt.WithValidMethods([]string{"RS256"}))
+	claims, err := i.parse(tokenStr)
 	if err != nil {
-		return nil, fmt.Errorf("ugyldig token: %w", err)
-	}
-	if !tok.Valid {
-		return nil, fmt.Errorf("token er ikke gyldig")
+		return nil, err
 	}
 	if claims.TokenUse != expect.TokenUse {
 		return nil, fmt.Errorf("feil token_use: forventet %q", expect.TokenUse)
@@ -304,20 +292,85 @@ func (i *Issuer) Verify(tokenStr string, expect Expect) (*Claims, error) {
 	return claims, nil
 }
 
-// JWKSHandler returnerer den offentlige nøkkelen som JSON Web Key Set (RFC 7517).
-func (i *Issuer) JWKSHandler(w http.ResponseWriter, r *http.Request) {
-	pub := i.publicKey
-	key := map[string]any{
+// parse verifiserer signatur, issuer og utløp mot nøkkelringen.
+// Med kid i headeren er det kid som velger nøkkel, og bare current og previous
+// finnes (next og ukjente avvises). Uten kid prøves current, og previous bare
+// når current ga signaturfeil, slik at exp/iss-feil ikke gjentas.
+func (i *Issuer) parse(tokenStr string) (*Claims, error) {
+	try := func(keyfunc jwt.Keyfunc) (*Claims, error) {
+		claims := &Claims{}
+		tok, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (any, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("uventet signeringsmetode: %v", t.Header["alg"])
+			}
+			return keyfunc(t)
+		}, jwt.WithIssuer(i.issuer), jwt.WithExpirationRequired(), jwt.WithValidMethods([]string{"RS256"}))
+		if err != nil {
+			return nil, fmt.Errorf("ugyldig token: %w", err)
+		}
+		if !tok.Valid {
+			return nil, fmt.Errorf("token er ikke gyldig")
+		}
+		return claims, nil
+	}
+	fixed := func(pub *rsa.PublicKey) jwt.Keyfunc {
+		return func(*jwt.Token) (any, error) { return pub, nil }
+	}
+
+	kidPresent := false
+	claims, err := try(func(t *jwt.Token) (any, error) {
+		raw, has := t.Header["kid"]
+		kidPresent = has
+		if !has {
+			return i.ring.Current.Public, nil
+		}
+		kid, ok := raw.(string)
+		if !ok {
+			return nil, errors.New("kid må være en streng")
+		}
+		switch {
+		case kid == i.ring.Current.KID:
+			return i.ring.Current.Public, nil
+		case i.ring.Previous != nil && kid == i.ring.Previous.KID:
+			return i.ring.Previous.Public, nil
+		}
+		return nil, errors.New("ukjent kid")
+	})
+	if err == nil || i.ring.Previous == nil || !errors.Is(err, jwt.ErrTokenSignatureInvalid) {
+		return claims, err
+	}
+	// Fallback gjelder bare token uten kid; med kid har keyfunc allerede valgt riktig nøkkel.
+	if kidPresent {
+		return nil, err
+	}
+	return try(fixed(i.ring.Previous.Public))
+}
+
+func jwk(k PublicKey) map[string]any {
+	return map[string]any{
 		"kty": "RSA",
 		"use": "sig",
 		"alg": "RS256",
-		"kid": currentKID,
-		"n":   base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
-		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
+		"kid": k.KID,
+		"n":   base64.RawURLEncoding.EncodeToString(k.Public.N.Bytes()),
+		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.Public.E)).Bytes()),
+	}
+}
+
+// JWKSHandler returnerer de offentlige nøklene som JSON Web Key Set (RFC 7517),
+// i rekkefølgen current, next, previous. Current først fordi enkle klienter
+// bruker keys[0] når de ikke slår opp etter kid.
+func (i *Issuer) JWKSHandler(w http.ResponseWriter, r *http.Request) {
+	keys := []any{jwk(PublicKey{KID: i.ring.Current.KID, Public: i.ring.Current.Public})}
+	if i.ring.Next != nil {
+		keys = append(keys, jwk(*i.ring.Next))
+	}
+	if i.ring.Previous != nil {
+		keys = append(keys, jwk(*i.ring.Previous))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{key}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
 }
 
 // DiscoveryHandler returnerer et OpenID Connect discovery-dokument.

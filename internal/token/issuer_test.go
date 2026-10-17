@@ -23,7 +23,7 @@ func newTestIssuer(t *testing.T) *token.Issuer {
 	if err != nil {
 		t.Fatalf("generere RSA-nøkkel: %v", err)
 	}
-	iss, err := token.NewIssuer(key, &key.PublicKey, "https://auth.example.com", 30*24*time.Hour, 1*time.Hour)
+	iss, err := token.NewIssuer(token.NewSingleKeyRing(key), "https://auth.example.com", 30*24*time.Hour, 1*time.Hour)
 	if err != nil {
 		t.Fatalf("NewIssuer: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestVerify_RejectsRS384(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generere RSA-nøkkel: %v", err)
 	}
-	iss, err := token.NewIssuer(key, &key.PublicKey, "https://auth.example.com", time.Hour, time.Hour)
+	iss, err := token.NewIssuer(token.NewSingleKeyRing(key), "https://auth.example.com", time.Hour, time.Hour)
 	if err != nil {
 		t.Fatalf("NewIssuer: %v", err)
 	}

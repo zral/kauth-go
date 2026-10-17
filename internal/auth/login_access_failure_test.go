@@ -2,23 +2,31 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/rsa"
-	"math/big"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zral/kauth-go/internal/db/gen"
 	"github.com/zral/kauth-go/internal/token"
 )
 
-// brokenIssuer signerer med en 12-bits nøkkel, som crypto/rsa avviser. Da
-// feiler IssueAccess uten at produksjonskode må endres.
+// brokenIssuer består ringvalideringen med en ekte 2048-bits nøkkel, men får
+// ødelagt privatdelen etterpå. Da feiler IssueAccess uten at produksjonskode
+// må endres, og uten å svekke valideringen i NewIssuer.
 func brokenIssuer(t *testing.T) *token.Issuer {
 	t.Helper()
-	k := &rsa.PrivateKey{PublicKey: rsa.PublicKey{N: big.NewInt(3233), E: 17}, D: big.NewInt(2753)}
-	iss, err := token.NewIssuer(k, &k.PublicKey, "https://test.example.com", time.Minute, time.Minute)
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
+	iss, err := token.NewIssuer(token.NewSingleKeyRing(k), "https://test.example.com", time.Minute, time.Minute)
+	require.NoError(t, err)
+	k.D = nil
+	k.Primes = nil
+	k.Precomputed = rsa.PrecomputedValues{}
+	_, err = iss.IssueAccess(gen.User{Email: "a@example.com"}, gen.Service{ID: "x", AccessTokenTtl: "PT1M"})
+	require.Error(t, err, "nøkkelen skal være ubrukelig til signering")
 	return iss
 }
 

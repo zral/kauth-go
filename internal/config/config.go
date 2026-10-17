@@ -24,6 +24,13 @@ type Config struct {
 
 	PrivateKey *rsa.PrivateKey
 	PublicKey  *rsa.PublicKey
+	// SigningKID er kid for PrivateKey/PublicKey (current).
+	SigningKID string
+	// Next og Previous er nøkler i rotasjonsringen; nil når de ikke er satt.
+	NextKey     *rsa.PublicKey
+	NextKID     string
+	PreviousKey *rsa.PublicKey
+	PreviousKID string
 
 	OIDCStateSecret []byte
 
@@ -93,6 +100,9 @@ func Load() (*Config, error) {
 
 	// RSA-nøkler: PEM-fil eller PEM-innhold direkte
 	privPEM := os.Getenv("KAUTH_PRIVATE_KEY_PEM")
+	if privPEM != "" && os.Getenv("KAUTH_PRIVATE_KEY_PATH") != "" {
+		errs = append(errs, "KAUTH_PRIVATE_KEY_PEM og KAUTH_PRIVATE_KEY_PATH er begge satt: bruk én")
+	}
 	if privPEM == "" {
 		path := require("KAUTH_PRIVATE_KEY_PATH")
 		if path != "" {
@@ -119,6 +129,9 @@ func Load() (*Config, error) {
 	}
 
 	pubPEM := os.Getenv("KAUTH_PUBLIC_KEY_PEM")
+	if pubPEM != "" && os.Getenv("KAUTH_PUBLIC_KEY_PATH") != "" {
+		errs = append(errs, "KAUTH_PUBLIC_KEY_PEM og KAUTH_PUBLIC_KEY_PATH er begge satt: bruk én")
+	}
 	if pubPEM == "" {
 		path := require("KAUTH_PUBLIC_KEY_PATH")
 		if path != "" {
@@ -143,6 +156,8 @@ func Load() (*Config, error) {
 			c.PublicKey = key
 		}
 	}
+
+	errs = append(errs, c.loadKeyRing()...)
 
 	secretB64 := require("KAUTH_OIDC_STATE_SECRET")
 	if secretB64 != "" {

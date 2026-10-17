@@ -23,7 +23,7 @@ func newKeyedIssuer(t *testing.T) (*token.Issuer, *rsa.PrivateKey) {
 	if err != nil {
 		t.Fatalf("generere RSA-nøkkel: %v", err)
 	}
-	iss, err := token.NewIssuer(key, &key.PublicKey, "https://auth.example.com", time.Hour, time.Hour)
+	iss, err := token.NewIssuer(token.NewSingleKeyRing(key), "https://auth.example.com", time.Hour, time.Hour)
 	if err != nil {
 		t.Fatalf("NewIssuer: %v", err)
 	}
@@ -102,6 +102,9 @@ func TestJWKS_Unchanged(t *testing.T) {
 	iss, key := newKeyedIssuer(t)
 	rec := httptest.NewRecorder()
 	iss.JWKSHandler(rec, httptest.NewRequest("GET", "/.well-known/jwks.json", nil))
+	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=3600" {
+		t.Errorf("Cache-Control = %q", got)
+	}
 	want := fmt.Sprintf(`{"keys":[{"alg":"RS256","e":%q,"kid":"kauth-1","kty":"RSA","n":%q,"use":"sig"}]}`,
 		base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
 		base64.RawURLEncoding.EncodeToString(key.N.Bytes()))

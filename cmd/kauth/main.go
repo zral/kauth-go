@@ -75,7 +75,7 @@ func main() {
 	log.Printf("idp: %d generiske OIDC-leverandører lastet", len(idpProviders))
 
 	// ── 5. Initialiser token-laget ───────────────────────────────────────────
-	issuer, err := token.NewIssuer(cfg.PrivateKey, cfg.PublicKey, cfg.Issuer, cfg.AccessTokenTTL, cfg.AdminTokenTTL)
+	issuer, err := token.NewIssuer(keyRing(cfg), cfg.Issuer, cfg.AccessTokenTTL, cfg.AdminTokenTTL)
 	if err != nil {
 		log.Fatalf("token issuer: %v", err)
 	}
@@ -294,4 +294,16 @@ func waitSends(timeout time.Duration, waits ...func()) {
 	case <-time.After(timeout):
 		log.Println("kauth: frist utløpt mens e-postsendinger pågikk")
 	}
+}
+
+// keyRing bygger nøkkelringen fra konfig. Next og Previous er nil når de ikke er satt.
+func keyRing(cfg *config.Config) token.KeyRing {
+	ring := token.KeyRing{Current: token.SigningKey{KID: cfg.SigningKID, Private: cfg.PrivateKey, Public: cfg.PublicKey}}
+	if cfg.NextKey != nil {
+		ring.Next = &token.PublicKey{KID: cfg.NextKID, Public: cfg.NextKey}
+	}
+	if cfg.PreviousKey != nil {
+		ring.Previous = &token.PublicKey{KID: cfg.PreviousKID, Public: cfg.PreviousKey}
+	}
+	return ring
 }
