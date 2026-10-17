@@ -4,6 +4,13 @@
 // leverandør på loopback. Ingen nett. Ruteren settes opp av main.go og kan ikke
 // kalles herfra, så den bygges her med de samme handlerne og midlene for rutene
 // flyten bruker.
+//
+// Avvik fra main.go: ingen statiske filer, legacy-redirects, admin, magic link,
+// Google/Microsoft eller /api/me, og /token har CORS uten tillatte origins
+// (klienten sender ingen Origin-header, så CORS-laget er uten virkning her).
+// Ingen av dem ligger på flytens vei. Issuer er NewIssuerForTest (egen nøkkel,
+// annen issuer-streng enn i drift), som bare påvirker verdiene som sjekkes,
+// ikke stegene.
 package e2e
 
 import (
@@ -44,6 +51,8 @@ const (
 )
 
 func TestE2E_LoginCodeTokenRefreshReuse(t *testing.T) {
+	// Test-serveren er http på loopback; uten dette får cookiene Secure-flagget
+	// og jar-en sender dem aldri tilbake.
 	t.Setenv("KAUTH_INSECURE_COOKIES", "true")
 	ctx := context.Background()
 
@@ -51,6 +60,8 @@ func TestE2E_LoginCodeTokenRefreshReuse(t *testing.T) {
 	sqldb, q, err := db.OpenMemory()
 	require.NoError(t, err)
 	t.Cleanup(func() { sqldb.Close() })
+	// :memory: er én database per tilkobling; én tilkobling gir alle handlerne
+	// samme database.
 	sqldb.SetMaxOpenConns(1)
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -116,48 +127,14 @@ func TestE2E_LoginCodeTokenRefreshReuse(t *testing.T) {
 		require.NoError(t, err)
 		defer resp.Body.Close()
 		require.Contains(t, wantStatus, resp.StatusCode, "GET %s", from)
+		raw := resp.Header.Get("Location")
+		require.NotEmpty(t, raw, "3xx uten Location fra %s", from)
 		base, _ := url.Parse(from)
-		loc, err := base.Parse(resp.Header.Get("Location"))
+		loc, err := base.Parse(raw)
 		require.NoError(t, err)
 		return loc
 	}
 
-	// --- 1. Klienten starter authorization_code med PKCE ---
-	vb := make([]byte, 32)
-	_, _ = rand.Read(vb)
-	verifier := base64.RawURLEncoding.EncodeToString(vb)
-	authz := url.Values{
-		"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {redirectURI},
-		"scope": {"openid email"}, "state": {"klient-state"}, "nonce": {"klient-nonce"},
-		"code_challenge": {auth.S256Challenge(verifier)}, "code_challenge_method": {"S256"},
-	}
-	resp, err := browser.Get(srv.URL + "/login?" + authz.Encode())
-	require.NoError(t, err)
-	resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode, "login-siden vises og oidc_authz-cookien settes")
-
-	// --- 2. /idp/{slug}/login -> fake-IdP authorize -> /idp/{slug}/callback ---
-	fake.Next(oidctest.Claims{Sub: "sub-e2e", Email: userEmail, EmailVerified: oidctest.EVTrue, Name: "Alice"}, oidctest.ModeOK)
-	toIdP := step(srv.URL+"/idp/acme/login?service="+clientID, http.StatusFound)
-	require.True(t, strings.HasPrefix(toIdP.String(), fake.URL()+"/authorize"), toIdP.String())
-	back := step(toIdP.String(), http.StatusFound)
-	require.Equal(t, "/idp/acme/callback", back.Path)
-
-	// --- 3. Callback -> /dispatch (token + rt + service) ---
-	disp := step(back.String(), http.StatusFound)
-	require.Equal(t, "/dispatch", disp.Path)
-	require.Equal(t, clientID, disp.Query().Get("service"))
-	require.NotEmpty(t, disp.Query().Get("token"))
-
-	// --- 4. /dispatch -> redirect til klientens redirect_uri med code og state ---
-	final := step(disp.String(), http.StatusSeeOther)
-	require.Equal(t, "app.e2e.test", final.Host)
-	require.Equal(t, "/auth/callback", final.Path)
-	require.Equal(t, "klient-state", final.Query().Get("state"))
-	code := final.Query().Get("code")
-	require.NotEmpty(t, code)
-
-	// --- 5. POST /token (authorization_code + code_verifier) ---
 	postToken := func(form url.Values) (int, map[string]any) {
 		t.Helper()
 		resp, err := http.Post(srv.URL+"/token", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
@@ -167,10 +144,55 @@ func TestE2E_LoginCodeTokenRefreshReuse(t *testing.T) {
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 		return resp.StatusCode, body
 	}
-	status, tok := postToken(url.Values{
-		"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI},
-		"client_id": {clientID}, "code_verifier": {verifier},
-	})
+	// login kjører hele nettleserdelen (steg 1-4) og returnerer koden og verifier.
+	login := func() (code, verifier string) {
+		t.Helper()
+		// --- 1. Klienten starter authorization_code med PKCE ---
+		vb := make([]byte, 32)
+		_, _ = rand.Read(vb)
+		verifier = base64.RawURLEncoding.EncodeToString(vb)
+		authz := url.Values{
+			"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {redirectURI},
+			"scope": {"openid email"}, "state": {"klient-state"}, "nonce": {"klient-nonce"},
+			"code_challenge": {auth.S256Challenge(verifier)}, "code_challenge_method": {"S256"},
+		}
+		resp, err := browser.Get(srv.URL + "/login?" + authz.Encode())
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode, "login-siden vises og oidc_authz-cookien settes")
+
+		// --- 2. /idp/{slug}/login -> fake-IdP authorize -> /idp/{slug}/callback ---
+		fake.Next(oidctest.Claims{Sub: "sub-e2e", Email: userEmail, EmailVerified: oidctest.EVTrue, Name: "Alice"}, oidctest.ModeOK)
+		toIdP := step(srv.URL+"/idp/acme/login?service="+clientID, http.StatusFound)
+		require.True(t, strings.HasPrefix(toIdP.String(), fake.URL()+"/authorize"), toIdP.String())
+		back := step(toIdP.String(), http.StatusFound)
+		require.Equal(t, "/idp/acme/callback", back.Path)
+
+		// --- 3. Callback -> /dispatch (token + rt + service) ---
+		disp := step(back.String(), http.StatusFound)
+		require.Equal(t, "/dispatch", disp.Path)
+		require.Equal(t, clientID, disp.Query().Get("service"))
+		require.NotEmpty(t, disp.Query().Get("token"))
+
+		// --- 4. /dispatch -> redirect til klientens redirect_uri med code og state ---
+		final := step(disp.String(), http.StatusSeeOther)
+		require.Equal(t, "app.e2e.test", final.Host)
+		require.Equal(t, "/auth/callback", final.Path)
+		require.Equal(t, "klient-state", final.Query().Get("state"))
+		code = final.Query().Get("code")
+		require.NotEmpty(t, code)
+		return code, verifier
+	}
+
+	exchange := func(code, verifier string) (int, map[string]any) {
+		t.Helper()
+		return postToken(url.Values{
+			"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI},
+			"client_id": {clientID}, "code_verifier": {verifier},
+		})
+	}
+	code, verifier := login()
+	status, tok := exchange(code, verifier)
 	require.Equal(t, http.StatusOK, status, "%v", tok)
 	accessToken, _ := tok["access_token"].(string)
 	rt1, _ := tok["refresh_token"].(string)
@@ -222,6 +244,24 @@ func TestE2E_LoginCodeTokenRefreshReuse(t *testing.T) {
 
 	status, dead := postToken(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt2}})
 	require.Equal(t, http.StatusUnauthorized, status, "det nye tokenet skal være revokert sammen med familien: %v", dead)
+
+	// --- 9. Gjenbruk av authorization code: ny innlogging, ny kode ---
+	// Egen innlogging, slik at familien fra rotasjonsdelen ikke maskerer
+	// utfallet. Verifisert gjenbruk (samme klient, redirect_uri og verifier)
+	// skal avvises og revokere familien koden ga.
+	code2, verifier2 := login()
+	status, tok2 := exchange(code2, verifier2)
+	require.Equal(t, http.StatusOK, status, "%v", tok2)
+	rtB, _ := tok2["refresh_token"].(string)
+	require.NotEmpty(t, rtB)
+
+	status, replay := exchange(code2, verifier2)
+	require.GreaterOrEqual(t, status, 400, "%v", replay)
+	require.Less(t, status, 500, "%v", replay)
+	require.NotContains(t, replay, "access_token")
+
+	status, revoked := postToken(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rtB}})
+	require.Equal(t, http.StatusUnauthorized, status, "kode-gjenbruk skal revokere familien: %v", revoked)
 }
 
 func audList(v any) []string {
