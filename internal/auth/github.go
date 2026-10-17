@@ -114,6 +114,7 @@ func (h *GitHubHandlers) InitiateLogin(w http.ResponseWriter, r *http.Request) {
 	state := signGitHubState(h.cfg.OIDCStateSecret, svc.ID, nonce)
 	q := url.Values{
 		"client_id":             {h.clientID(svc)},
+		"response_type":         {"code"},
 		"redirect_uri":          {githubRedirectURL(r)},
 		"scope":                 {"read:user user:email"},
 		"state":                 {state},
@@ -130,6 +131,8 @@ func (h *GitHubHandlers) InitiateLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   600,
 	})
+	// Svaret bærer en fersk state-cookie; et mellomlager må aldri gi den til en annen.
+	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, h.cfg.GitHubBaseURL+"/login/oauth/authorize?"+q.Encode(), http.StatusFound)
 }
 

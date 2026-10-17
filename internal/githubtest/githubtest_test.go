@@ -354,3 +354,13 @@ func TestControlGuard(t *testing.T) {
 	// Modusen er fortsatt normal: tokenendepunktet svarer uten forsinkelse.
 	require.Empty(t, s.Calls())
 }
+
+// Feil JSON-typer i e-postlisten sendes uendret, så kauths parsing kan testes.
+func TestControlUserRawEmails(t *testing.T) {
+	s := newTestServer(t)
+	require.Equal(t, 204, control(t, s, "/_control/user", `{"id":1,"name":"N","emails":[{"email":"a@b.test","primary":true,"verified":"true"}]}`))
+	s.mu.Lock()
+	raw := string(s.user.EmailsRaw)
+	s.mu.Unlock()
+	require.JSONEq(t, `[{"email":"a@b.test","primary":true,"verified":"true"}]`, raw)
+}

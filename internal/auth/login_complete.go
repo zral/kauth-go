@@ -88,6 +88,8 @@ func (c *loginCompleter) complete(w http.ResponseWriter, r *http.Request, svc *g
 		slog.Error(m.LogPrefix+": kunne ikke oppdatere last_login", "email", user.Email, "error", err)
 	}
 	c.aud.Log(ctx, audit.Event{Type: m.AuditType, AuthMethod: m.AuthMethod, Email: user.Email, ServiceID: svc.ID, IP: ip, UA: ua, Success: true})
+	// Location bærer access- og refresh-token; svaret skal aldri mellomlagres.
+	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, "/dispatch?token="+url.QueryEscape(at)+"&rt="+url.QueryEscape(rt)+"&service="+url.QueryEscape(svc.ID), http.StatusFound)
 	return nil
 }

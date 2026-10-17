@@ -62,6 +62,9 @@ type User struct {
 	ID     json.RawMessage `json:"id"`
 	Name   string          `json:"name"`
 	Emails []Email         `json:"emails"`
+	// EmailsRaw sendes uendret i /user/emails når satt, slik at feil JSON-typer
+	// (f.eks. "verified":"true") kan testes mot kauths parsing.
+	EmailsRaw json.RawMessage `json:"-"`
 }
 
 // Call er én logget forespørsel. Bare sti og boolske utfall, aldri verdiene.
@@ -437,12 +440,16 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	list := s.user.Emails
+	list, raw := s.user.Emails, s.user.EmailsRaw
 	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	if raw != nil {
+		_, _ = w.Write(raw)
+		return
+	}
 	if list == nil {
 		list = []Email{}
 	}
-	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(list)
 }
 
@@ -470,10 +477,18 @@ func controlGuard(h http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) handleControlUser(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<16))
-	var u User
-	if err != nil || json.Unmarshal(body, &u) != nil {
+	var raw struct {
+		ID     json.RawMessage `json:"id"`
+		Name   string          `json:"name"`
+		Emails json.RawMessage `json:"emails"`
+	}
+	if err != nil || json.Unmarshal(body, &raw) != nil {
 		http.Error(w, "ugyldig JSON", http.StatusBadRequest)
 		return
+	}
+	u := User{ID: raw.ID, Name: raw.Name}
+	if len(raw.Emails) > 0 && json.Unmarshal(raw.Emails, &u.Emails) != nil {
+		u.EmailsRaw = raw.Emails
 	}
 	// id må være gyldig JSON (RawMessage sikrer det) og kan være tall eller streng.
 	s.SetUser(u)
