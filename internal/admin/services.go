@@ -33,6 +33,8 @@ type ServicesHandler struct {
 	// providers gir leverandørseksjonen på redigeringssiden; nil i tester og
 	// oppsett uten leverandørregister, og seksjonen utelates da.
 	providers *ProvidersHandler
+	// getenv brukes bare til å vise om en env-referanse er satt; verdien leses aldri ut av handleren.
+	getenv func(string) string
 }
 
 // WithProviders kobler på leverandørseksjonen på tjenestesiden.
@@ -54,6 +56,7 @@ func NewServicesHandler(
 		auditor:  auditor,
 		listTpl:  listTpl,
 		editTpl:  editTpl,
+		getenv:   os.Getenv,
 	}
 }
 
@@ -85,7 +88,7 @@ func (h *ServicesHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleNew rendrer skjema for ny tjeneste med fornuftige standardverdier.
 func (h *ServicesHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.editTpl.Execute(w, map[string]interface{}{
+	data := map[string]interface{}{
 		"IsNew": true,
 		"Service": gen.Service{
 			AuthGoogle:     1,
@@ -98,7 +101,9 @@ func (h *ServicesHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 			SubFormat:      "email",
 			AutoLink:       1,
 		},
-	})
+	}
+	h.addSecretStatus(data, gen.Service{}, nil)
+	_ = h.editTpl.Execute(w, data)
 }
 
 // HandleCreate oppretter ny tjeneste fra POST-skjema.
@@ -110,28 +115,33 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	svcID := strings.TrimSpace(r.PostFormValue("id"))
 	if svcID == "" {
-		h.renderServiceError(w, serviceFromForm(r), true, "Tjeneste-ID er påkrevd.")
+		h.renderServiceError(w, serviceFromForm(r), nil, "Tjeneste-ID er påkrevd.")
 		return
 	}
 
 	if err := validateAuthHost(r.PostFormValue("auth_host")); err != nil {
-		h.renderServiceError(w, serviceFromForm(r), true, err.Error())
+		h.renderServiceError(w, serviceFromForm(r), nil, err.Error())
 		return
 	}
 
 	if err := validateEnforceOrg(r); err != nil {
-		h.renderServiceError(w, serviceFromForm(r), true, err.Error())
+		h.renderServiceError(w, serviceFromForm(r), nil, err.Error())
 		return
 	}
 
 	if err := validateSubFormat(r); err != nil {
-		h.renderServiceError(w, serviceFromForm(r), true, err.Error())
+		h.renderServiceError(w, serviceFromForm(r), nil, err.Error())
+		return
+	}
+
+	if err := validateSecretEnv(r); err != nil {
+		h.renderServiceError(w, serviceFromForm(r), nil, err.Error())
 		return
 	}
 
 	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, svcID)
 	if uploadErr != "" {
-		h.renderServiceError(w, serviceFromForm(r), true, uploadErr)
+		h.renderServiceError(w, serviceFromForm(r), nil, uploadErr)
 		return
 	}
 	if uploaded {
@@ -141,7 +151,7 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	params := buildCreateParams(r, svcID, now)
 	if err := h.queries.CreateService(r.Context(), params); err != nil {
-		h.renderServiceError(w, serviceFromForm(r), true, "Feil ved opprettelse: "+err.Error())
+		h.renderServiceError(w, serviceFromForm(r), nil, "Feil ved opprettelse: "+err.Error())
 		return
 	}
 
@@ -151,6 +161,7 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// det som faktisk ble lagret.
 	details := fmt.Sprintf("service_created sub_format=%s auto_link=%d",
 		valueOr(params.SubFormat, "email"), valueOr(params.AutoLink, int64(1)))
+	details += secretEnvChanges(nil, params.GoogleClientSecretEnv, nil, params.MicrosoftClientSecretEnv)
 	if uploaded {
 		details += " bg_image_uploaded=" + uploadedPath
 	}
@@ -181,6 +192,7 @@ func (h *ServicesHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		"IsNew":   false,
 		"Service": withoutSecrets(*found),
 	}
+	h.addSecretStatus(data, *found, found)
 	warns := warnFlags(r, "reload", "audit")
 	data["WarnReload"], data["WarnAudit"] = warns["reload"], warns["audit"]
 	if h.providers != nil {
@@ -221,30 +233,35 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 
 	if err := validateAuthHost(r.PostFormValue("auth_host")); err != nil {
-		h.renderServiceError(w, overlayForm(*existing, r), false, err.Error())
+		h.renderServiceError(w, overlayForm(*existing, r), existing, err.Error())
 		return
 	}
 
 	if strings.TrimSpace(r.PostFormValue("display_name")) == "" ||
 		strings.TrimSpace(r.PostFormValue("domain")) == "" ||
 		strings.TrimSpace(r.PostFormValue("callback_url")) == "" {
-		h.renderServiceError(w, overlayForm(*existing, r), false, "Visningsnavn, domene og callback-URL er påkrevd.")
+		h.renderServiceError(w, overlayForm(*existing, r), existing, "Visningsnavn, domene og callback-URL er påkrevd.")
 		return
 	}
 
 	if err := validateEnforceOrg(r); err != nil {
-		h.renderServiceError(w, overlayForm(*existing, r), false, err.Error())
+		h.renderServiceError(w, overlayForm(*existing, r), existing, err.Error())
 		return
 	}
 
 	if err := validateSubFormat(r); err != nil {
-		h.renderServiceError(w, overlayForm(*existing, r), false, err.Error())
+		h.renderServiceError(w, overlayForm(*existing, r), existing, err.Error())
+		return
+	}
+
+	if err := validateSecretEnv(r); err != nil {
+		h.renderServiceError(w, overlayForm(*existing, r), existing, err.Error())
 		return
 	}
 
 	uploaded, uploadedPath, uploadErr := handleBgImageUpload(r, id)
 	if uploadErr != "" {
-		h.renderServiceError(w, overlayForm(*existing, r), false, uploadErr)
+		h.renderServiceError(w, overlayForm(*existing, r), existing, uploadErr)
 		return
 	}
 	if uploaded {
@@ -253,13 +270,14 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	params := buildUpdateParams(r, *existing, now)
 	if err := h.queries.UpdateService(r.Context(), params); err != nil {
-		h.renderServiceError(w, overlayForm(*existing, r), false, "Databasefeil: "+err.Error())
+		h.renderServiceError(w, overlayForm(*existing, r), existing, "Databasefeil: "+err.Error())
 		return
 	}
 
 	cacheOK := h.invalidateCache(r, id)
 
-	details := "service_edited" + identityPolicyChanges(*existing, params)
+	details := "service_edited" + identityPolicyChanges(*existing, params) +
+		secretEnvChanges(existing.GoogleClientSecretEnv, params.GoogleClientSecretEnv, existing.MicrosoftClientSecretEnv, params.MicrosoftClientSecretEnv)
 	if uploaded {
 		details += " bg_image_uploaded=" + uploadedPath
 	}
@@ -333,6 +351,8 @@ func handleBgImageUpload(r *http.Request, svcID string) (bool, string, string) {
 
 // buildCreateParams bygger CreateServiceParams fra HTTP-skjema-verdier.
 func buildCreateParams(r *http.Request, id, now string) gen.CreateServiceParams {
+	googleEnv, _ := formSecretEnv(r, "google_secret_env")
+	microsoftEnv, _ := formSecretEnv(r, "microsoft_secret_env")
 	return gen.CreateServiceParams{
 		ID:                 id,
 		DisplayName:        r.PostFormValue("display_name"),
@@ -364,6 +384,9 @@ func buildCreateParams(r *http.Request, id, now string) gen.CreateServiceParams 
 		UpdatedAt:          now,
 		SubFormat:          formSubFormat(r),
 		AutoLink:           formAutoLink(r),
+
+		GoogleClientSecretEnv:    googleEnv,
+		MicrosoftClientSecretEnv: microsoftEnv,
 	}
 }
 
@@ -372,6 +395,13 @@ func buildCreateParams(r *http.Request, id, now string) gen.CreateServiceParams 
 // logo_html, bg_css) må hentes fra raden — ellers nulles de ved hver lagring.
 func buildUpdateParams(r *http.Request, existing gen.Service, now string) gen.UpdateServiceParams {
 	cp := buildCreateParams(r, existing.ID, now)
+	googleEnv, microsoftEnv := existing.GoogleClientSecretEnv, existing.MicrosoftClientSecretEnv
+	if v, ok := formSecretEnv(r, "google_secret_env"); ok {
+		googleEnv = v
+	}
+	if v, ok := formSecretEnv(r, "microsoft_secret_env"); ok {
+		microsoftEnv = v
+	}
 	return gen.UpdateServiceParams{
 		DisplayName:           cp.DisplayName,
 		Tagline:               cp.Tagline,
@@ -399,9 +429,9 @@ func buildUpdateParams(r *http.Request, existing gen.Service, now string) gen.Up
 		GoogleClientSecret:    existing.GoogleClientSecret,
 		MicrosoftClientID:     existing.MicrosoftClientID,
 		MicrosoftClientSecret: existing.MicrosoftClientSecret,
-		// Env-referansene settes i admin først i F4; til da beholdes lagret verdi.
-		GoogleClientSecretEnv:    existing.GoogleClientSecretEnv,
-		MicrosoftClientSecretEnv: existing.MicrosoftClientSecretEnv,
+		// Mangler feltet i skjemaet beholdes lagret referanse; tomt felt gir NULL.
+		GoogleClientSecretEnv:    googleEnv,
+		MicrosoftClientSecretEnv: microsoftEnv,
 		JwtCookieName:            cp.JwtCookieName,
 		AccessTokenTtl:           cp.AccessTokenTtl,
 		RefreshTokenMaxAge:       cp.RefreshTokenMaxAge,
@@ -556,7 +586,7 @@ func validateEnforceOrg(r *http.Request) error {
 
 // serviceFromForm bygger en gen.Service fra alle skjemafelt for feilrendering.
 func serviceFromForm(r *http.Request) gen.Service {
-	return gen.Service{
+	f := gen.Service{
 		ID:                 r.PostFormValue("id"),
 		DisplayName:        r.PostFormValue("display_name"),
 		Tagline:            nullableStr(r.PostFormValue("tagline")),
@@ -585,6 +615,9 @@ func serviceFromForm(r *http.Request) gen.Service {
 		SubFormat:          valueOr(formSubFormat(r), "email"),
 		AutoLink:           valueOr(formAutoLink(r), 1),
 	}
+	f.GoogleClientSecretEnv, _ = formSecretEnv(r, "google_secret_env")
+	f.MicrosoftClientSecretEnv, _ = formSecretEnv(r, "microsoft_secret_env")
+	return f
 }
 
 // withoutSecrets nuller client id/secret i strukturen som går til malen, slik at et
@@ -614,15 +647,83 @@ func overlayForm(existing gen.Service, r *http.Request) gen.Service {
 		out.SubFormat = *v
 	}
 	out.AutoLink = valueOr(formAutoLink(r), existing.AutoLink)
+	if _, ok := formSecretEnv(r, "google_secret_env"); ok {
+		out.GoogleClientSecretEnv = f.GoogleClientSecretEnv
+	}
+	if _, ok := formSecretEnv(r, "microsoft_secret_env"); ok {
+		out.MicrosoftClientSecretEnv = f.MicrosoftClientSecretEnv
+	}
 	return out
 }
 
-func (h *ServicesHandler) renderServiceError(w http.ResponseWriter, svc gen.Service, isNew bool, errMsg string) {
+// renderServiceError viser skjemaet på nytt med 422. existing er nil ved opprettelse.
+func (h *ServicesHandler) renderServiceError(w http.ResponseWriter, svc gen.Service, existing *gen.Service, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnprocessableEntity)
-	_ = h.editTpl.Execute(w, map[string]interface{}{
-		"IsNew":   isNew,
+	data := map[string]interface{}{
+		"IsNew":   existing == nil,
 		"Service": svc,
 		"Error":   errMsg,
-	})
+	}
+	h.addSecretStatus(data, svc, existing)
+	_ = h.editTpl.Execute(w, data)
+}
+
+// addSecretStatus legger til hva malen trenger om klienthemmeligheter: om env-
+// referansen er satt og om raden fortsatt har klartekst. Aldri verdiene.
+func (h *ServicesHandler) addSecretStatus(data map[string]interface{}, shown gen.Service, stored *gen.Service) {
+	data["GoogleEnvSet"] = h.envIsSet(shown.GoogleClientSecretEnv)
+	data["MicrosoftEnvSet"] = h.envIsSet(shown.MicrosoftClientSecretEnv)
+	data["GooglePlain"] = stored != nil && stored.GoogleClientSecret != nil && *stored.GoogleClientSecret != ""
+	data["MicrosoftPlain"] = stored != nil && stored.MicrosoftClientSecret != nil && *stored.MicrosoftClientSecret != ""
+}
+
+func (h *ServicesHandler) envIsSet(name *string) bool {
+	if name == nil || !service.ClientSecretEnvRe.MatchString(*name) {
+		return false
+	}
+	return strings.TrimSpace(h.getenv(*name)) != ""
+}
+
+// formSecretEnv returnerer (nil, false) når feltet mangler i skjemaet, slik at en
+// eldre side eller et skript ikke endrer lagret referanse. Tomt felt gir NULL.
+func formSecretEnv(r *http.Request, field string) (*string, bool) {
+	vals, ok := r.PostForm[field]
+	if !ok || len(vals) == 0 {
+		return nil, false
+	}
+	return nullableStr(vals[len(vals)-1]), true
+}
+
+// validateSecretEnv avviser navn utenfor KAUTH_SVC_-prefikset, slik at admin ikke kan
+// peke en tjeneste mot KAUTH_PRIVATE_KEY_PEM eller andre variabler.
+func validateSecretEnv(r *http.Request) error {
+	for _, f := range []struct{ field, label string }{
+		{"google_secret_env", "Google"},
+		{"microsoft_secret_env", "Microsoft"},
+	} {
+		v, ok := formSecretEnv(r, f.field)
+		if ok && v != nil && (len(*v) > 64 || !service.ClientSecretEnvRe.MatchString(*v)) {
+			return fmt.Errorf("%s: miljøvariabelen må hete KAUTH_SVC_ etterfulgt av store bokstaver, tall og understrek (maks 64 tegn).", f.label)
+		}
+	}
+	return nil
+}
+
+// secretEnvChanges gir audit-details for endret env-referanse. Bare navn, aldri verdier.
+func secretEnvChanges(oldG, newG, oldM, newM *string) string {
+	dash := func(p *string) string {
+		if p == nil {
+			return "(ingen)"
+		}
+		return *p
+	}
+	var out string
+	if dash(oldG) != dash(newG) {
+		out += " google_secret_env=" + dash(oldG) + "->" + dash(newG)
+	}
+	if dash(oldM) != dash(newM) {
+		out += " microsoft_secret_env=" + dash(oldM) + "->" + dash(newM)
+	}
+	return out
 }

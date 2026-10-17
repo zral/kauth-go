@@ -21,6 +21,11 @@
         }
         .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
         .checkbox-row input { width: 1.1rem; height: 1.1rem; }
+        .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 99px; font-size: 0.75rem; }
+        .badge-green { background: #14532d; color: #86efac; }
+        .badge-red   { background: #7f1d1d; color: #fca5a5; }
+        .badge-grey  { background: #1e293b; color: #94a3b8; }
+        .warn { background: #422006; color: #fcd34d; border: 1px solid #854d0e; padding: 0.6rem 0.9rem; border-radius: 5px; margin-top: 0.4rem; font-size: 0.875rem; }
         .hint { font-size: 0.8rem; color: #64748b; margin-top: 0.2rem; }
         .btn { padding: 0.5rem 1rem; border-radius: 5px; border: none; font-size: 0.875rem; cursor: pointer; text-decoration: none; }
         .btn-primary { background: #3b82f6; color: #fff; }
@@ -101,6 +106,21 @@
             <input type="checkbox" id="auth_password" name="auth_password" value="1" {{if eq .Service.AuthPassword 1}}checked{{end}}>
             <label for="auth_password">Passord</label>
             <small>Virker bare når KAUTH_PASSWORD_LOGIN_ENABLED=true er satt globalt.</small>
+        </div>
+
+        <h2>Klienthemmeligheter</h2>
+        <p class="hint" id="secret_env_hint">Verdien settes i <code>.env</code> og krever omstart av kauth. Navnet må starte med <code>KAUTH_SVC_</code>. Verdien vises aldri her.</p>
+        <div class="form-group">
+            <label for="google_secret_env">Google: miljøvariabel for klienthemmelighet</label>
+            <input type="text" id="google_secret_env" name="google_secret_env" value="{{if .Service.GoogleClientSecretEnv}}{{.Service.GoogleClientSecretEnv}}{{end}}" placeholder="KAUTH_SVC_ALFA_GOOGLE_SECRET" autocomplete="off" aria-describedby="secret_env_hint google_secret_status">
+            <p class="hint" id="google_secret_status">{{if .Service.GoogleClientSecretEnv}}{{if .GoogleEnvSet}}<span class="badge badge-green">satt</span>{{else}}<span class="badge badge-red">ikke satt</span>{{end}}{{else}}<span class="badge badge-grey">Ingen referanse</span>{{end}}{{if .GooglePlain}} Hemmelighet ligger i databasen; flytt den til en miljøvariabel.{{end}}</p>
+            {{if and .Service.GoogleClientSecretEnv (not .GoogleEnvSet)}}<div class="warn" role="alert">Google-innlogging er ute av drift for denne tjenesten til {{.Service.GoogleClientSecretEnv}} er satt i .env og kauth er startet på nytt.</div>{{end}}
+        </div>
+        <div class="form-group">
+            <label for="microsoft_secret_env">Microsoft: miljøvariabel for klienthemmelighet</label>
+            <input type="text" id="microsoft_secret_env" name="microsoft_secret_env" value="{{if .Service.MicrosoftClientSecretEnv}}{{.Service.MicrosoftClientSecretEnv}}{{end}}" placeholder="KAUTH_SVC_ALFA_MS_SECRET" autocomplete="off" aria-describedby="secret_env_hint microsoft_secret_status">
+            <p class="hint" id="microsoft_secret_status">{{if .Service.MicrosoftClientSecretEnv}}{{if .MicrosoftEnvSet}}<span class="badge badge-green">satt</span>{{else}}<span class="badge badge-red">ikke satt</span>{{end}}{{else}}<span class="badge badge-grey">Ingen referanse</span>{{end}}{{if .MicrosoftPlain}} Hemmelighet ligger i databasen; flytt den til en miljøvariabel.{{end}}</p>
+            {{if and .Service.MicrosoftClientSecretEnv (not .MicrosoftEnvSet)}}<div class="warn" role="alert">Microsoft-innlogging er ute av drift for denne tjenesten til {{.Service.MicrosoftClientSecretEnv}} er satt i .env og kauth er startet på nytt.</div>{{end}}
         </div>
 
         <h2>Branding</h2>
