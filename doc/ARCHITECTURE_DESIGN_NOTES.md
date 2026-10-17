@@ -329,7 +329,7 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 19 — Nøkkelring med kid fra env, og klienthemmeligheter som env-referanse (2026-10-17)
 
-**Status:** Implementert (2026-10-17, 017)
+**Status:** Implementert (2026-10-17, 017). I prod 2026-10-17 02:35 UTC; klienthemmelighetene flyttet til `.env` samme dag
 → Analyse: [doc/features/017_AN_NOKKELRING_HEMMELIGHETER.md](features/017_AN_NOKKELRING_HEMMELIGHETER.md) · Plan: [doc/features/017_PL_NOKKELRING_HEMMELIGHETER.md](features/017_PL_NOKKELRING_HEMMELIGHETER.md)
 
 **Beslutning:**
