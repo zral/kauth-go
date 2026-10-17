@@ -299,3 +299,24 @@ func TestCompleteAdminLogin_EmailNormalizedInAudit(t *testing.T) {
 		require.Equal(t, "admin@x.no", *e.Email)
 	}
 }
+
+// Google-callbacken håndterer både vanlig og admin-innlogging. En GitHub-state
+// har verken IDP eller admin, så den ville ellers sluppet inn i vanlig gren.
+func TestGoogleCallback_GitHubStateRejectedBeforeServiceLookup(t *testing.T) {
+	f := newAdminFlowFixture(t)
+	st := signGitHubState(f.cfg.OIDCStateSecret, "klarsyn", "n")
+	req := httptest.NewRequest(http.MethodGet, "/callback?code=x&state="+url.QueryEscape(st), nil)
+	req.Host = "klarsyn.net"
+	req.AddCookie(&http.Cookie{Name: "oidc_state", Value: st})
+	w := httptest.NewRecorder()
+	f.h.HandleCallback(w, req)
+
+	require.Equal(t, http.StatusSeeOther, w.Code)
+	require.Equal(t, "/login?error=login_failed", w.Header().Get("Location"))
+	require.Empty(t, w.Result().Cookies())
+	// Audit skrives asynkront, men en avvisning etter tjenesteoppslag ville
+	// også ha lagt tjenesten på redirecten, og den mangler over.
+	all, err := f.q.ListAuditEvents(context.Background(), gen.ListAuditEventsParams{Limit: 100})
+	require.NoError(t, err)
+	require.Empty(t, all)
+}

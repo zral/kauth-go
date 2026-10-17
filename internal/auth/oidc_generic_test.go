@@ -617,6 +617,7 @@ func TestGenericCallback_ForeignStatePurposesRejected(t *testing.T) {
 	for name, st := range map[string]string{
 		"admin-state":  signAdminState(secret, "klarsyn", "n"),
 		"google-state": SignState(secret, "klarsyn", "n"),
+		"github-state": signGitHubState(secret, "klarsyn", "n"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := f.callbackAt("a", &url.URL{RawQuery: "code=c&state=" + url.QueryEscape(st)}, st)
@@ -646,6 +647,27 @@ func TestGoogleAndMicrosoftCallbacks_RejectIDPState(t *testing.T) {
 		}
 	}
 	require.Empty(t, rejected, "ingen audit for ugyldig state")
+}
+
+// GitHub-state er signert for GitHub-flyten og skal ikke kunne drive noen annen
+// callback. For Google og Microsoft er den ellers lik en vanlig state, så
+// avvisningen må være eksplisitt (AK2.2).
+func TestGoogleMicrosoftAndIDPCallbacks_RejectGitHubState(t *testing.T) {
+	f := newGF(t, gfOpts{})
+	st := signGitHubState(f.cfg.OIDCStateSecret, "klarsyn", "n")
+	for path, cookie := range map[string]string{"/callback": "oidc_state", "/ms-callback": "ms_state", "/idp/a/callback": idpStateCookie} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path+"?code=c&state="+url.QueryEscape(st), nil)
+			req.AddCookie(&http.Cookie{Name: cookie, Value: st})
+			w := f.serve(req)
+			requireLoginError(t, w, "login_failed", "")
+		})
+	}
+	for _, ev := range f.events() {
+		require.False(t, strings.HasSuffix(ev.EventType, "_rejected"), "ingen audit for ugyldig state")
+		require.NotContains(t, ev.EventType, "login")
+	}
+	require.Empty(t, f.a.Requests(), "ingen kodeutveksling")
 }
 
 // --- Tillit (K14, K15) ---

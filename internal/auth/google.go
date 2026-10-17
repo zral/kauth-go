@@ -133,8 +133,8 @@ func (h *GoogleHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	// State signert for en generisk leverandør hører til /idp-callbacken.
-	if claims.IDP != "" {
+	// State signert for en generisk leverandør eller GitHub hører til andre callbacks.
+	if claims.IDP != "" || claims.GitHub {
 		redirectLoginError(w, r, "", errCodeLoginFailed)
 		return
 	}

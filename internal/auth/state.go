@@ -16,6 +16,10 @@ import (
 // en vanlig tjenesteinnlogging.
 const statePurposeAdmin = "admin"
 
+// statePurposeGitHub markerer at staten er utstedt for GitHub-flyten (019). Formålet
+// står i den signerte payloaden, så ingen annen callback kan ta imot den.
+const statePurposeGitHub = "github"
+
 // statePrefixIDP innleder slug-suffikset for generiske leverandører (PD6).
 const statePrefixIDP = "idp="
 
@@ -48,6 +52,9 @@ type stateClaims struct {
 	// Link er id til koblingsinvitasjonen (016). Bare sammen med IDP, aldri
 	// Admin. 0 betyr vanlig innlogging.
 	Link int64
+	// GitHub markerer state utstedt for GitHub-flyten. Aldri sammen med Admin,
+	// IDP eller Link.
+	GitHub bool
 }
 
 // SignState lager en HMAC-SHA256-signert state for en vanlig innlogging.
@@ -81,6 +88,13 @@ func signLinkState(secret []byte, serviceID, nonce, slug string, inviteID int64)
 	return signStatePayload(secret, serviceID+":"+nonce+":"+issuedAt()+":"+statePrefixIDP+slug+":"+statePrefixLink+strconv.FormatInt(inviteID, 10))
 }
 
+// signGitHubState er SignState med formålet github i den signerte payloaden,
+// slik at Google-, Microsoft- og /idp-callbackene ikke kan ta imot den.
+// payload = "serviceID:nonce:iat:github"
+func signGitHubState(secret []byte, serviceID, nonce string) string {
+	return signStatePayload(secret, serviceID+":"+nonce+":"+issuedAt()+":"+statePurposeGitHub)
+}
+
 func issuedAt() string {
 	return strconv.FormatInt(now().Unix(), 10)
 }
@@ -91,18 +105,18 @@ func signStatePayload(secret []byte, payload string) string {
 }
 
 // VerifyState verifiserer en HMAC-signert state for en vanlig innlogging og
-// returnerer serviceID. Admin- og IDP-state avvises her, slik at de ikke kan
+// returnerer serviceID. Admin-, GitHub- og IDP-state avvises her, slik at de ikke kan
 // gjenbrukes i en flyt som ikke kjenner til formålet.
 func VerifyState(secret []byte, state string) (serviceID string, ok bool) {
 	c, ok := parseState(secret, state)
-	if !ok || c.Admin || c.IDP != "" || c.Link != 0 {
+	if !ok || c.Admin || c.GitHub || c.IDP != "" || c.Link != 0 {
 		return "", false
 	}
 	return c.ServiceID, true
 }
 
 // parseState verifiserer HMAC (tidskonstant, hmac.Equal mot timing-angrep),
-// utstedelsestid og formål. Payloaden leses fra høyre: valgfritt ":admin",
+// utstedelsestid og formål. Payloaden leses fra høyre: valgfritt ":admin" eller ":github",
 // så iat, så nonce; resten er tjeneste-ID, som dermed kan inneholde ":".
 // Admin gjelder bare når siste segment er nøyaktig "admin" og payloaden har
 // minst fire segmenter. State uten gyldig iat (inkludert eldre format uten
@@ -147,6 +161,10 @@ func parseState(secret []byte, state string) (stateClaims, bool) {
 		payload, c.IDP = payload[:i], slug
 	} else if rest, found := strings.CutSuffix(payload, ":"+statePurposeAdmin); found && strings.Count(rest, ":") >= 2 {
 		payload, c.Admin = rest, true
+	} else if rest, found := strings.CutSuffix(payload, ":"+statePurposeGitHub); found && strings.Count(rest, ":") >= 2 {
+		// Som admin: bare siste segment teller. github sammen med admin, idp= eller
+		// link= havner i iat-posisjonen under og avvises.
+		payload, c.GitHub = rest, true
 	}
 	// iat og nonce er hex/tall og har aldri ":".
 	i := strings.LastIndex(payload, ":")

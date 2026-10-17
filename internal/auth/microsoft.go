@@ -94,9 +94,9 @@ func (h *MicrosoftHandlers) HandleCallback(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	// Microsoft har ingen admin-flyt. En admin- eller IDP-state er signert for en
+	// Microsoft har ingen admin-flyt. En admin-, GitHub- eller IDP-state er signert for en
 	// annen flyt og avvises før tjenesteoppslag og kodeutveksling.
-	if claims.Admin || claims.IDP != "" {
+	if claims.Admin || claims.IDP != "" || claims.GitHub {
 		redirectLoginError(w, r, "", errCodeLoginFailed)
 		return
 	}

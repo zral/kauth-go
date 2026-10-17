@@ -207,8 +207,8 @@ func (h *GenericOIDCHandlers) HandleCallback(w http.ResponseWriter, r *http.Requ
 	}
 	// Cookien er engangsbruk uansett utfall.
 	clearCookie(w, idpStateCookie)
-	// Admin-state og state fra Google/MS (uten IDP) hører til andre flyter.
-	if claims.IDP == "" || claims.Admin {
+	// Admin-state, GitHub-state og state fra Google/MS (uten IDP) hører til andre flyter.
+	if claims.IDP == "" || claims.Admin || claims.GitHub {
 		redirectLoginError(w, r, "", errCodeLoginFailed)
 		return
 	}

@@ -182,3 +182,53 @@ func TestParseState_ThreeSegmentsEndingAdminIsNotAdmin(t *testing.T) {
 	_, ok := parseState(stateSecret, rawState("klarsyn:"+iatStr(0)+":admin"))
 	require.False(t, ok)
 }
+
+func TestParseState_GitHub(t *testing.T) {
+	fixClock(t, stateT0)
+	iat := iatStr(0)
+	tests := []struct {
+		name    string
+		payload string
+		ok      bool
+		svc     string
+		nonce   string
+	}{
+		{"github alene", "klarsyn:n1:" + iat + ":github", true, "klarsyn", "n1"},
+		{"tjeneste-ID med kolon", "a:b:n1:" + iat + ":github", true, "a:b", "n1"},
+		{"github + admin (admin bak)", "klarsyn:n1:" + iat + ":github:admin", false, "", ""},
+		{"github + admin (admin foran)", "klarsyn:n1:" + iat + ":admin:github", false, "", ""},
+		{"github + idp", "klarsyn:n1:" + iat + ":idp=acme:github", false, "", ""},
+		{"idp + github", "klarsyn:n1:" + iat + ":github:idp=acme", false, "", ""},
+		{"github + link", "klarsyn:n1:" + iat + ":idp=acme:link=7:github", false, "", ""},
+		{"link + github", "klarsyn:n1:" + iat + ":idp=acme:github:link=7", false, "", ""},
+		{"to github-suffikser", "klarsyn:n1:" + iat + ":github:github", false, "", ""},
+		{"kort payload (tre segmenter)", "n1:" + iat + ":github", false, "", ""},
+		{"bare github", "github", false, "", ""},
+		{"stor bokstav", "klarsyn:n1:" + iat + ":GitHub", false, "", ""},
+		{"github uten iat", "klarsyn:n1:github", false, "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, ok := parseState(stateSecret, rawState(tc.payload))
+			require.Equal(t, tc.ok, ok)
+			if !ok {
+				return
+			}
+			require.Equal(t, stateClaims{ServiceID: tc.svc, Nonce: tc.nonce, GitHub: true}, c)
+		})
+	}
+}
+
+func TestSignGitHubState_RoundtripAndRejectedByVerifyState(t *testing.T) {
+	fixClock(t, stateT0)
+	s := signGitHubState(stateSecret, "a:b", "n9")
+	c, ok := parseState(stateSecret, s)
+	require.True(t, ok)
+	require.Equal(t, stateClaims{ServiceID: "a:b", Nonce: "n9", GitHub: true}, c)
+
+	_, ok = VerifyState(stateSecret, s)
+	require.False(t, ok, "VerifyState skal avvise GitHub-state")
+
+	_, ok = parseState([]byte("annen-hemmelighet-32-bytes-lang!!"), s)
+	require.False(t, ok)
+}

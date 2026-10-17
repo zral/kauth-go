@@ -22,7 +22,7 @@ func fuzzFixClock() func() {
 
 // FuzzParseState: vilkårlig input og vilkårlig signert payload.
 // Egenskaper: ingen panic; B-hemmelighet godtar aldri A-state; et godtatt
-// resultat har konsistente typer (admin, idp og link blandes ikke).
+// resultat har konsistente typer (admin, github, idp og link blandes ikke).
 func FuzzParseState(f *testing.F) {
 	f.Add("")
 	f.Add("!!!")
@@ -33,6 +33,10 @@ func FuzzParseState(f *testing.F) {
 	f.Add(signStatePayload(fuzzSecretA, "svc:abc:1800000000:admin:idp=gh"))
 	f.Add(signStatePayload(fuzzSecretA, "svc:abc:1800000000:idp=gh:link=+7"))
 	f.Add(signStatePayload(fuzzSecretA, "a:b:c:d:1800000000:admin"))
+	f.Add(signStatePayload(fuzzSecretA, "svc:abc:1800000000:github"))
+	f.Add(signStatePayload(fuzzSecretA, "svc:abc:1800000000:github:admin"))
+	f.Add(signStatePayload(fuzzSecretA, "svc:abc:1800000000:idp=gh:github"))
+	f.Add(signStatePayload(fuzzSecretA, "svc:abc:1800000000:idp=gh:link=7:github"))
 
 	f.Fuzz(func(t *testing.T, s string) {
 		restore := fuzzFixClock()
@@ -50,6 +54,9 @@ func FuzzParseState(f *testing.F) {
 				}
 				continue
 			}
+			if c.GitHub && (c.Admin || c.IDP != "" || c.Link != 0) {
+				t.Fatalf("github blandet med admin/idp/link: %+v", c)
+			}
 			if c.Admin && (c.IDP != "" || c.Link != 0) {
 				t.Fatalf("admin blandet med idp/link: %+v", c)
 			}
@@ -60,7 +67,7 @@ func FuzzParseState(f *testing.F) {
 				t.Fatalf("negativ link: %+v", c)
 			}
 			vid, vok := VerifyState(fuzzSecretA, state)
-			plain := !c.Admin && c.IDP == "" && c.Link == 0
+			plain := !c.Admin && !c.GitHub && c.IDP == "" && c.Link == 0
 			if vok != plain || (vok && vid != c.ServiceID) {
 				t.Fatalf("VerifyState (%v, %q) uten samsvar mot claims %+v", vok, vid, c)
 			}
@@ -99,6 +106,7 @@ func FuzzStateRoundTrip(f *testing.F) {
 			{signAdminState(fuzzSecretA, svc, nonce), stateClaims{ServiceID: svc, Nonce: nonce, Admin: true}},
 			{signIDPState(fuzzSecretA, svc, nonce, slug), stateClaims{ServiceID: svc, Nonce: nonce, IDP: slug}},
 			{signLinkState(fuzzSecretA, svc, nonce, slug, inv), stateClaims{ServiceID: svc, Nonce: nonce, IDP: slug, Link: inv}},
+			{signGitHubState(fuzzSecretA, svc, nonce), stateClaims{ServiceID: svc, Nonce: nonce, GitHub: true}},
 		}
 		for i, k := range cases {
 			got, ok := parseState(fuzzSecretA, k.state)
