@@ -4,7 +4,7 @@
 
 **Hva dette ikke er:** en beslutningslogg. *Hvorfor* noe er bestemt står i [ARCHITECTURE_DESIGN_NOTES.md](ARCHITECTURE_DESIGN_NOTES.md). Faser, risikoregister og estimater står i [ROADMAP.md](ROADMAP.md). Ved motstrid er ADN-en fasit.
 
-Sist gjennomgått: 2026-10-17
+Sist gjennomgått: 2026-10-18
 
 ---
 
@@ -17,6 +17,22 @@ Sist gjennomgått: 2026-10-17
 | 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | ✔ I prod 2026-10-14. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
 | 4 | 011 Stabil identitet og 012 Admin-identitet (Fase 2) | ✔ 011 i prod 2026-10-15 (tag `011`). ✔ 012 i prod 2026-10-15 (tag `012`): frakobling, e-postendring, e-postepoke, admin-binding, recovery | ADN 13, ADN 14 |
 | 5 | ~~019 Logg inn med GitHub~~ | ✔ I prod 2026-10-17 (tag `019`). Egen OAuth-flyt (`/github-login`, `/github-callback`) med PKCE, identitet = numerisk GitHub-ID, e-post bare når primær og verifisert, aldri admin. Av for alle tjenester til OAuth App og hemmelighet er satt opp (README «Setting up GitHub») | ADN 21 |
+
+## DSF-modenhet (vurdert 2026-10-18)
+
+kauth-go er på nivå med vinkjeller, men sterkest på eval: 82 eval-steg, 14 av 79 verdikter
+AVVIST, så det er scenarioene som avgjør om noe er ferdig. 13 holdout-scenarioer,
+`require-scenarios.sh`, `check-phase-ak.sh` og CI med `-race`. Det som skiller fra full
+mørk fabrikk, er under.
+
+| # | Sak | Hvorfor | Ref |
+|---|-----|---------|-----|
+| DSF1 | **Driveren brukes ikke** | `scripts/lifecycle_runner.py` finnes, men loggen har 0 driver-steg: 14 features er kjørt autonomt i én lang økt. Med `lifecycle-run.sh` får hvert steg fersk kontekst, egen fase-logg og stegrapport (synlig på DSF-tavlen), og kost per steg kan måles | `scripts/lifecycle-run.sh` |
+| DSF2 | **`.claude/` er gitignored** | Hooks, skills, `/phase` og `model_pricing.py` er ikke versjonert (`.gitignore:25`). Endringer i prosessen kan ikke spores eller rulles tilbake, og oppsettet finnes bare på denne maskinen. Spor alt utenom `logs/`, `worktrees/`, `settings.local.json` og tilstandsfiler | `.gitignore` |
+| DSF3 | **Implementer-agenter logges som `unidentified`** | 135 av 330 agentkjøringer har ingen type, så de kan ikke skilles fra hverandre i loggen eller på tavlen | `.claude/hooks/lifecycle-subagent-hook.sh` |
+| DSF4 | **Deploy logges ikke fast** | Bare 011 har en `phase: deploy`-hendelse. Uten den kan ledetid fra plan til prod ikke måles | `.claude/hooks/lifecycle-event.sh` |
+
+`model_pricing.py` fikk 5.5-modellene 2026-10-18; loggen hadde 1052 rader med `cost_unknown_model` før det.
 
 ## Senere
 
