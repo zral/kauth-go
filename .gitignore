@@ -22,7 +22,25 @@ secrets/
 
 # Lokal Claude-konfig
 CLAUDE.md
-.claude/
 
 # SDD-workspace (ledger, briefs, review-pakker)
 .superpowers/
+
+# DSF: tilstand og logger fra lifecycle-hooks og driveren (lifecycle_runner)
+.claude/logs/
+.claude/worktrees/
+.claude/settings.local.json
+.claude/.current_feature
+.claude/.approval_gate
+.claude/.approval_skip
+.dsf/
+.claude/.phase_base.json
+.claude/.driver_state.json
+.claude/.driver.lock
+.claude/.pipeline.lock
+.claude/.rework_tally.json
+.claude/.autonomous_state.md
+.claude/.agent_runs/
+.claude/dsf-backup/
+.claude/handoff/
+.claude/tools/

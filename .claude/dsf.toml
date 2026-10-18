@@ -1,0 +1,66 @@
+# Forslag til .claude/dsf.toml for kauth-go.
+
+[prosjekt]
+navn = "kauth"
+lang = "nb"
+
+[test]
+kommando = "CGO_ENABLED=0 go test ./... && go vet ./... && test -z \"$(gofmt -l .)\""
+merknad = "Kjør også go test -race ./... ved endringer i samtidighet, token- eller refresh-logikk."
+
+[forbudt_i_fase]
+# Prod kjører på samme maskin: en restart logger ut ekte brukere i alle tjenester.
+# make deploy scp-er til en annen vert og skal ikke brukes i det hele tatt.
+kommandoer = ["make build", "sudo systemctl restart kauth", "make deploy", "go run ./cmd/kauth", "bin/kauth"]
+
+[eval]
+server = "bash scripts/run-eval-server.sh --reset"
+port = 8091
+env = { KAUTH_EVAL_PORT = "8091" }
+# Skriptet bruker sin egen datamappe (data/eval/), ikke {tmp}.
+
+[bygg]
+kommando = "make build"
+
+[deploy]
+kommando = "sudo systemctl restart kauth"
+# Porten er KAUTH_HTTP_PORT i .env (8083, svarer 200 i dag; kodens standard er 8080).
+helse = "systemctl is-active kauth && curl -sf http://localhost:8083/.well-known/openid-configuration"
+logg = "journalctl -u kauth -n 50"
+
+[skills]
+ux = "kauth-ux"
+
+[gate]
+# Filer check-gate.sh sperrer mens en approval gate er aktiv (fra prosjektets gamle hook)
+kildekode = '\.(go|sql|html|css|js|sh|service)$|(^|/)go\.(mod|sum)$|(^|/)Makefile$'
+
+[scenarioer]
+# Det scenario-agenten ikke får lese (holdout-isolasjon)
+skjult = '(^|/)(internal|cmd|templates|static|scripts)/|\.go$|\.sql$|\.html$|\.js$'
+
+# Endringer som krever holdout-scenarioer (require-scenarios.sh)
+[[scenarioer.trigger]]
+id = "T1"
+navn = "ny rute"
+filer = '^cmd/kauth/main\.go$'
+diff = '^\+\s*r\.(With\([^)]*\)\.)?(Get|Post|Put|Patch|Delete|Handle|Route|Mount)\('
+
+[[scenarioer.trigger]]
+id = "T2"
+navn = "handler"
+filer = '^internal/(auth|admin)/[^/]+\.go$'
+unntak = '_test\.go$'
+diff = '^\+func .*\(w http\.ResponseWriter, r \*http\.Request\)|^\+.*(http\.Error\(|WriteHeader\(|http\.Redirect\()'
+
+[[scenarioer.trigger]]
+id = "T3"
+navn = "mal"
+filer = '^templates/.+\.html$'
+diff = '^\+.*(<form|<button|<a href)'
+
+[[scenarioer.trigger]]
+id = "T6"
+navn = "auth-kjerne"
+filer = '^internal/(auth|token|service)/[^/]+\.go$|^internal/admin/(auth|middleware)\.go$'
+unntak = '_test\.go$'

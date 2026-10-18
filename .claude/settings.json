@@ -1,0 +1,54 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(sed -n *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(python3 *)",
+      "Bash(bash -n *)",
+      "Bash(curl http://localhost:*)",
+      "Bash(curl -s http://localhost:*)",
+      "Bash(curl -sf http://localhost:*)",
+      "Bash(curl -I http://localhost:*)",
+      "Bash(systemctl --user status*)",
+      "Bash(systemctl --user is-active*)",
+      "Bash(journalctl --user*)",
+      "Bash(go test*)",
+      "Bash(CGO_ENABLED=0 go test*)",
+      "Bash(go vet*)",
+      "Bash(gofmt*)",
+      "Bash(go build*)",
+      "Bash(make build*)",
+      "Bash(make test*)",
+      "Bash(make sqlc*)",
+      "Bash(bash scripts/run-eval-server.sh*)",
+      "Bash(systemctl is-active kauth*)",
+      "Bash(journalctl -u kauth*)",
+      "Bash(*)",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "Agent(*)",
+      "Skill(*)",
+      "Bash(git rev-parse*)"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "enabledPlugins": {
+    "dsf@dsf": true
+  },
+  "extraKnownMarketplaces": {
+    "dsf": {
+      "source": {
+        "source": "github",
+        "repo": "zral/dsf-framework"
+      }
+    }
+  }
+}
