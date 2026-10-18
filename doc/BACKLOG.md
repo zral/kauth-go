@@ -17,6 +17,7 @@ Sist gjennomgått: 2026-10-18
 | 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | ✔ I prod 2026-10-14. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
 | 4 | 011 Stabil identitet og 012 Admin-identitet (Fase 2) | ✔ 011 i prod 2026-10-15 (tag `011`). ✔ 012 i prod 2026-10-15 (tag `012`): frakobling, e-postendring, e-postepoke, admin-binding, recovery | ADN 13, ADN 14 |
 | 5 | ~~019 Logg inn med GitHub~~ | ✔ I prod 2026-10-17 (tag `019`). Egen OAuth-flyt (`/github-login`, `/github-callback`) med PKCE, identitet = numerisk GitHub-ID, e-post bare når primær og verifisert, aldri admin. Av for alle tjenester til OAuth App og hemmelighet er satt opp (README «Setting up GitHub») | ADN 21 |
+| 6 | **Språklenkene på `/login` gjentar ukjent `error`-tekst** | Eval 2026-10-18: scenario 019/30 (S9.12) feiler. Lenkene for språkvalg tar med hele query-strengen, så `?error=<fritekst>` havner escapet i HTML-en. Ikke injeksjon, men bryter regelen om lukket mengde feilkoder. Trolig fra 020 F1 (ny innloggingsside) | 019/30, ADN 21 |
 
 ## DSF-modenhet (vurdert 2026-10-18)
 
@@ -27,10 +28,10 @@ mørk fabrikk, er under.
 
 | # | Sak | Hvorfor | Ref |
 |---|-----|---------|-----|
-| DSF1 | **Driveren brukes ikke** | `scripts/lifecycle_runner.py` finnes, men loggen har 0 driver-steg: 14 features er kjørt autonomt i én lang økt. Med `lifecycle-run.sh` får hvert steg fersk kontekst, egen fase-logg og stegrapport (synlig på DSF-tavlen), og kost per steg kan måles | `scripts/lifecycle-run.sh` |
-| DSF2 | **`.claude/` er gitignored** | Hooks, skills, `/phase` og `model_pricing.py` er ikke versjonert (`.gitignore:25`). Endringer i prosessen kan ikke spores eller rulles tilbake, og oppsettet finnes bare på denne maskinen. Spor alt utenom `logs/`, `worktrees/`, `settings.local.json` og tilstandsfiler | `.gitignore` |
-| DSF3 | **Implementer-agenter logges som `unidentified`** | 135 av 330 agentkjøringer har ingen type, så de kan ikke skilles fra hverandre i loggen eller på tavlen | `.claude/hooks/lifecycle-subagent-hook.sh` |
-| DSF4 | **Deploy logges ikke fast** | Bare 011 har en `phase: deploy`-hendelse. Uten den kan ledetid fra plan til prod ikke måles | `.claude/hooks/lifecycle-event.sh` |
+| DSF1 | **Driveren brukes ikke** | Driveren finnes (i dsf-pluginen), men loggen har 0 driver-steg: 14 features er kjørt autonomt i én lang økt. Med `lifecycle-run.sh` får hvert steg fersk kontekst, egen fase-logg og stegrapport (synlig på DSF-tavlen), og kost per steg kan måles | `${CLAUDE_PLUGIN_ROOT}/bin/lifecycle-run.sh` |
+| DSF2 | ~~**`.claude/` er gitignored**~~ | ✔ Løst 2026-10-18 ved migrering til dsf-pluginen: konfig, tillegg og egne skills er versjonert, kjernen kommer fra pluginen. | `.gitignore` |
+| DSF3 | ~~**Implementer-agenter logges som `unidentified`**~~ | ✔ Løst i DSF-kjernen: `agent_taxonomy` klassifiserer implementer og rework fra beskrivelsen. Sjekk at andelen faller etter neste feature. | `.claude/hooks/lifecycle-subagent-hook.sh` |
+| DSF4 | ~~**Deploy logges ikke fast**~~ | ✔ Løst i DSF-kjernen: feature-lifecycle har et fast `--phase deploy`-steg. | `.claude/hooks/lifecycle-event.sh` |
 
 `model_pricing.py` fikk 5.5-modellene 2026-10-18; loggen hadde 1052 rader med `cost_unknown_model` før det.
 
