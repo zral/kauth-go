@@ -51,7 +51,7 @@ func setMinimalEnv(t *testing.T) {
 	t.Setenv("KAUTH_PRIVATE_KEY_PEM", base64.StdEncoding.EncodeToString(priv))
 	t.Setenv("KAUTH_PUBLIC_KEY_PEM", base64.StdEncoding.EncodeToString(pub))
 	t.Setenv("KAUTH_OIDC_STATE_SECRET", base64.StdEncoding.EncodeToString(make([]byte, 32)))
-	t.Setenv("KAUTH_SMTP_MOCK", "true")
+	t.Setenv("KAUTH_SMTP_MOCK", "false")
 }
 
 func TestLoad_PasswordLoginEnabled(t *testing.T) {
@@ -291,4 +291,44 @@ func TestLoad_GitHubURL_Ugyldig(t *testing.T) {
 		require.ErrorContains(t, err, "KAUTH_GITHUB_BASE_URL", v)
 		require.NotContains(t, err.Error(), "p@x.test", "verdien skal ikke gjengis")
 	}
+}
+
+func TestLoad_SMTPMockOgBaseURL(t *testing.T) {
+	cases := []struct {
+		name, issuer, base, mock, wantBase string
+		wantErr                            bool
+	}{
+		{"mock + https issuer", "https://i.test", "http://i.test", "true", "", true},
+		{"mock + https base", "http://i.test", "https://i.test", "true", "", true},
+		{"mock + HTTPS", "HTTPS://i.test", "http://i.test", "true", "", true},
+		{"mock + ledende mellomrom", " https://i.test", "http://i.test", "true", "", true},
+		{"mock + http begge", "http://i.test", "http://i.test", "true", "http://i.test", false},
+		{"https uten mock", "https://i.test", "https://i.test", "false", "https://i.test", false},
+		{"base med /", "https://i.test", "https://i.test/", "false", "https://i.test", false},
+		{"base med //", "https://i.test", "https://i.test//", "false", "https://i.test", false},
+		{"base med sti", "https://i.test", "https://i.test/auth/", "false", "https://i.test/auth", false},
+		{"mock + https base med sti", "http://i.test", "https://i.test/auth/", "true", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("KAUTH_ISSUER", tc.issuer)
+			t.Setenv("KAUTH_BASE_URL", tc.base)
+			t.Setenv("KAUTH_SMTP_MOCK", tc.mock)
+			c, err := Load()
+			if tc.wantErr {
+				require.ErrorContains(t, err, "KAUTH_SMTP_MOCK")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantBase, c.BaseURL)
+		})
+	}
+}
+
+func TestLoad_BaseURLKunSkraastrek(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KAUTH_BASE_URL", "/")
+	_, err := Load()
+	require.ErrorContains(t, err, "KAUTH_BASE_URL er påkrevd")
 }

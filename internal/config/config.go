@@ -104,7 +104,11 @@ func Load() (*Config, error) {
 
 	c.DBPath = require("KAUTH_DB_PATH")
 	c.Issuer = require("KAUTH_ISSUER")
-	c.BaseURL = require("KAUTH_BASE_URL")
+	// Avsluttende / gir dobbel skråstrek når stier limes på (magic-lenker, redirect).
+	c.BaseURL = strings.TrimRight(os.Getenv("KAUTH_BASE_URL"), "/")
+	if c.BaseURL == "" {
+		errs = append(errs, "KAUTH_BASE_URL er påkrevd")
+	}
 
 	// RSA-nøkler: PEM-fil eller PEM-innhold direkte
 	privPEM := os.Getenv("KAUTH_PRIVATE_KEY_PEM")
@@ -195,6 +199,11 @@ func Load() (*Config, error) {
 	c.SMTPStartTLS = optional("KAUTH_SMTP_STARTTLS", "true") == "true"
 	c.SMTPMock = optional("KAUTH_SMTP_MOCK", "false") == "true"
 	c.BrevoAPIKey = os.Getenv("KAUTH_BREVO_API_KEY")
+
+	// Mock skriver magic-lenker til loggen: en kopiert eval-.env skal ikke kunne kjøre i prod.
+	if c.SMTPMock && !(isHTTP(c.Issuer) && isHTTP(c.BaseURL)) {
+		errs = append(errs, "KAUTH_SMTP_MOCK=true krever http-issuer og -base-URL (mock skriver magic-lenker til loggen)")
+	}
 
 	if c.SMTPHost == "" && !c.SMTPMock {
 		fmt.Println("ADVARSEL: KAUTH_SMTP_HOST ikke satt og KAUTH_SMTP_MOCK=false — magic link vil feile")
@@ -421,4 +430,8 @@ func githubURL(name, def string, allowInsecure bool) (string, []string) {
 		return def, []string{name + " kan bare overstyres med KAUTH_OIDC_ALLOW_INSECURE=true"}
 	}
 	return norm, nil
+}
+
+func isHTTP(u string) bool {
+	return strings.HasPrefix(strings.ToLower(u), "http://")
 }
