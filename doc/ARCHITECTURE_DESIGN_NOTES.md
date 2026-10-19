@@ -397,3 +397,18 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 - GitHub blir underleverandør for tjenester som slår det på.
 - Tjenester med egen `auth_host` trenger egen GitHub OAuth App.
 - GitHub-brukere uten verifisert primær e-post kan ikke registrere seg eller kobles på e-post. De kommer inn med magic link, eller etter at identiteten er koblet.
+
+## ADN 22 — Validering ved inngangen: kjente feilkoder i språklenker, slug-ID, callback-liste og mock bare uten https (2026-10-19)
+
+**Status:** Foreslått
+→ Analyse: [doc/features/021_AN_VALIDERING_SPRAAKLENKER.md](features/021_AN_VALIDERING_SPRAAKLENKER.md)
+
+**Beslutning:**
+1. `ServeLogin` sender bare kjente feilkoder videre til språklenkene og malen. `i18n.Links` kjenner ikke auth-feilkoder.
+2. Ny tjeneste-ID er en slug `^[a-z0-9-]{1,64}$`. Eksisterende ID-er berøres ikke.
+3. `callback_url` er en kommaliste av absolutte URL-er (https, eller http mot loopback), validert ved lagring. `/dispatch` nivå 2–5 bruker første oppføring via `service.PrimaryCallback`.
+4. `KAUTH_SMTP_MOCK=true` nektes når issuer eller base-URL er https. Avsluttende `/` fjernes fra base-URL.
+
+**Begrunnelse:** Alle fire er data som i dag stoles på fordi den kommer fra «riktig» sted (egen redirect, admin, env). Validering der verdien kommer inn er billigere enn å forsvare hvert sted den brukes.
+
+**Konsekvens:** Admin kan ikke lenger lagre en tjeneste med relativ eller ikke-https callback. Kommalisten er fortsatt lov.
