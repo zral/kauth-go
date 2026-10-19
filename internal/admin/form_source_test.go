@@ -247,3 +247,34 @@ func TestAdminVerify_QueryTokenIgnored(t *testing.T) {
 	assert.Equal(t, "/admin/login", w.Header().Get("Location"))
 	assert.EqualValues(t, 0, usedCount(t, q, "tok-i-query"), "tokenet skal ikke være brukt")
 }
+
+// AK2.1: opplasting med ugyldig id (og gyldig PNG) etterlater ingen fil i static/ og ingen rad.
+func TestServiceCreate_InvalidIDWithUpload_NoFile(t *testing.T) {
+	e := setupServicesEnv(t)
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "static"), 0o755))
+	t.Chdir(dir)
+
+	for _, id := range []string{"../x", "Ab_C", "a/b", strings.Repeat("a", 65), "a\x00b", "æøå", ""} {
+		buf, ct := multipartWithPNG(t, map[string]string{
+			"id": id, "display_name": "N", "domain": "n.test", "callback_url": "https://n.test/cb",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/admin/services", buf)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+		e.mux.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code, "%q", id)
+	}
+	ents, err := os.ReadDir(filepath.Join(dir, "static"))
+	require.NoError(t, err)
+	assert.Empty(t, ents)
+}
+
+func TestValidServiceID_Boundaries(t *testing.T) {
+	for id, want := range map[string]bool{
+		strings.Repeat("a", 64): true, strings.Repeat("a", 65): false,
+		"-": true, "--": true, "a-b": true, "æ": false, "a\x00": false, "a\n": false, "A": false,
+	} {
+		assert.Equal(t, want, validServiceID.MatchString(id), "%q", id)
+	}
+}

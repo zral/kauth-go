@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 
@@ -145,12 +146,7 @@ func (r *Registry) IsAllowedCallback(svc *gen.Service, uri string) bool {
 	if svc == nil || uri == "" {
 		return false
 	}
-	for _, allowed := range strings.Split(svc.CallbackUrl, ",") {
-		if strings.TrimSpace(allowed) == uri {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(CallbackURLs(svc.CallbackUrl), uri)
 }
 
 // LinkBaseURL avgjør hvilken host e-postlenker for tjenesten skal peke til:

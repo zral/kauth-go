@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -616,4 +617,70 @@ func TestBuildUpdateParams_GitHubFeltUtenSkjemafelt(t *testing.T) {
 
 	cp := buildCreateParams(r, "s1", "2026-01-01T00:00:00Z")
 	require.Equal(t, int64(0), cp.AuthGithub)
+}
+
+func staticFiles(t *testing.T) []string {
+	t.Helper()
+	ents, err := os.ReadDir("static")
+	require.NoError(t, err)
+	var out []string
+	for _, en := range ents {
+		out = append(out, en.Name())
+	}
+	return out
+}
+
+func createVals(id, cb string) url.Values {
+	return url.Values{"id": {id}, "display_name": {"N"}, "domain": {"n.test"}, "callback_url": {cb}, "active": {"1"}}
+}
+
+// AK2.1/AK2.2: ugyldig slug gir 422 uten rad og uten fil; gyldig slug lagres.
+func TestServiceCreate_ServiceIDValidated(t *testing.T) {
+	e := setupServicesEnv(t)
+	before := staticFiles(t)
+	for _, id := range []string{"../x", "Ab_C", "a/b", strings.Repeat("a", 65)} {
+		w := e.postCreate(createVals(id, "https://n.test/cb"))
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code, id)
+		_, err := e.q.GetServiceByID(context.Background(), id)
+		assert.Error(t, err, id)
+	}
+	assert.Equal(t, before, staticFiles(t))
+
+	require.Equal(t, http.StatusSeeOther, e.postCreate(createVals("ok-1", "https://n.test/cb")).Code)
+	e.row(t, "ok-1")
+
+	e.seed(t, "alpha", "alpha.test")
+	vals, _ := e.renderedFormValues(t, "alpha")
+	assert.Equal(t, http.StatusSeeOther, e.post("alpha", vals).Code)
+}
+
+// AK2.4/AK2.5: ugyldig callback avvises uten å lagre og uten å ekkoe verdien; kommaliste lagres trimmet.
+func TestServiceCallbackValidated(t *testing.T) {
+	e := setupServicesEnv(t)
+	const bad = "http://evil.example/zzz-ekko"
+	w := e.postCreate(createVals("ny", bad))
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	msg := regexp.MustCompile(`class="msg err">([^<]*)<`).FindStringSubmatch(w.Body.String())
+	require.NotNil(t, msg)
+	assert.NotContains(t, msg[1], "zzz-ekko") // skjemaet ekkoer feltet, men ikke feilmeldingen
+	_, err := e.q.GetServiceByID(context.Background(), "ny")
+	assert.Error(t, err)
+	assert.Equal(t, http.StatusUnprocessableEntity, e.postCreate(createVals("ny", "")).Code)
+
+	e.seed(t, "alpha", "alpha.test")
+	before := e.row(t, "alpha")
+	vals, _ := e.renderedFormValues(t, "alpha")
+	vals.Set("display_name", "Endret")
+	vals.Set("callback_url", bad)
+	w = e.post("alpha", vals)
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	assert.Contains(t, w.Body.String(), "Callback-URL må være absolutte https-adresser")
+	assert.Equal(t, before, e.row(t, "alpha"))
+
+	vals.Set("callback_url", " https://a.test/cb , https://b.test/cb ")
+	require.Equal(t, http.StatusSeeOther, e.post("alpha", vals).Code)
+	assert.Equal(t, "https://a.test/cb,https://b.test/cb", e.row(t, "alpha").CallbackUrl)
+
+	require.Equal(t, http.StatusSeeOther, e.postCreate(createVals("liste", " https://a.test/cb , https://b.test/cb ")).Code)
+	assert.Equal(t, "https://a.test/cb,https://b.test/cb", e.row(t, "liste").CallbackUrl)
 }

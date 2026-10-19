@@ -539,3 +539,76 @@ func TestDispatchMismatch_RejectedCookieNoEvent(t *testing.T) {
 		t.Fatalf("forventet ingen events, fikk %d", n)
 	}
 }
+
+// AK2.6: kommaliste i callback_url gir redirect til første oppføring, ikke hele strengen.
+func TestDispatch_CommaListCallbackRedirectsToFirst(t *testing.T) {
+	h, iss := newDispatchHandler(t)
+	svcs := dispatchFixture()
+	svcs[1].CallbackUrl = "https://klarsyn.net/auth/callback, https://klarsyn.net/andre"
+	h.Registry = service.NewRegistryForTest(svcs)
+	at, err := iss.IssueAccess(gen.User{Email: "bruker@example.com", Orgs: "x", Roles: "user"}, svcs[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/dispatch?token="+at+"&service=klarsyn", nil)
+	w := httptest.NewRecorder()
+	h.ServeDispatch(w, req)
+	loc := w.Header().Get("Location")
+	if !hasPrefix(loc, "https://klarsyn.net/auth/callback?") && !hasPrefix(loc, "https://klarsyn.net/auth/callback#") {
+		t.Fatalf("forventet første callback, fikk %s", loc)
+	}
+}
+
+// AK2.6: nivå 3, 4 og 5 redirecter også til første oppføring i en kommaliste.
+func TestDispatch_CommaListCallback_Levels3to5(t *testing.T) {
+	list := func(base string) string { return base + "/cb, " + base + "/andre" }
+	for _, tc := range []struct{ name, host, orgs, want string }{
+		{"nivaa3", "auth.analyse.test", "x", "https://analyse.klarsyn.net/cb?"},
+		{"nivaa4", "", "lars", "https://analyse.klarsyn.net/cb?"},
+		{"nivaa5", "", "x", "https://klarsyn.net/cb?"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, iss := newDispatchHandler(t)
+			svcs := dispatchFixture()
+			svcs[0].CallbackUrl = list("https://analyse.klarsyn.net")
+			svcs[0].AuthHost = sPtr("auth.analyse.test")
+			svcs[1].CallbackUrl = list("https://klarsyn.net")
+			if tc.name == "nivaa5" {
+				svcs[0].DefaultOrg, svcs[1].DefaultOrg = sPtr("ingen"), sPtr("ingen")
+			}
+			h.Registry = service.NewRegistryForTest(svcs)
+			at, err := iss.IssueAccess(gen.User{Email: "bruker@example.com", Orgs: tc.orgs, Roles: "user"}, svcs[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/dispatch?token="+at, nil)
+			if tc.host != "" {
+				req.Host = tc.host
+			}
+			w := httptest.NewRecorder()
+			h.ServeDispatch(w, req)
+			loc := w.Header().Get("Location")
+			if !hasPrefix(loc, tc.want) && !hasPrefix(loc, tc.want[:len(tc.want)-1]+"#") {
+				t.Fatalf("forventet %s, fikk %s", tc.want, loc)
+			}
+		})
+	}
+}
+
+// Default-tjeneste uten callback gir /login, ikke en redirect til tom adresse.
+func TestDispatch_EmptyCallbackOnDefaultFallsToLogin(t *testing.T) {
+	h, iss := newDispatchHandler(t)
+	svcs := dispatchFixture()
+	svcs[0].DefaultOrg, svcs[1].DefaultOrg = sPtr("ingen"), sPtr("ingen")
+	svcs[1].CallbackUrl = " , "
+	h.Registry = service.NewRegistryForTest(svcs)
+	at, err := iss.IssueAccess(gen.User{Email: "bruker@example.com", Orgs: "x", Roles: "user"}, svcs[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	h.ServeDispatch(w, httptest.NewRequest(http.MethodGet, "/dispatch?token="+at, nil))
+	if loc := w.Header().Get("Location"); loc != "/login" {
+		t.Fatalf("forventet /login, fikk %s", loc)
+	}
+}

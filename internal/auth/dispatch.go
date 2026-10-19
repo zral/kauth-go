@@ -303,10 +303,12 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 	// havner da på feil tjeneste.
 	if svcID := q.Get("service"); svcID != "" {
 		if svc := h.Registry.Resolve("", svcID, ""); svc != nil {
-			clearRedirect()
-			h.auditAudMismatch(r, claims, 2, svc, "")
-			http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
-			return
+			if cb := service.PrimaryCallback(svc); cb != "" {
+				clearRedirect()
+				h.auditAudMismatch(r, claims, 2, svc, cb)
+				http.Redirect(w, r, appendTokenAndRT(cb, jwtToken, rt), http.StatusSeeOther)
+				return
+			}
 		}
 	}
 
@@ -319,10 +321,12 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		allSvcs := h.Registry.All()
 		for _, svc := range allSvcs {
 			if svc.AuthHost != nil && strings.ToLower(*svc.AuthHost) == hostLc {
-				clearRedirect()
-				h.auditAudMismatch(r, claims, 3, svc, "")
-				http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
-				return
+				if cb := service.PrimaryCallback(svc); cb != "" {
+					clearRedirect()
+					h.auditAudMismatch(r, claims, 3, svc, cb)
+					http.Redirect(w, r, appendTokenAndRT(cb, jwtToken, rt), http.StatusSeeOther)
+					return
+				}
 			}
 		}
 	}
@@ -335,10 +339,12 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 		}
 		for _, org := range claims.Org {
 			if org == *svc.DefaultOrg {
-				clearRedirect()
-				h.auditAudMismatch(r, claims, 4, svc, "")
-				http.Redirect(w, r, appendTokenAndRT(svc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
-				return
+				if cb := service.PrimaryCallback(svc); cb != "" {
+					clearRedirect()
+					h.auditAudMismatch(r, claims, 4, svc, cb)
+					http.Redirect(w, r, appendTokenAndRT(cb, jwtToken, rt), http.StatusSeeOther)
+					return
+				}
 			}
 		}
 	}
@@ -346,10 +352,12 @@ func (h *DispatchHandler) ServeDispatch(w http.ResponseWriter, r *http.Request) 
 	// Nivå 5: fallback til default-tjenestens callback
 	defaultSvc := h.Registry.ResolveOrDefault("", h.DefaultSvcID, "")
 	if defaultSvc != nil {
-		clearRedirect()
-		h.auditAudMismatch(r, claims, 5, defaultSvc, "")
-		http.Redirect(w, r, appendTokenAndRT(defaultSvc.CallbackUrl, jwtToken, rt), http.StatusSeeOther)
-		return
+		if cb := service.PrimaryCallback(defaultSvc); cb != "" {
+			clearRedirect()
+			h.auditAudMismatch(r, claims, 5, defaultSvc, cb)
+			http.Redirect(w, r, appendTokenAndRT(cb, jwtToken, rt), http.StatusSeeOther)
+			return
+		}
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
@@ -413,21 +421,15 @@ func audDetail(claims *token.Claims) string {
 // rutingen sender til (nivå 1-5). Bare audit: PB2 i 010 holder håndhevingen
 // tilbake til auditen har vist at rutingen er ren. Delt callback (klarsyn og
 // analyse) er ikke avvik, så målets callback sjekkes mot aud-tjenestene.
-// callback er tom når målets egen CallbackUrl brukes.
+// callback er den faktisk valgte redirect-adressen.
 func (h *DispatchHandler) auditAudMismatch(r *http.Request, claims *token.Claims, level int, target *gen.Service, callback string) {
 	if slices.Contains(claims.Audience, target.ID) {
 		return
 	}
-	callbacks := []string{callback}
-	if callback == "" {
-		callbacks = strings.Split(target.CallbackUrl, ",")
-	}
 	for _, id := range claims.Audience {
 		audSvc := h.Registry.Resolve("", id, "")
-		for _, cb := range callbacks {
-			if h.Registry.IsAllowedCallback(audSvc, strings.TrimSpace(cb)) {
-				return
-			}
+		if h.Registry.IsAllowedCallback(audSvc, callback) {
+			return
 		}
 	}
 	h.logDispatchAudit(r, "dispatch_aud_mismatch", claims.Email, target.ID,

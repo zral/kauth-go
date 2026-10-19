@@ -106,6 +106,9 @@ func (h *ServicesHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 	_ = h.editTpl.Execute(w, data)
 }
 
+// validServiceID holder ID-en trygg som filnavn for bakgrunnsbilde og i URL-er.
+var validServiceID = regexp.MustCompile("^[a-z0-9-]{1,64}$")
+
 // HandleCreate oppretter ny tjeneste fra POST-skjema.
 func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(2 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
@@ -114,10 +117,17 @@ func (h *ServicesHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	svcID := strings.TrimSpace(r.PostFormValue("id"))
-	if svcID == "" {
-		h.renderServiceError(w, serviceFromForm(r), nil, "Tjeneste-ID er påkrevd.")
+	if svcID == "" || !validServiceID.MatchString(svcID) {
+		h.renderServiceError(w, serviceFromForm(r), nil, "Tjeneste-ID er påkrevd (a-z, 0-9 og bindestrek, maks 64 tegn).")
 		return
 	}
+
+	cb, err := service.NormalizeCallbackURLs(r.PostFormValue("callback_url"))
+	if err != nil {
+		h.renderServiceError(w, serviceFromForm(r), nil, err.Error())
+		return
+	}
+	r.PostForm.Set("callback_url", cb)
 
 	if err := validateAuthHost(r.PostFormValue("auth_host")); err != nil {
 		h.renderServiceError(w, serviceFromForm(r), nil, err.Error())
@@ -252,6 +262,13 @@ func (h *ServicesHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		h.renderServiceError(w, overlayForm(*existing, r), existing, "Visningsnavn, domene og callback-URL er påkrevd.")
 		return
 	}
+
+	cb, err := service.NormalizeCallbackURLs(r.PostFormValue("callback_url"))
+	if err != nil {
+		h.renderServiceError(w, overlayForm(*existing, r), existing, err.Error())
+		return
+	}
+	r.PostForm.Set("callback_url", cb)
 
 	if err := validateEnforceOrg(r); err != nil {
 		h.renderServiceError(w, overlayForm(*existing, r), existing, err.Error())
