@@ -25,7 +25,7 @@ func TestNormalizeCallbackURLs(t *testing.T) {
 		"", "   ", "https://a.no/cb,", ",https://a.no/cb", "https://a.no/cb,,https://b.no/cb",
 		"/relativ", "a.no/cb", "http://a.no/cb", "http://localhost.evil.no/cb",
 		"ftp://a.no/cb", "javascript:alert(1)", "https:///cb", "https://u:p@a.no/cb",
-		"https://a.no/cb#frag", "https://a.no/cb#", "https://a.no/c b", "https://%zz", "https://",
+		"https://a.no/cb#frag", "https://a.no/cb#", "https://a.no/c b", `https://a.no/cb"onmouseover="x`, "https://a.no/<x>", "https://%zz", "https://",
 	}
 	for _, in := range bad {
 		_, err := NormalizeCallbackURLs(in)

@@ -4,7 +4,7 @@
 
 **Hva dette ikke er:** en beslutningslogg. *Hvorfor* noe er bestemt står i [ARCHITECTURE_DESIGN_NOTES.md](ARCHITECTURE_DESIGN_NOTES.md). Faser, risikoregister og estimater står i [ROADMAP.md](ROADMAP.md). Ved motstrid er ADN-en fasit.
 
-Sist gjennomgått: 2026-10-18
+Sist gjennomgått: 2026-10-19
 
 ---
 
@@ -17,7 +17,7 @@ Sist gjennomgått: 2026-10-18
 | 3 | ~~010 Herd eksisterende flyter, del 3 (Fase 1): `aud`/`jti` på alle tokens (H5)~~ | ✔ I prod 2026-10-14. Klientene krever `aud` i egne leveranser (se Senere) | ADN 12 |
 | 4 | 011 Stabil identitet og 012 Admin-identitet (Fase 2) | ✔ 011 i prod 2026-10-15 (tag `011`). ✔ 012 i prod 2026-10-15 (tag `012`): frakobling, e-postendring, e-postepoke, admin-binding, recovery | ADN 13, ADN 14 |
 | 5 | ~~019 Logg inn med GitHub~~ | ✔ I prod 2026-10-17 (tag `019`). Egen OAuth-flyt (`/github-login`, `/github-callback`) med PKCE, identitet = numerisk GitHub-ID, e-post bare når primær og verifisert, aldri admin. Av for alle tjenester til OAuth App og hemmelighet er satt opp (README «Setting up GitHub») | ADN 21 |
-| 6 | **Språklenkene på `/login` gjentar ukjent `error`-tekst** | Eval 2026-10-18: scenario 019/30 (S9.12) feiler. Lenkene for språkvalg tar med hele query-strengen, så `?error=<fritekst>` havner escapet i HTML-en. Ikke injeksjon, men bryter regelen om lukket mengde feilkoder. Trolig fra 020 F1 (ny innloggingsside) | 019/30, ADN 21 |
+| 6 | ~~Språklenkene på `/login` gjentar ukjent `error`-tekst~~ | ✔ Løst i 021 (branch, ikke i prod ennå). Gjelder også `/magic-login`, bekreftelsessiden og invitasjonen. Opprinnelig: | Eval 2026-10-18: scenario 019/30 (S9.12) feiler. Lenkene for språkvalg tar med hele query-strengen, så `?error=<fritekst>` havner escapet i HTML-en. Ikke injeksjon, men bryter regelen om lukket mengde feilkoder. Trolig fra 020 F1 (ny innloggingsside) | 019/30, ADN 21 |
 
 ## DSF-modenhet (vurdert 2026-10-18)
 
@@ -41,12 +41,10 @@ mørk fabrikk, er under.
 |-----|--------------------|-----|
 | wspekto: send `service` på Google/MS-knappene i login.html, deretter håndhev L4 | L4 logges fra 007. Å håndheve før dette er rettet ville brukket Google-login for wspekto | ROADMAP L4, ADN 9 |
 | CORS for `klarsyn.net` og `klarsyn.lilleklo.work` | Refresh fra disse vertene feiler i dag. Først avklares det om de skal refreshe fra nettleser | ROADMAP H7 |
-| Nekt `KAUTH_SMTP_MOCK=true` ved https-issuer | Mock-mailen skriver gyldige magic-lenker til journald. Ikke satt i prod i dag, men ingenting hindrer det (007 F1, security review U1) | ROADMAP I3 |
+| `callback_url` godtar `http` mot loopback også i prod | Lagt inn for eval og dev (021, PO-betingelse). Bare admin kan registrere slike adresser, men en lokal prosess på maskinen kan da ta imot tokens. Vurder å kreve https når `KAUTH_INSECURE_COOKIES` er av (021 F2, code review M1) | ADN 22 |
+| `KAUTH_ISSUER` med avsluttende `/` gir `//` i discovery-endepunktene | Issuer trimmes bevisst ikke (må matche `iss` i utstedte tokens eksakt), og endepunktene bygges fra den. Prod har ingen avsluttende `/`. Vurder oppstartsfeil i stedet for trimming (021 eval S4.10) | ADN 22 |
 | Generiske feilmeldinger til klient | `err.Error()` fra JWT-validering og SQLite sendes til klienten, bl.a. i `microsoft.go` og admin-middleware (007 F1, security review U2) | ROADMAP M7 |
-| Fjern avsluttende `/` fra `KAUTH_BASE_URL` i `config.Load` | Gir `//magic-login/` i lenkene ved feilkonfig. Prod er korrekt i dag (007 F1, code review A1) | — |
-| Valider `callback_url` ved lagring i admin, og bruk første trimmede oppføring på nivå 2–5 | Feltet lagres uvalidert. En CSV-verdi eller relativ URL gir feil redirect på nivå 2–5, og nivå 1 godtar alt admin registrerer (007 F3, security M2 og code review S3) | ROADMAP L3 |
 | Plant `redirect_uri`-cookien bare når den er gyldig for tjenesten (google.go, login.html) | Ufarlig etter F3, men det er selve inngangen til redirect på tvers av tjenester (007 F3, security S1) | ROADMAP L4 |
-| Valider tjeneste-ID (slug `^[a-z0-9-]+$`) ved opprettelse i admin | `HandleCreate` bruker ID-en i filsti for bakgrunnsbilde, så `../` skriver utenfor `static/` (bak admin-innlogging) (007 F4, security S3) | — |
 | Rotering av per-tjeneste OAuth-credentials | **Løst (017).** Hemmeligheten ligger i `.env` bak en `KAUTH_SVC_*`-referanse; rotasjon er `.env` + restart | ROADMAP M12, ADN 19 |
 | Dropp `google_client_secret` og `microsoft_client_secret` | Står tomme etter flyttingen i 017 (kolonnene beholdt som rollback). Droppes i 018 | ADN 19 |
 | Policyfelter (`allow_magic_link`, `allowed_providers`, `require_federated_login`) | Utsatt fra 017 til en tjeneste ber om det | ROADMAP Fase 5 |
@@ -61,7 +59,6 @@ mørk fabrikk, er under.
 | Legacy token-i-URL av-bryter per tjeneste (B3) | Står i ROADMAP Fase 1, men ble ikke tatt i 008–010. Av som default for nye tjenester. Fjernes når alle klienter er på code+PKCE | ROADMAP M1, B3 |
 | CORS-allowlist per tjeneste, avvis cookie-refresh uten `Origin` | Står i ROADMAP Fase 1. I dag er allowlisten global (`KAUTH_CORS_ORIGINS`). Origin-sjekken før rotasjon finnes, men mot den globale listen | ROADMAP H7 |
 | Fase 5–6 | Fase 4 (015) er ferdig. Fase 5 er neste | ROADMAP §5 |
-| Nivå 2 i `/dispatch` bruker `callback_url` rått | En kommaliste i feltet ville gitt et ugyldig mål. Ingen tjeneste i prod har kommaliste (sjekket). Se også raden om validering av `callback_url` (018 F2, security S1) | ROADMAP L3 |
 | Trekk rutebyggingen ut av `main.go` | E2E-testen bygger sin egen ruter, så den kan avvike fra `main.go`. Skal flyttes til en funksjon begge bruker (018 F4) | ADN 20 |
 | Ekstern revisjon | Bestilles når Lars vil. Pakke: [AUDIT_SCOPE.md](AUDIT_SCOPE.md) | ROADMAP Fase 6 |
 | `v1.0.0`-tag | Etter ekstern revisjon, satt av eier. Utkast i `CHANGELOG.md` | ROADMAP Fase 6 |
@@ -125,4 +122,3 @@ mørk fabrikk, er under.
 | Håndhev ferskhet på `/dispatch` nivå 1–5 | Fra 013 logges tokens eldre enn 120 s som `dispatch_token_stale … mode=audit` uten avvisning. Håndhev når auditen har vært ren i minst en uke i prod. Treff betyr at en klient kaller `/dispatch` med et lagret token, og det må avklares først (013, product-owner betingelse 1) | ADN 15 |
 | Felles sjekk av unik-brudd | `isUniqueViolation` i `internal/auth/uniqueviolation.go`, og samme sjekk (kode 2067/1555) inline i `internal/admin/users.go` og `internal/admin/users_email.go`. Samles i én hjelper (012 F3) | ADN 14 |
 | `token.ValidEmail` er romslig | Godtar `<`, `>` og andre tegn en adresse ikke kan ha, for alle metoder. Escapes overalt der den vises, og GitHub verifiserer ikke slike adresser, men en strengere syntakssjekk ville gitt forsvar i dybden (019 eval, T3 og T6.15) | ADN 21 |
-| Språklenkene på login-siden gjentar `error`-parameteren | En vilkårlig `error`-verdi står escapet i `href` for språkvalg. Ingen XSS, og teksten som vises er lukket, men lenkene bør bare bære kjente feilkoder (019 eval, scenario 30) | ROADMAP L3 |

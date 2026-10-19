@@ -202,7 +202,7 @@ func Load() (*Config, error) {
 
 	// Mock skriver magic-lenker til loggen: en kopiert eval-.env skal ikke kunne kjøre i prod.
 	if c.SMTPMock && !(isHTTP(c.Issuer) && isHTTP(c.BaseURL)) {
-		errs = append(errs, "KAUTH_SMTP_MOCK=true krever http-issuer og -base-URL (mock skriver magic-lenker til loggen)")
+		errs = append(errs, "KAUTH_SMTP_MOCK=true krever http-issuer og -base-URL (mock skriver magic-lenker til loggen); sett KAUTH_SMTP_MOCK=false i prod")
 	}
 
 	if c.SMTPHost == "" && !c.SMTPMock {

@@ -18,7 +18,7 @@ func NormalizeCallbackURLs(raw string) (string, error) {
 		p = strings.TrimSpace(p)
 		parts[i] = p
 		u, err := url.Parse(p)
-		if p == "" || err != nil || !u.IsAbs() || u.Host == "" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || strings.ContainsAny(p, "# \t") {
+		if p == "" || err != nil || !u.IsAbs() || u.Host == "" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || strings.ContainsAny(p, "# \t\"'<>\\`") {
 			return "", errCallback
 		}
 		switch strings.ToLower(u.Scheme) {

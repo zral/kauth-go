@@ -400,14 +400,14 @@ Sentral beslutningslogg for arkitektur- og designvalg i kauth-go. Hver ADN er en
 
 ## ADN 22 — Validering ved inngangen: kjente feilkoder i språklenker, slug-ID, callback-liste og mock bare uten https (2026-10-19)
 
-**Status:** Foreslått
-→ Analyse: [doc/features/021_AN_VALIDERING_SPRAAKLENKER.md](features/021_AN_VALIDERING_SPRAAKLENKER.md)
+**Status:** Implementert (2026-10-19)
+→ Analyse: [doc/features/021_AN_VALIDERING_SPRAAKLENKER.md](features/021_AN_VALIDERING_SPRAAKLENKER.md) · Plan: [doc/features/021_PL_VALIDERING_SPRAAKLENKER.md](features/021_PL_VALIDERING_SPRAAKLENKER.md)
 
 **Beslutning:**
-1. `ServeLogin` sender bare kjente feilkoder videre til språklenkene og malen. `i18n.Links` kjenner ikke auth-feilkoder.
+1. Sider med språkvelger (`/login`, `/magic-login`, bekreftelsessiden og invitasjonen) sender bare kjente feilkoder videre til språklenkene, via `langLinkURL`. `i18n.Links` kjenner ikke auth-feilkoder.
 2. Ny tjeneste-ID er en slug `^[a-z0-9-]{1,64}$`. Eksisterende ID-er berøres ikke.
-3. `callback_url` er en kommaliste av absolutte URL-er (https, eller http mot loopback), validert ved lagring. `/dispatch` nivå 2–5 bruker første oppføring via `service.PrimaryCallback`.
-4. `KAUTH_SMTP_MOCK=true` nektes når issuer eller base-URL er https. Avsluttende `/` fjernes fra base-URL.
+3. `callback_url` er en kommaliste av absolutte URL-er (https, eller http mot loopback), uten userinfo, fragment, mellomrom, anførselstegn eller vinkelparenteser, validert ved lagring. `/dispatch` nivå 2–5 bruker første oppføring via `service.PrimaryCallback`.
+4. `KAUTH_SMTP_MOCK=true` er bare lov når både issuer og base-URL er `http://`. Avsluttende `/` fjernes fra base-URL.
 
 **Begrunnelse:** Alle fire er data som i dag stoles på fordi den kommer fra «riktig» sted (egen redirect, admin, env). Validering der verdien kommer inn er billigere enn å forsvare hvert sted den brukes.
 
