@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 
 	"github.com/zral/kauth-go/internal/db/gen"
 	"github.com/zral/kauth-go/internal/i18n"
@@ -165,16 +166,7 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		tagline = *svc.Tagline
 	}
 
-	// ?error= er reflektert fritekst: språklenkene får bare en kjent kode, og
-	// alltid en ren kopi så gjentatte error-parametere ikke slipper gjennom.
-	langURL := *r.URL
-	lq := langURL.Query()
-	e := lq.Get("error")
-	lq.Del("error")
-	if knownLoginError(e) {
-		lq.Set("error", e)
-	}
-	langURL.RawQuery = lq.Encode()
+	langURL := langLinkURL(r.URL, knownLoginError)
 
 	bodyCss, beforeCss := buildBgCSS(svc.Theme, svc.BgImage, svc.BgCss)
 	data := LoginPageData{
@@ -186,7 +178,7 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		BeforeBgCSS: beforeCss,
 		Locale:      locale,
 		T:           i18n.Get(locale),
-		Languages:   i18n.Links(locale, &langURL),
+		Languages:   i18n.Links(locale, langURL),
 		Tagline:     tagline,
 
 		PasswordLoginEnabled: h.PasswordLoginEnabled,
@@ -220,4 +212,19 @@ func ServeLegacyLogin(w http.ResponseWriter, r *http.Request) {
 		target += "?" + q
 	}
 	http.Redirect(w, r, target, http.StatusMovedPermanently)
+}
+
+// langLinkURL gir URL-en språklenkene bygges fra. ?error= er reflektert
+// fritekst: bare en kjent kode slipper gjennom, og alltid fra en ren kopi så
+// gjentatte error-parametere ikke følger med.
+func langLinkURL(u *url.URL, known func(string) bool) *url.URL {
+	c := *u
+	q := c.Query()
+	e := q.Get("error")
+	q.Del("error")
+	if known(e) {
+		q.Set("error", e)
+	}
+	c.RawQuery = q.Encode()
+	return &c
 }

@@ -246,7 +246,7 @@ func (l *LinkHandlers) ShowConfirm(w http.ResponseWriter, r *http.Request) {
 		HintParts: splitLinkText(t.LinkConfirmHint, name, maskEmail(tg.invite.Email)),
 		Button:    fillLinkText(t.LinkConfirmButton, name, ""),
 		Action:    "/link/" + url.PathEscape(raw) + "?" + url.Values{"lang": {locale}}.Encode(),
-		langURL:   r.URL,
+		langURL:   langLinkURL(r.URL, noLoginError),
 	})
 }
 

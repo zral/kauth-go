@@ -66,12 +66,24 @@ func (h *MagicHandlers) ShowForm(w http.ResponseWriter, r *http.Request) {
 		BeforeBgCSS: beforeCss,
 		Locale:      locale,
 		T:           i18n.Get(locale),
-		Languages:   i18n.Links(locale, r.URL),
+		Languages:   i18n.Links(locale, langLinkURL(r.URL, knownMagicError)),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Responsen varierer med Accept-Language (via i18n.FromRequest) — caches må ta høyde for dette.
 	w.Header().Set("Vary", "Accept-Language")
 	_ = h.tmpl.ExecuteTemplate(w, "magic-login.html", data)
+}
+
+// noLoginError brukes på sider uten feilvisning: ingen error skal bæres videre.
+func noLoginError(string) bool { return false }
+
+// knownMagicError er kodene magic-login.html kjenner igjen; alt annet er fritekst.
+func knownMagicError(s string) bool {
+	switch s {
+	case "expired", "rate", "invalid_redirect", "no_account", "access_denied", "login_failed":
+		return true
+	}
+	return false
 }
 
 // logoHTMLFor gjør tjenestens lagrede logo om til rå HTML for malene.
@@ -247,7 +259,7 @@ func (h *MagicHandlers) renderConfirm(w http.ResponseWriter, r *http.Request, sv
 		BeforeBgCSS: beforeCss,
 		Locale:      locale,
 		T:           i18n.Get(locale),
-		Languages:   i18n.Links(locale, r.URL),
+		Languages:   i18n.Links(locale, langLinkURL(r.URL, noLoginError)),
 		// Tjeneste og språk følger med så feil etter POST havner på riktig tema
 		// og språk. svc er den lagrede tjenesten, og locale er hvitelistet.
 		Action:  r.URL.Path + "?" + url.Values{"service": {svc.ID}, "lang": {locale}}.Encode(),

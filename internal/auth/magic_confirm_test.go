@@ -65,6 +65,7 @@ func newConfirmFixture(t *testing.T) *confirmFixture {
 	h := auth.NewMagicHandlers(config.Config{}, q, mail.New(config.Config{SMTPMock: true}), token.NewIssuerForTest(),
 		token.NewRefreshService(sqldb, aud), reg, aud, tmpl)
 	r := chi.NewRouter()
+	r.Get("/magic-login", h.ShowForm)
 	r.Get("/magic-login/{token}", h.ShowConfirm)
 	r.Post("/magic-login/{token}", h.Redeem)
 	return &confirmFixture{sqldb: sqldb, q: q, router: r}
@@ -309,4 +310,27 @@ func TestMagicRedeem_NonASCIIEmailFindsUser(t *testing.T) {
 	got, err := f.q.GetUserByEmail(ctx, auth.NormalizeEmail("ø@x.no"))
 	require.NoError(t, err)
 	require.Equal(t, u.ID, got.ID)
+}
+
+func TestMagicShowForm_LangLinksCarryOnlyKnownError(t *testing.T) {
+	f := newConfirmFixture(t)
+	for _, c := range []struct {
+		query string
+		known bool
+	}{
+		{"error=zzz", false},
+		{"error=expired&error=zzz", true},
+		{"error=zzz&error=expired", false},
+		{"error=expired", true},
+	} {
+		body := f.get("/magic-login?service=svca&"+c.query, nil).Body.String()
+		require.Contains(t, body, "service=svca", c.query)
+		if c.known {
+			require.Contains(t, body, "error=expired", c.query)
+		}
+		if !c.known {
+			require.NotContains(t, body, "zzz", c.query)
+			require.NotContains(t, body, "error=", c.query)
+		}
+	}
 }
