@@ -2,6 +2,8 @@ package auth
 
 import (
 	"html/template"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/zral/kauth-go/internal/db/gen"
 	"github.com/zral/kauth-go/internal/i18n"
+	"github.com/zral/kauth-go/internal/service"
 )
 
 // testLoginService har alle fire innloggingsmetoder på, slik at rendringen
@@ -323,6 +326,44 @@ func TestMagicLoginTemplate_TranslatesNoAccount(t *testing.T) {
 			var out strings.Builder
 			require.NoError(t, tmpl.ExecuteTemplate(&out, "magic-login.html", data))
 			assert.Contains(t, out.String(), expected)
+		})
+	}
+}
+
+// Språklenkene skal aldri speile ukjent ?error= (reflektert fritekst), men
+// beholde kjent kode, service og redirect_uri.
+func TestServeLogin_LangLinks_ErrorParam(t *testing.T) {
+	tmpl, err := template.ParseGlob("../../templates/*.html")
+	require.NoError(t, err)
+	svcs := []gen.Service{{ID: "eval", DisplayName: "Eval", Domain: "eval.test", CallbackUrl: "https://eval.test/cb", Active: 1, AuthMagicLink: 1}}
+	h := &LoginHandler{Registry: service.NewRegistryForTest(svcs), Templates: tmpl}
+
+	cases := []struct {
+		name, query string
+		wantErrLink bool // error=access_denied i lenkene
+	}{
+		{"fritekst alene", "error=" + url.QueryEscape("evil<script>zzz"), false},
+		{"kjent så fritekst", "error=access_denied&error=zzz", true},
+		{"fritekst så kjent", "error=zzz&error=access_denied", false},
+		{"kjent alene", "error=access_denied", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			h.ServeLogin(w, httptest.NewRequest(http.MethodGet,
+				"/login?"+c.query+"&service=eval&redirect_uri="+url.QueryEscape("https://eval.test/cb"), nil))
+			require.Equal(t, http.StatusOK, w.Code)
+			body := w.Body.String()
+			assert.Contains(t, body, "lang=en")
+			assert.Contains(t, body, "service=eval")
+			assert.Contains(t, body, "redirect_uri=https%3A%2F%2Feval.test%2Fcb")
+			assert.Equal(t, c.wantErrLink, strings.Contains(body, "error=access_denied&amp;"), "error i lenke")
+			// Ukjent kode gir fortsatt generisk feilboks (mal-fallback).
+			assert.Contains(t, body, `<div class="msg-error">`)
+			if !c.wantErrLink {
+				assert.NotContains(t, body, "zzz")
+			}
+			assert.NotContains(t, body, "error=zzz")
 		})
 	}
 }

@@ -19,7 +19,19 @@ const (
 	// errCodeAccountNotLinked: e-posten tilhører en bruker som allerede er koblet
 	// til en annen leverandørkonto, og tjenesten har auto_link av (011).
 	errCodeAccountNotLinked loginErrorCode = "account_not_linked"
+	// errCodeInvalidRedirect: redirect_uri ble avvist. Malen og i18n kjenner den.
+	errCodeInvalidRedirect loginErrorCode = "invalid_redirect"
 )
+
+// knownLoginError sier om s er en av kauths egne feilkoder. Alt annet er
+// brukerstyrt fritekst som ikke skal speiles videre i lenker.
+func knownLoginError(s string) bool {
+	switch loginErrorCode(s) {
+	case errCodeLoginFailed, errCodeAccessDenied, errCodeAccountNotLinked, errCodeInvalidRedirect:
+		return true
+	}
+	return false
+}
 
 // redirectLoginError sender brukeren tilbake til /login med en kjent feilkode.
 // Den starter aldri IdP-en på nytt. Tom svcID utelater service-parameteren

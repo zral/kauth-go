@@ -165,6 +165,17 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		tagline = *svc.Tagline
 	}
 
+	// ?error= er reflektert fritekst: språklenkene får bare en kjent kode, og
+	// alltid en ren kopi så gjentatte error-parametere ikke slipper gjennom.
+	langURL := *r.URL
+	lq := langURL.Query()
+	e := lq.Get("error")
+	lq.Del("error")
+	if knownLoginError(e) {
+		lq.Set("error", e)
+	}
+	langURL.RawQuery = lq.Encode()
+
 	bodyCss, beforeCss := buildBgCSS(svc.Theme, svc.BgImage, svc.BgCss)
 	data := LoginPageData{
 		Service:     svc,
@@ -175,7 +186,7 @@ func (h *LoginHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		BeforeBgCSS: beforeCss,
 		Locale:      locale,
 		T:           i18n.Get(locale),
-		Languages:   i18n.Links(locale, r.URL),
+		Languages:   i18n.Links(locale, &langURL),
 		Tagline:     tagline,
 
 		PasswordLoginEnabled: h.PasswordLoginEnabled,

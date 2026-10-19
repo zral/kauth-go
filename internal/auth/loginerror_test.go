@@ -121,3 +121,12 @@ func TestLoginPage_LoginFailedText(t *testing.T) {
 	assert.Contains(t, renderPage(t, "login.html", "en", "access_denied"), "Access denied.")
 	assert.Contains(t, renderPage(t, "login.html", "en", "invalid_redirect"), "Invalid return address")
 }
+
+func TestKnownLoginError(t *testing.T) {
+	for s, want := range map[string]bool{
+		"login_failed": true, "access_denied": true, "account_not_linked": true, "invalid_redirect": true,
+		"": false, "Access_Denied": false, "evil<script>": false, "server_error": false,
+	} {
+		require.Equal(t, want, knownLoginError(s), s)
+	}
+}
